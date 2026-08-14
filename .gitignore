@@ -34,6 +34,11 @@ yarn-error.log
 .env.*
 !.env.example
 
+# Terraform artifacts must never be committed
+*.tfstate
+*.tfstate.*
+*.tfplan
+
 # Miscellaneous
 /.angular/cache
 .sass-cache/
