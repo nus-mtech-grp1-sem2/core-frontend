@@ -1,1 +1,370 @@
-/* You can add global styles to this file, and also import other style files */
+/* Global tokens and primitives for the OneStage app. */
+
+:root {
+  /* Neutrals */
+  --ink-900: #0a0a12;
+  --ink-800: #14141f;
+  --ink-700: #1f1f2e;
+  --ink-500: #4a4a5a;
+  --ink-400: #6b6b7b;
+  --ink-300: #9a9aa8;
+
+  --bg: #ffffff;
+  --bg-subtle: #f7f7fa;
+  --bg-sunken: #eef0f4;
+  --border: #e2e4ea;
+  --border-strong: #cdd0d9;
+
+  --text: #14141f;
+  --text-muted: #56566a;
+  --text-inverse: #ffffff;
+  --text-inverse-muted: #b8b8c6;
+
+  /* Brand */
+  --brand-600: #4338ca;
+  --brand-500: #4f46e5;
+  --brand-400: #6d64f0;
+  --brand-soft: #eef0ff;
+  --accent-500: #e11d74;
+
+  --success-fg: #0f6b3f;
+  --success-bg: #e3f6ec;
+  --warn-fg: #8a4b00;
+  --warn-bg: #fdf0dc;
+  --muted-fg: #55556a;
+  --muted-bg: #ecedf2;
+
+  /* Shape and depth */
+  --page-max: 1200px;
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 2px rgba(16, 16, 32, 0.06), 0 1px 3px rgba(16, 16, 32, 0.08);
+  --shadow-md: 0 4px 12px rgba(16, 16, 32, 0.08), 0 12px 28px rgba(16, 16, 32, 0.08);
+  --shadow-lg: 0 18px 40px rgba(16, 16, 32, 0.16);
+
+  --font-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-display: 'Sora', var(--font-sans);
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+p {
+  margin: 0;
+}
+
+img {
+  max-width: 100%;
+}
+
+:where(a, button, input, select, [tabindex]):focus-visible {
+  outline: 3px solid var(--brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Layout helpers */
+.shell {
+  width: 100%;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding-inline: clamp(1rem, 4vw, 2rem);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1;
+  padding: 0.75rem 1.25rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--brand-500);
+  color: var(--text-inverse);
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.28);
+}
+
+.btn-primary:hover {
+  background: var(--brand-600);
+}
+
+.btn-primary:disabled {
+  background: var(--bg-sunken);
+  color: var(--ink-500);
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: inherit;
+  border-color: currentColor;
+}
+
+.btn-light {
+  background: #ffffff;
+  color: var(--ink-900);
+}
+
+.btn-sm {
+  padding: 0.5rem 0.9375rem;
+  font-size: 0.875rem;
+}
+
+/* Pills and chips */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Page header band used by the inner pages */
+.page-head {
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  padding-block: clamp(2rem, 5vw, 3.25rem);
+}
+
+.page-head h1 {
+  font-size: clamp(1.875rem, 4vw, 2.75rem);
+}
+
+.page-head .lead {
+  margin-top: 0.625rem;
+  max-width: 46ch;
+  color: var(--text-muted);
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brand-600);
+  margin-bottom: 0.25rem;
+}
+
+/* Filter chips */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.4375rem 0.9375rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.chip:hover {
+  border-color: var(--brand-500);
+  color: var(--brand-600);
+}
+
+.chip.selected {
+  background: var(--ink-900);
+  border-color: var(--ink-900);
+  color: #fff;
+}
+
+/* Availability pills */
+.status.on-sale {
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.status.few-left {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.status.sold-out {
+  background: var(--muted-bg);
+  color: var(--muted-fg);
+}
+
+/* Form primitives shared by the auth pages */
+.field {
+  display: grid;
+  gap: 0.375rem;
+  margin-bottom: 1rem;
+}
+
+.field > label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.field input[type='text'],
+.field input[type='email'],
+.field input[type='password'] {
+  font: inherit;
+  font-size: 0.9375rem;
+  padding: 0.6875rem 0.875rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.field input:focus-visible {
+  border-color: var(--brand-500);
+}
+
+.field input[aria-invalid='true'] {
+  border-color: #b3261e;
+}
+
+.field-error {
+  font-size: 0.8125rem;
+  color: #b3261e;
+}
+
+.field-hint {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.checkbox input {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.2rem;
+  accent-color: var(--brand-500);
+}
+
+.form-notice {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  color: var(--brand-600);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.form-error-banner {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  background: #fdeceb;
+  color: #8c1d18;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1.25rem;
+  background: var(--brand-500);
+  color: var(--text-inverse);
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .btn:hover {
+    transform: none;
+  }
+}

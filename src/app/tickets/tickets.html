@@ -1,0 +1,56 @@
+<section class="page-head">
+  <div class="shell">
+    <p class="eyebrow">On sale now</p>
+    <h1>Tickets</h1>
+    <p class="lead">
+      Live inventory across every event. Prices are per ticket in SGD and exclude booking fees.
+    </p>
+  </div>
+</section>
+
+<section class="shell listing" aria-labelledby="listing-heading">
+  <h2 class="visually-hidden" id="listing-heading">Ticket listings</h2>
+
+  <div class="toolbar">
+    <div class="filters" role="group" aria-label="Filter tickets by category">
+      @for (filter of filters; track filter) {
+        <button
+          type="button"
+          class="chip"
+          [class.selected]="filter === activeFilter()"
+          [attr.aria-pressed]="filter === activeFilter()"
+          (click)="setFilter(filter)"
+        >
+          {{ filter }}
+        </button>
+      }
+    </div>
+
+    <div class="controls">
+      <label class="switch">
+        <input
+          type="checkbox"
+          [checked]="availableOnly()"
+          (change)="toggleAvailableOnly($any($event.target).checked)"
+        />
+        <span>Hide sold out</span>
+      </label>
+
+      <label class="sort">
+        <span>Sort by</span>
+        <select [value]="sort()" (change)="setSort($any($event.target).value)">
+          <option value="date">Event date</option>
+          <option value="price-asc">Price: low to high</option>
+          <option value="price-desc">Price: high to low</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <p class="count" aria-live="polite">{{ tickets().length }} listings</p>
+
+  <app-ticket-table
+    [tickets]="tickets()"
+    [caption]="'Ticket listings, filtered by ' + activeFilter()"
+  />
+</section>

@@ -1,0 +1,149 @@
+<app-carousel />
+
+@if (auth.isAuthenticated()) {
+  <section class="shell section" aria-labelledby="orders-heading">
+    <header class="section-head">
+      <div>
+        <p class="eyebrow">Your account</p>
+        <h2 id="orders-heading">Upcoming tickets</h2>
+      </div>
+      <a class="link-more" routerLink="/tickets">
+        Browse tickets
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
+          <path
+            d="M5 12h13m0 0-5-5m5 5-5 5"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </a>
+    </header>
+
+    <ul class="orders">
+      @for (order of orders; track order.reference) {
+        <li>
+          <div class="order-when">
+            <span class="order-date">{{ order.date }}</span>
+            <span class="order-time">{{ order.time }}</span>
+          </div>
+          <div class="order-what">
+            <span class="order-event">{{ order.event }}</span>
+            <span class="order-detail">{{ order.venue }} · {{ order.seats }}</span>
+          </div>
+          <div class="order-meta">
+            <span class="qty"
+              >{{ order.quantity }} {{ order.quantity === 1 ? 'ticket' : 'tickets' }}</span
+            >
+            <span class="ref">{{ order.reference }}</span>
+          </div>
+        </li>
+      } @empty {
+        <li class="no-orders">No upcoming tickets yet — anything you buy shows up here.</li>
+      }
+    </ul>
+  </section>
+} @else {
+  <section class="assurances" aria-label="Why book with OneStage">
+    <ul class="shell grid">
+      @for (item of assurances; track item.title) {
+        <li>
+          <span class="tick" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+              <path
+                d="m5 12.5 4.5 4.5L19 7"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+          <span>
+            <span class="assurance-title">{{ item.title }}</span>
+            <span class="assurance-detail">{{ item.detail }}</span>
+          </span>
+        </li>
+      }
+    </ul>
+  </section>
+}
+
+<section class="shell section" aria-labelledby="venues-heading">
+  <header class="section-head">
+    <div>
+      <p class="eyebrow">Where it happens</p>
+      <h2 id="venues-heading">Venues</h2>
+    </div>
+    <a class="link-more" routerLink="/events">
+      All venues
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
+        <path
+          d="M5 12h13m0 0-5-5m5 5-5 5"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </a>
+  </header>
+
+  <ul class="venue-grid">
+    @for (venue of venues; track venue.id) {
+      <li>
+        <a class="venue-card" routerLink="/events">
+          <span class="thumb">
+            <img
+              [ngSrc]="venue.image"
+              [alt]="venue.alt"
+              fill
+              sizes="(max-width: 560px) 100vw, (max-width: 900px) 50vw, 33vw"
+            />
+            <span class="pill upcoming">{{ venue.upcoming }} events</span>
+          </span>
+          <span class="venue-body">
+            <span class="venue-name">{{ venue.name }}</span>
+            <span class="venue-detail">{{ venue.city }} · {{ venue.capacity }}</span>
+          </span>
+        </a>
+      </li>
+    }
+  </ul>
+</section>
+
+<section class="shell section" aria-labelledby="tickets-heading">
+  <header class="section-head">
+    <div>
+      <p class="eyebrow">On sale now</p>
+      <h2 id="tickets-heading">Tickets</h2>
+    </div>
+    <a class="link-more" routerLink="/tickets">
+      All tickets
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
+        <path
+          d="M5 12h13m0 0-5-5m5 5-5 5"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </a>
+  </header>
+
+  <app-ticket-table [tickets]="featuredTickets" caption="A selection of tickets on sale now" />
+</section>
+
+@if (!auth.isAuthenticated()) {
+  <section class="cta">
+    <div class="shell cta-inner">
+      <div>
+        <h2>Never miss an on-sale</h2>
+        <p>Get presale codes and drop reminders for the artists and teams you follow.</p>
+      </div>
+      <a class="btn btn-light" routerLink="/register">Create an account</a>
+    </div>
+  </section>
+}

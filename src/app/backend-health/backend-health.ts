@@ -32,7 +32,11 @@ const SERVICES: readonly BackendService[] = [
         @for (probe of probes(); track probe.service) {
           <li>
             <span class="name">{{ probe.service }}</span>
-            <span class="state" [class.up]="probe.state === 'up'" [class.down]="probe.state === 'down'">
+            <span
+              class="state"
+              [class.up]="probe.state === 'up'"
+              [class.down]="probe.state === 'down'"
+            >
               {{ probe.detail }}
             </span>
           </li>

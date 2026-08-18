@@ -1,0 +1,77 @@
+<section class="page-head">
+  <div class="shell">
+    <p class="eyebrow">What's on</p>
+    <h1>Events</h1>
+    <p class="lead">
+      Every concert, match and performance currently listed on OneStage, across all venues.
+    </p>
+  </div>
+</section>
+
+<section class="shell listing" aria-labelledby="listing-heading">
+  <h2 class="visually-hidden" id="listing-heading">Event listings</h2>
+
+  <div class="toolbar">
+    <div class="filters" role="group" aria-label="Filter events by category">
+      @for (filter of filters; track filter) {
+        <button
+          type="button"
+          class="chip"
+          [class.selected]="filter === activeFilter()"
+          [attr.aria-pressed]="filter === activeFilter()"
+          (click)="setFilter(filter)"
+        >
+          {{ filter }}
+        </button>
+      }
+    </div>
+
+    <p class="count" aria-live="polite">{{ events().length }} events</p>
+  </div>
+
+  <ul class="event-grid">
+    @for (event of events(); track event.id) {
+      <li class="event-card">
+        <a
+          class="thumb"
+          [routerLink]="['/tickets']"
+          [attr.aria-label]="'Tickets for ' + event.title"
+        >
+          <img
+            [ngSrc]="event.image"
+            [alt]="event.alt"
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1000px) 50vw, 33vw"
+          />
+          <span class="pill category">{{ event.category }}</span>
+        </a>
+
+        <div class="body">
+          <p class="when">{{ event.date }} · {{ event.time }}</p>
+          <h3>
+            <a [routerLink]="['/tickets']">{{ event.title }}</a>
+          </h3>
+          <p class="where">{{ event.venue }}</p>
+
+          <div class="foot">
+            <p class="from">
+              <span class="from-label">From</span>
+              <span class="from-price">{{
+                event.priceFrom | currency: 'SGD' : 'S$' : '1.0-0'
+              }}</span>
+            </p>
+            <span
+              class="pill status"
+              [class.on-sale]="event.status === 'On sale'"
+              [class.few-left]="event.status === 'Few left'"
+              [class.sold-out]="event.status === 'Sold out'"
+              >{{ event.status }}</span
+            >
+          </div>
+        </div>
+      </li>
+    } @empty {
+      <li class="empty">No events in this category right now.</li>
+    }
+  </ul>
+</section>
