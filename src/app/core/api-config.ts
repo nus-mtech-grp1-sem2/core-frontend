@@ -2,12 +2,7 @@ import { InjectionToken } from '@angular/core';
 
 /** The backend services routed by the Kong gateway. */
 export type BackendService =
-  | 'event'
-  | 'inventory'
-  | 'queue'
-  | 'order'
-  | 'ticket'
-  | 'notification';
+  'auth' | 'event' | 'inventory' | 'queue' | 'order' | 'ticket' | 'notification';
 
 /**
  * Root of the API. Everything goes through the Kong gateway, which routes

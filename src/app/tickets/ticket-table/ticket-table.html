@@ -1,0 +1,60 @@
+<div class="table-card">
+  <table class="ticket-table">
+    <caption class="visually-hidden">
+      {{
+        caption()
+      }}
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Event</th>
+        <th scope="col">Venue</th>
+        <th scope="col">Date</th>
+        <th scope="col">Section</th>
+        <th scope="col" class="numeric">From</th>
+        <th scope="col">Status</th>
+        <th scope="col"><span class="visually-hidden">Action</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (ticket of tickets(); track ticket.id) {
+        <tr>
+          <th scope="row">
+            <span class="event-name">{{ ticket.event }}</span>
+            <span class="event-category">{{ ticket.category }}</span>
+          </th>
+          <td>{{ ticket.venue }}</td>
+          <td>
+            <span class="date">{{ ticket.date }}</span>
+            <span class="time">{{ ticket.time }}</span>
+          </td>
+          <td>{{ ticket.section }}</td>
+          <td class="numeric price">{{ ticket.price | currency: 'SGD' : 'S$' : '1.0-0' }}</td>
+          <td>
+            <span
+              class="pill status"
+              [class.on-sale]="ticket.status === 'On sale'"
+              [class.few-left]="ticket.status === 'Few left'"
+              [class.sold-out]="ticket.status === 'Sold out'"
+              >{{ ticket.status }}</span
+            >
+          </td>
+          <td class="action">
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              [disabled]="ticket.status === 'Sold out'"
+            >
+              {{ ticket.status === 'Sold out' ? 'Sold out' : 'Buy' }}
+              <span class="visually-hidden"> — {{ ticket.event }}, {{ ticket.date }}</span>
+            </button>
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td class="empty" colspan="7">No tickets in this category right now.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

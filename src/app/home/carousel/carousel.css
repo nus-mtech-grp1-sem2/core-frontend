@@ -1,0 +1,180 @@
+.hero {
+  position: relative;
+  isolation: isolate;
+  min-height: min(78vh, 620px);
+  display: grid;
+  background: var(--ink-900);
+  overflow: hidden;
+}
+
+.slide {
+  grid-area: 1 / 1;
+  position: relative;
+  display: grid;
+  align-items: end;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.6s ease,
+    visibility 0.6s ease;
+}
+
+.slide.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.slide img {
+  object-fit: cover;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(10, 10, 18, 0.55) 0%,
+      rgba(10, 10, 18, 0.15) 35%,
+      rgba(10, 10, 18, 0.94) 100%
+    ),
+    linear-gradient(90deg, rgba(10, 10, 18, 0.78) 0%, rgba(10, 10, 18, 0) 65%);
+}
+
+.copy {
+  position: relative;
+  z-index: 2;
+  color: var(--text-inverse);
+  padding-block: 3.5rem 5rem;
+  display: grid;
+  justify-items: start;
+  gap: 0.875rem;
+}
+
+.category {
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  text-transform: uppercase;
+}
+
+h1 {
+  font-size: clamp(2rem, 5.5vw, 3.5rem);
+  max-width: 16ch;
+  text-wrap: balance;
+}
+
+.subtitle {
+  font-size: clamp(1rem, 2vw, 1.125rem);
+  color: rgba(255, 255, 255, 0.86);
+  max-width: 38ch;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.meta li + li {
+  position: relative;
+  padding-inline-start: 1.25rem;
+}
+
+.meta li + li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  transform: translateY(-50%);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.actions .btn-ghost {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.actions .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(10, 10, 18, 0.45);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s ease;
+}
+
+.arrow:hover {
+  background: rgba(10, 10, 18, 0.78);
+}
+
+.prev {
+  left: clamp(0.5rem, 2vw, 1.25rem);
+}
+
+.next {
+  right: clamp(0.5rem, 2vw, 1.25rem);
+}
+
+.dots {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.5rem;
+}
+
+.dot {
+  width: 2rem;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.dot.selected {
+  background: #fff;
+}
+
+@media (max-width: 720px) {
+  .hero {
+    min-height: 30rem;
+  }
+
+  .arrow {
+    display: none;
+  }
+}

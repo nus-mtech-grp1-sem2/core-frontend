@@ -1,0 +1,77 @@
+<section class="hero" aria-roledescription="carousel" aria-label="Featured events">
+  @for (slide of slides; track slide.id; let i = $index) {
+    <div
+      class="slide"
+      [class.active]="i === index()"
+      role="group"
+      aria-roledescription="slide"
+      [attr.aria-label]="i + 1 + ' of ' + slides.length + ': ' + slide.title"
+      [attr.aria-hidden]="i === index() ? null : 'true'"
+      [attr.inert]="i === index() ? null : ''"
+    >
+      <img [ngSrc]="slide.image" [alt]="slide.alt" [priority]="i === 0" fill sizes="100vw" />
+      <div class="scrim"></div>
+
+      <div class="shell copy">
+        <p class="pill category">{{ slide.category }}</p>
+        <h1>{{ slide.title }}</h1>
+        <p class="subtitle">{{ slide.subtitle }}</p>
+
+        <ul class="meta">
+          <li>{{ slide.date }}</li>
+          <li>{{ slide.venue }}</li>
+          <li>From {{ slide.priceFrom }}</li>
+        </ul>
+
+        <div class="actions">
+          <a class="btn btn-primary" routerLink="/tickets">Get tickets</a>
+          <a class="btn btn-ghost" routerLink="/events">Event details</a>
+        </div>
+      </div>
+    </div>
+  }
+
+  <p class="visually-hidden" aria-live="polite">
+    Slide {{ index() + 1 }} of {{ slides.length }}: {{ current().title }}
+  </p>
+
+  <button type="button" class="arrow prev" (click)="previous()">
+    <span class="visually-hidden">Previous slide</span>
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none">
+      <path
+        d="m14.5 5-7 7 7 7"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  </button>
+
+  <button type="button" class="arrow next" (click)="next()">
+    <span class="visually-hidden">Next slide</span>
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none">
+      <path
+        d="m9.5 5 7 7-7 7"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  </button>
+
+  <div class="dots">
+    @for (slide of slides; track slide.id; let i = $index) {
+      <button
+        type="button"
+        class="dot"
+        [class.selected]="i === index()"
+        [attr.aria-current]="i === index() ? 'true' : null"
+        (click)="select(i)"
+      >
+        <span class="visually-hidden">Show slide {{ i + 1 }}: {{ slide.title }}</span>
+      </button>
+    }
+  </div>
+</section>
