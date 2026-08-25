@@ -1,0 +1,135 @@
+:host {
+  display: block;
+}
+
+.head-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 26rem) 1fr;
+  gap: clamp(1.5rem, 4vw, 2.5rem);
+  align-items: center;
+}
+
+.thumb {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-sunken);
+}
+
+.thumb img {
+  object-fit: cover;
+}
+
+.category {
+  position: absolute;
+  left: 0.75rem;
+  top: 0.75rem;
+  background: rgba(10, 10, 18, 0.72);
+  color: #fff;
+  backdrop-filter: blur(4px);
+}
+
+.head-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.back {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand-600);
+  text-decoration: none;
+  margin-bottom: 0.5rem;
+}
+
+.back:hover {
+  text-decoration: underline;
+}
+
+.head-copy h1 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.where {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+.when {
+  font-weight: 600;
+  color: var(--brand-600);
+}
+
+.body {
+  padding-block: clamp(2rem, 5vw, 3rem);
+}
+
+.body h2 {
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.type-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.type-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1rem 1.25rem;
+}
+
+.type-row + .type-row {
+  border-top: 1px solid var(--border);
+}
+
+.type-name {
+  font-weight: 600;
+}
+
+.type-price {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.empty {
+  padding-block: 2.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.not-found {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .head-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .type-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .type-row .btn {
+    grid-column: 1 / -1;
+  }
+}

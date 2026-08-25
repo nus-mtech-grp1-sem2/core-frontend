@@ -24,8 +24,8 @@
         </ul>
 
         <div class="actions">
-          <a class="btn btn-primary" routerLink="/tickets">Get tickets</a>
-          <a class="btn btn-ghost" routerLink="/events">Event details</a>
+          <a class="btn btn-primary" [routerLink]="['/events', slide.id]">Get tickets</a>
+          <a class="btn btn-ghost" [routerLink]="['/events', slide.id]">Event details</a>
         </div>
       </div>
     </div>

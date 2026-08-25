@@ -52,5 +52,6 @@
   <app-ticket-table
     [tickets]="tickets()"
     [caption]="'Ticket listings, filtered by ' + activeFilter()"
+    (buy)="buy($event)"
   />
 </section>

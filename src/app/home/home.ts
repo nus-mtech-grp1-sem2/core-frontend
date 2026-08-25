@@ -1,9 +1,9 @@
 import { NgOptimizedImage } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { AuthService } from '../core/auth';
-import { MY_ORDERS, TICKETS, VENUES } from '../core/catalog';
+import { MY_ORDERS, TICKETS, TicketRow, VENUES } from '../core/catalog';
 import { TicketTable } from '../tickets/ticket-table/ticket-table';
 import { Carousel } from './carousel/carousel';
 
@@ -17,6 +17,7 @@ import { Carousel } from './carousel/carousel';
 })
 export class Home {
   protected readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
   protected readonly orders = MY_ORDERS;
 
   /** First part of the email, which is the closest thing to a name we hold. */
@@ -41,4 +42,14 @@ export class Home {
       detail: 'Mobile tickets land in your account the moment payment clears.',
     },
   ] as const;
+
+  /** Signed-out visitors go to sign in first; checkout itself isn't built yet. */
+  protected buy(ticket: TicketRow): void {
+    if (!this.auth.isAuthenticated()) {
+      this.router.navigate(['/login'], { queryParams: { returnUrl: this.router.url } });
+      return;
+    }
+
+    console.info('Checkout is not wired up yet.', ticket);
+  }
 }

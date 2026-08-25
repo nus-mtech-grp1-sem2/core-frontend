@@ -1,5 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 
+import { AuthService } from '../core/auth';
 import { EventCategory, TICKETS, TicketRow } from '../core/catalog';
 import { TicketTable } from './ticket-table/ticket-table';
 
@@ -15,6 +17,9 @@ type Sort = 'date' | 'price-asc' | 'price-desc';
   styleUrl: './tickets.css',
 })
 export class Tickets {
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+
   protected readonly filters: readonly Filter[] = ['All', 'Concerts', 'Sports', 'Theatre'];
 
   protected readonly activeFilter = signal<Filter>('All');
@@ -50,5 +55,15 @@ export class Tickets {
 
   protected toggleAvailableOnly(checked: boolean): void {
     this.availableOnly.set(checked);
+  }
+
+  /** Signed-out visitors go to sign in first; checkout itself isn't built yet. */
+  protected buy(ticket: TicketRow): void {
+    if (!this.auth.isAuthenticated()) {
+      this.router.navigate(['/login'], { queryParams: { returnUrl: this.router.url } });
+      return;
+    }
+
+    console.info('Checkout is not wired up yet.', ticket);
   }
 }

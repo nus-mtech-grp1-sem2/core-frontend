@@ -133,7 +133,11 @@
     </a>
   </header>
 
-  <app-ticket-table [tickets]="featuredTickets" caption="A selection of tickets on sale now" />
+  <app-ticket-table
+    [tickets]="featuredTickets"
+    caption="A selection of tickets on sale now"
+    (buy)="buy($event)"
+  />
 </section>
 
 @if (!auth.isAuthenticated()) {

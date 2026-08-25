@@ -44,6 +44,7 @@
               type="button"
               class="btn btn-primary btn-sm"
               [disabled]="ticket.status === 'Sold out'"
+              (click)="buy.emit(ticket)"
             >
               {{ ticket.status === 'Sold out' ? 'Sold out' : 'Buy' }}
               <span class="visually-hidden"> — {{ ticket.event }}, {{ ticket.date }}</span>

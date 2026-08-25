@@ -1,13 +1,38 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { formatDate } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
+import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
-import { MY_SHIFTS } from '../core/catalog';
+
+type LoadStatus = 'loading' | 'ready' | 'error';
+
+/** Shape returned by `GET /api/event/helper/shifts` (see backend-repo/API_DESIGN.md §1). */
+interface HelperShiftDto {
+  readonly staffId: number;
+  readonly eventName: string;
+  readonly venueName: string;
+  readonly gate: string | null;
+  readonly eventStartDatetime: string;
+  readonly doorsOpenTime: string | null;
+  readonly expectedAttendance: number | null;
+}
+
+interface ShiftView {
+  readonly id: number;
+  readonly event: string;
+  readonly venue: string;
+  readonly gate: string;
+  readonly date: string;
+  readonly doorsOpen: string;
+  readonly expected: number;
+  readonly today: boolean;
+}
 
 /**
  * Home page for an event helper: the shift they are working now, then the ones
- * coming up. Shift data is sample content until the event service exposes
- * staffing.
+ * coming up. Backed by the event service's staffing endpoint — see
+ * `backend-repo/API_DESIGN.md` §1 ("Event-helper" / `event_staff`).
  */
 @Component({
   selector: 'app-helper-home',
@@ -29,50 +54,63 @@ import { MY_SHIFTS } from '../core/catalog';
     </section>
 
     <section class="shell body">
-      @if (today(); as shift) {
-        <article class="on-now">
-          <div class="on-now-head">
-            <span class="pill live">On tonight</span>
-            <span class="doors">Doors {{ shift.doorsOpen }}</span>
-          </div>
-          <h2>{{ shift.event }}</h2>
-          <p class="where">{{ shift.venue }} · {{ shift.gate }}</p>
-          <dl class="facts">
-            <div>
-              <dt>Date</dt>
-              <dd>{{ shift.date }}</dd>
-            </div>
-            <div>
-              <dt>Expected</dt>
-              <dd>{{ shift.expected.toLocaleString('en-SG') }} attendees</dd>
-            </div>
-          </dl>
-          <a class="btn btn-primary" routerLink="/checkin">Open door check-in</a>
-        </article>
-      }
-
-      <h2 class="section-title">Upcoming shifts</h2>
-      <ul class="shifts">
-        @for (shift of upcoming(); track shift.id) {
-          <li>
-            <div class="when">
-              <span class="date">{{ shift.date }}</span>
-              <span class="time">Doors {{ shift.doorsOpen }}</span>
-            </div>
-            <div class="what">
-              <span class="event">{{ shift.event }}</span>
-              <span class="venue">{{ shift.venue }} · {{ shift.gate }}</span>
-            </div>
-            <span class="count">{{ shift.expected.toLocaleString('en-SG') }}</span>
-          </li>
-        } @empty {
-          <li class="empty">Nothing scheduled after tonight.</li>
+      @switch (status()) {
+        @case ('loading') {
+          <p class="status-message" role="status">Loading your shifts…</p>
         }
-      </ul>
+        @case ('error') {
+          <p class="status-message error" role="alert">
+            Couldn't load your shifts.
+            <button type="button" class="retry" (click)="loadShifts()">Try again</button>
+          </p>
+        }
+        @case ('ready') {
+          @if (today(); as shift) {
+            <article class="on-now">
+              <div class="on-now-head">
+                <span class="pill live">On tonight</span>
+                <span class="doors">Doors {{ shift.doorsOpen }}</span>
+              </div>
+              <h2>{{ shift.event }}</h2>
+              <p class="where">{{ shift.venue }} · {{ shift.gate }}</p>
+              <dl class="facts">
+                <div>
+                  <dt>Date</dt>
+                  <dd>{{ shift.date }}</dd>
+                </div>
+                <div>
+                  <dt>Expected</dt>
+                  <dd>{{ shift.expected.toLocaleString('en-SG') }} attendees</dd>
+                </div>
+              </dl>
+              <a class="btn btn-primary" routerLink="/checkin">Open door check-in</a>
+            </article>
+          }
 
-      <p class="note">
-        Scans are recorded against your account, so the log shows who admitted each ticket.
-      </p>
+          <h2 class="section-title">Upcoming shifts</h2>
+          <ul class="shifts">
+            @for (shift of upcoming(); track shift.id) {
+              <li>
+                <div class="when">
+                  <span class="date">{{ shift.date }}</span>
+                  <span class="time">Doors {{ shift.doorsOpen }}</span>
+                </div>
+                <div class="what">
+                  <span class="event">{{ shift.event }}</span>
+                  <span class="venue">{{ shift.venue }} · {{ shift.gate }}</span>
+                </div>
+                <span class="count">{{ shift.expected.toLocaleString('en-SG') }}</span>
+              </li>
+            } @empty {
+              <li class="empty">Nothing scheduled after tonight.</li>
+            }
+          </ul>
+
+          <p class="note">
+            Scans are recorded against your account, so the log shows who admitted each ticket.
+          </p>
+        }
+      }
     </section>
   `,
   styles: `
@@ -81,6 +119,26 @@ import { MY_SHIFTS } from '../core/catalog';
       display: flex;
       flex-direction: column;
       gap: 1.5rem;
+    }
+
+    .status-message {
+      color: var(--text-muted);
+      font-size: 0.9375rem;
+    }
+
+    .status-message.error {
+      color: #8c1d18;
+    }
+
+    .retry {
+      margin-left: 0.5rem;
+      font: inherit;
+      color: inherit;
+      text-decoration: underline;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
     }
 
     .on-now {
@@ -214,14 +272,59 @@ import { MY_SHIFTS } from '../core/catalog';
   `,
 })
 export class HelperHome {
-  private readonly auth = inject(AuthService);
+  private readonly api = inject(ApiService);
+  protected readonly auth = inject(AuthService);
 
-  protected readonly today = computed(() => MY_SHIFTS.find((shift) => shift.today) ?? null);
-  protected readonly upcoming = computed(() => MY_SHIFTS.filter((shift) => !shift.today));
+  protected readonly status = signal<LoadStatus>('loading');
+  private readonly shifts = signal<readonly ShiftView[]>([]);
+
+  protected readonly today = computed(() => this.shifts().find((shift) => shift.today) ?? null);
+  protected readonly upcoming = computed(() => this.shifts().filter((shift) => !shift.today));
 
   protected readonly greeting = computed(() => {
     const email = this.auth.user()?.email ?? '';
     const name = email.split('@')[0];
     return name ? `Welcome, ${name}` : 'Welcome';
   });
+
+  constructor() {
+    this.loadShifts();
+  }
+
+  protected loadShifts(): void {
+    this.status.set('loading');
+    const now = new Date();
+
+    this.api.get<readonly HelperShiftDto[]>('event', '/helper/shifts').subscribe({
+      next: (shifts) => {
+        this.shifts.set(shifts.map((shift) => toShiftView(shift, now)));
+        this.status.set('ready');
+      },
+      error: () => this.status.set('error'),
+    });
+  }
+}
+
+function toShiftView(dto: HelperShiftDto, now: Date): ShiftView {
+  const eventStart = new Date(dto.eventStartDatetime);
+  const doorsOpen = dto.doorsOpenTime ? new Date(dto.doorsOpenTime) : eventStart;
+
+  return {
+    id: dto.staffId,
+    event: dto.eventName,
+    venue: dto.venueName,
+    gate: dto.gate ?? 'Gate TBC',
+    date: formatDate(eventStart, 'EEE d MMM yyyy', 'en-SG'),
+    doorsOpen: formatDate(doorsOpen, 'h:mm a', 'en-SG'),
+    expected: dto.expectedAttendance ?? 0,
+    today: isSameDay(eventStart, now),
+  };
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }

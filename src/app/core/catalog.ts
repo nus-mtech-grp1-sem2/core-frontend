@@ -49,6 +49,8 @@ export interface EventListing {
 
 export interface TicketRow {
   readonly id: string;
+  /** The event this ticket type belongs to — see `EventListing.id`. */
+  readonly eventId: number;
   readonly event: string;
   readonly category: EventCategory;
   readonly venue: string;
@@ -161,6 +163,7 @@ export const VENUES: readonly Venue[] = [
 export const TICKETS: readonly TicketRow[] = [
   {
     id: 'TKT-1001',
+    eventId: 1,
     event: 'Neon Skyline Tour',
     category: 'Concerts',
     venue: 'Marina Bay Arena',
@@ -171,7 +174,20 @@ export const TICKETS: readonly TicketRow[] = [
     status: 'On sale',
   },
   {
+    id: 'TKT-1009',
+    eventId: 1,
+    event: 'Neon Skyline Tour',
+    category: 'Concerts',
+    venue: 'Marina Bay Arena',
+    date: 'Fri 12 Sep 2026',
+    time: '8:00 PM',
+    section: 'General Admission',
+    price: 88,
+    status: 'On sale',
+  },
+  {
     id: 'TKT-1002',
+    eventId: 4,
     event: 'Marina Jazz Nights',
     category: 'Concerts',
     venue: 'Bayfront Concert Hall',
@@ -183,6 +199,7 @@ export const TICKETS: readonly TicketRow[] = [
   },
   {
     id: 'TKT-1003',
+    eventId: 2,
     event: 'ASEAN Cup Final',
     category: 'Sports',
     venue: 'Kallang Grand Stadium',
@@ -194,6 +211,7 @@ export const TICKETS: readonly TicketRow[] = [
   },
   {
     id: 'TKT-1004',
+    eventId: 5,
     event: 'Indie Weekender',
     category: 'Concerts',
     venue: 'Sentosa Open Air',
@@ -205,6 +223,7 @@ export const TICKETS: readonly TicketRow[] = [
   },
   {
     id: 'TKT-1005',
+    eventId: 3,
     event: 'Midnight at the Esplanade',
     category: 'Theatre',
     venue: 'Bayfront Concert Hall',
@@ -216,6 +235,7 @@ export const TICKETS: readonly TicketRow[] = [
   },
   {
     id: 'TKT-1006',
+    eventId: 6,
     event: 'Island Derby',
     category: 'Sports',
     venue: 'Kallang Grand Stadium',
@@ -227,6 +247,7 @@ export const TICKETS: readonly TicketRow[] = [
   },
   {
     id: 'TKT-1007',
+    eventId: 7,
     event: 'Late Night Improv',
     category: 'Theatre',
     venue: 'Clarke Quay Live House',
@@ -234,6 +255,18 @@ export const TICKETS: readonly TicketRow[] = [
     time: '10:00 PM',
     section: 'Standing',
     price: 45,
+    status: 'On sale',
+  },
+  {
+    id: 'TKT-1008',
+    eventId: 8,
+    event: 'Harbour Lights Festival',
+    category: 'Concerts',
+    venue: 'Jurong Festival Grounds',
+    date: 'Sat 31 Oct 2026',
+    time: '4:00 PM',
+    section: 'General Admission',
+    price: 130,
     status: 'On sale',
   },
 ];
@@ -369,47 +402,3 @@ export const MY_ORDERS: readonly Order[] = [
   },
 ];
 
-/** Door shifts assigned to an event helper. */
-export interface Shift {
-  readonly id: number;
-  readonly event: string;
-  readonly venue: string;
-  readonly gate: string;
-  readonly date: string;
-  readonly doorsOpen: string;
-  readonly expected: number;
-  readonly today: boolean;
-}
-
-export const MY_SHIFTS: readonly Shift[] = [
-  {
-    id: 1,
-    event: 'Neon Skyline Tour',
-    venue: 'Marina Bay Arena',
-    gate: 'Gate B — East concourse',
-    date: 'Fri 12 Sep 2026',
-    doorsOpen: '6:30 PM',
-    expected: 11840,
-    today: true,
-  },
-  {
-    id: 2,
-    event: 'Island Derby',
-    venue: 'Kallang Grand Stadium',
-    gate: 'Gate 4 — North Stand',
-    date: 'Sat 17 Oct 2026',
-    doorsOpen: '5:45 PM',
-    expected: 48200,
-    today: false,
-  },
-  {
-    id: 3,
-    event: 'Late Night Improv',
-    venue: 'Clarke Quay Live House',
-    gate: 'Main door',
-    date: 'Fri 23 Oct 2026',
-    doorsOpen: '9:15 PM',
-    expected: 860,
-    today: false,
-  },
-];
