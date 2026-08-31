@@ -17,7 +17,7 @@ import { cognitoUserPoolsTokenProvider } from 'aws-amplify/auth/cognito';
 import { sessionStorage as amplifySessionStorage } from 'aws-amplify/utils';
 
 import { routes } from './app.routes';
-import { AuthService } from './core/auth';
+import { AuthLifecycleService } from './core/auth-lifecycle';
 import { COGNITO_CONFIG, isConfigured } from './core/auth-config';
 import { authInterceptor } from './core/auth-interceptor';
 
@@ -53,7 +53,7 @@ function handleNavigationError(event: NavigationError): void {
  */
 function initialiseAuth(): Promise<void> | void {
   const config = inject(COGNITO_CONFIG);
-  const auth = inject(AuthService);
+  const lifecycle = inject(AuthLifecycleService);
 
   if (!isConfigured(config)) {
     console.warn(
@@ -67,8 +67,16 @@ function initialiseAuth(): Promise<void> | void {
       Cognito: {
         userPoolId: config.userPoolId,
         userPoolClientId: config.userPoolClientId,
-        loginWith: { email: true },
-        signUpVerificationMethod: 'code',
+        loginWith: {
+          email: true,
+          oauth: {
+            domain: config.domain,
+            scopes: ['openid', 'email', 'phone'],
+            redirectSignIn: [...config.redirectSignIn],
+            redirectSignOut: [...config.redirectSignOut],
+            responseType: 'code',
+          },
+        },
       },
     },
   });
@@ -78,7 +86,7 @@ function initialiseAuth(): Promise<void> | void {
   // a stolen token stays useful on a shared machine.
   cognitoUserPoolsTokenProvider.setKeyValueStorage(amplifySessionStorage);
 
-  return auth.restore();
+  return lifecycle.initialise();
 }
 
 export const appConfig: ApplicationConfig = {
@@ -99,10 +107,9 @@ export const appConfig: ApplicationConfig = {
       useValue: {
         userPoolId: 'ap-southeast-1_cgmx4fpO2',
         userPoolClientId: 'gh94lqsterju3qoffje1grep8',
-
-        // TODO: set to false once the PostConfirmation Lambda is deployed, so
-        // roles come only from real Cognito group membership.
-        trustSelfDeclaredRole: true,
+        domain: 'ap-southeast-1cgmx4fpo2.auth.ap-southeast-1.amazoncognito.com',
+        redirectSignIn: ['http://localhost:4200/', 'https://d84l1y8p4kdic.cloudfront.net'],
+        redirectSignOut: ['http://localhost:4200/', 'https://d84l1y8p4kdic.cloudfront.net'],
       },
     },
   ],

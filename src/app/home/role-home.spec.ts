@@ -6,7 +6,7 @@ import { AuthenticatedUser, CognitoGateway } from '../core/cognito-gateway';
 import { RoleHome } from './role-home';
 
 function user(groups: readonly string[]): AuthenticatedUser {
-  return { sub: 's', email: 'someone@example.com', groups, declaredRole: null };
+  return { sub: 's', email: 'someone@example.com', groups };
 }
 
 async function renderFor(current: AuthenticatedUser | null) {

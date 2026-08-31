@@ -6,7 +6,7 @@ import { AuthenticatedUser, CognitoGateway } from '../../core/cognito-gateway';
 import { Header } from './header';
 
 function user(groups: readonly string[]): AuthenticatedUser {
-  return { sub: 's', email: 'someone@example.com', groups, declaredRole: null };
+  return { sub: 's', email: 'someone@example.com', groups };
 }
 
 async function navFor(current: AuthenticatedUser | null) {

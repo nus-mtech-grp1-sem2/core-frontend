@@ -4,7 +4,7 @@ import { Router, Routes, provideRouter } from '@angular/router';
 import { AuthService } from './auth';
 import { roleGuard } from './auth-guard';
 import { AuthenticatedUser, CognitoGateway } from './cognito-gateway';
-import { resolveRole, roleFromGroups } from './roles';
+import { roleFromGroups } from './roles';
 
 describe('roleFromGroups', () => {
   it('treats a user with no groups as a customer', () => {
@@ -31,27 +31,6 @@ describe('roleFromGroups', () => {
   });
 });
 
-describe('resolveRole', () => {
-  it('prefers real group membership over the declared attribute', () => {
-    expect(resolveRole(['customer'], 'organiser', true)).toBe('customer');
-    expect(resolveRole(['organiser'], 'customer', true)).toBe('organiser');
-  });
-
-  it('falls back to the declared role only when the user has no groups', () => {
-    expect(resolveRole([], 'organiser', true)).toBe('organiser');
-    expect(resolveRole([], 'event-helper', true)).toBe('event-helper');
-  });
-
-  it('ignores the declared role when the build does not trust it', () => {
-    expect(resolveRole([], 'organiser', false)).toBe('customer');
-  });
-
-  it('ignores a declared role that is not a real role', () => {
-    expect(resolveRole([], 'admin', true)).toBe('customer');
-    expect(resolveRole([], null, true)).toBe('customer');
-  });
-});
-
 describe('roleGuard', () => {
   const routes: Routes = [
     { path: '', children: [] },
@@ -75,9 +54,7 @@ describe('roleGuard', () => {
   async function run(user: AuthenticatedUser | null) {
     configure(user);
     const guard = roleGuard('organiser');
-    return TestBed.runInInjectionContext(() =>
-      guard({} as never, { url: '/organiser' } as never),
-    );
+    return TestBed.runInInjectionContext(() => guard({} as never, { url: '/organiser' } as never));
   }
 
   it('sends a signed-out visitor to sign in, remembering the destination', async () => {
@@ -87,17 +64,17 @@ describe('roleGuard', () => {
   });
 
   it('sends a customer home rather than to a login form', async () => {
-    const result = await run({ sub: 's', email: 'c@example.com', groups: ['customer'], declaredRole: null });
+    const result = await run({ sub: 's', email: 'c@example.com', groups: ['customer'] });
     expect(String(result)).toBe('/');
   });
 
   it('admits an organiser', async () => {
-    const result = await run({ sub: 's', email: 'o@example.com', groups: ['organiser'], declaredRole: null });
+    const result = await run({ sub: 's', email: 'o@example.com', groups: ['organiser'] });
     expect(result).toBe(true);
   });
 
   it('keeps the role on the auth service in step', async () => {
-    configure({ sub: 's', email: 'h@example.com', groups: ['event-helper'], declaredRole: null });
+    configure({ sub: 's', email: 'h@example.com', groups: ['event-helper'] });
     const auth = TestBed.inject(AuthService);
     await auth.restore();
 
@@ -123,7 +100,7 @@ describe('Router integration', () => {
         {
           provide: CognitoGateway,
           useValue: {
-            currentUser: async () => ({ sub: 's', email: 'c@example.com', groups: [], declaredRole: null }),
+            currentUser: async () => ({ sub: 's', email: 'c@example.com', groups: [] }),
           },
         },
       ],
