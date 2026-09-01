@@ -3,7 +3,6 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, Routes, provideRouter } from '@angular/router';
 
 import { CognitoGateway, SignInResult } from '../core/cognito-gateway';
-import { RoleSyncService } from '../core/role-sync';
 import { Confirm } from './confirm/confirm';
 import { Login } from './login/login';
 import { Register } from './register/register';
@@ -57,21 +56,6 @@ class FakeGateway implements Partial<CognitoGateway> {
   }
 }
 
-/** Stands in for the auth service call that grants the role group. */
-class FakeRoleSync {
-  granted = true;
-  failWith: Error | null = null;
-  calls = 0;
-
-  async sync(): Promise<boolean> {
-    this.calls += 1;
-    if (this.failWith) throw this.failWith;
-    return this.granted;
-  }
-}
-
-const roleSync = new FakeRoleSync();
-
 function typeInto(fixture: ComponentFixture<unknown>, selector: string, value: string): void {
   const input = (fixture.nativeElement as HTMLElement).querySelector(selector) as HTMLInputElement;
   input.value = value;
@@ -93,11 +77,7 @@ const stubRoutes: Routes = [
 function setup<T>(component: Type<T>, gateway: FakeGateway): ComponentFixture<T> {
   TestBed.configureTestingModule({
     imports: [component],
-    providers: [
-      provideRouter(stubRoutes),
-      { provide: CognitoGateway, useValue: gateway },
-      { provide: RoleSyncService, useValue: roleSync },
-    ],
+    providers: [provideRouter(stubRoutes), { provide: CognitoGateway, useValue: gateway }],
   });
   return TestBed.createComponent(component);
 }
@@ -108,9 +88,6 @@ describe('Login', () => {
 
   beforeEach(async () => {
     gateway = new FakeGateway();
-    roleSync.calls = 0;
-    roleSync.failWith = null;
-    roleSync.granted = true;
     fixture = setup(Login, gateway);
     await fixture.whenStable();
   });
@@ -130,26 +107,6 @@ describe('Login', () => {
     await fixture.whenStable();
 
     expect(gateway.calls).toContain('signIn:fan@example.com');
-    expect(TestBed.inject(Router).url).toBe('/');
-  });
-
-  it('grants the requested role group and refreshes the token', async () => {
-    typeInto(fixture, '#email', 'fan@example.com');
-    typeInto(fixture, '#password', 'supersecret');
-    submit(fixture);
-    await fixture.whenStable();
-
-    expect(roleSync.calls).toBe(1);
-    expect(gateway.calls).toContain('refresh');
-  });
-
-  it('signs in anyway when the auth service is unreachable', async () => {
-    roleSync.failWith = new Error('ECONNREFUSED');
-    typeInto(fixture, '#email', 'fan@example.com');
-    typeInto(fixture, '#password', 'supersecret');
-    submit(fixture);
-    await fixture.whenStable();
-
     expect(TestBed.inject(Router).url).toBe('/');
   });
 
@@ -231,23 +188,6 @@ describe('Register', () => {
     expect(gateway.calls).toContain('signUp:alex@example.com:customer');
     expect(TestBed.inject(Router).url).toContain('/confirm');
     expect(TestBed.inject(Router).url).toContain('email=alex@example.com');
-  });
-
-  it('sends the chosen role with the sign-up', async () => {
-    fillValidForm();
-    // The radios carry their value as a directive input, not a DOM attribute,
-    // so pick the one whose label says Organiser.
-    const option = Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLLabelElement>('.role-option'),
-    ).find((label) => label.textContent?.includes('Organiser'));
-    const organiser = option?.querySelector('input') as HTMLInputElement;
-    organiser.checked = true;
-    organiser.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-    submit(fixture);
-    await fixture.whenStable();
-
-    expect(gateway.calls).toContain('signUp:alex@example.com:organiser');
   });
 
   it('reports an email that is already registered', async () => {

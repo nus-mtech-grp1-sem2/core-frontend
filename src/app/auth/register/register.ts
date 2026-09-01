@@ -9,12 +9,6 @@ import {
 import { Router, RouterLink } from '@angular/router';
 
 import { AuthService, describeAuthError } from '../../core/auth';
-import {
-  ROLE_DESCRIPTIONS,
-  ROLE_LABELS,
-  SELECTABLE_ROLES,
-  UserRole,
-} from '../../core/roles';
 import { AuthShell } from '../auth-shell/auth-shell';
 
 /** Group validator: the two password fields must match. */
@@ -103,19 +97,6 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
           }
         </div>
 
-        <fieldset class="roles">
-          <legend>How will you use OneStage?</legend>
-          @for (role of roles; track role) {
-            <label class="role-option" [class.selected]="form.controls.role.value === role">
-              <input type="radio" [value]="role" formControlName="role" />
-              <span>
-                <span class="role-name">{{ labels[role] }}</span>
-                <span class="role-detail">{{ descriptions[role] }}</span>
-              </span>
-            </label>
-          }
-        </fieldset>
-
         <label class="checkbox">
           <input
             type="checkbox"
@@ -137,53 +118,6 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
     </app-auth-shell>
   `,
   styles: `
-    .roles {
-      border: 0;
-      padding: 0;
-      margin: 0 0 1.25rem;
-      display: grid;
-      gap: 0.5rem;
-    }
-
-    legend {
-      font-size: 0.875rem;
-      font-weight: 600;
-      padding: 0;
-      margin-bottom: 0.5rem;
-    }
-
-    .role-option {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.625rem;
-      padding: 0.75rem 0.875rem;
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius);
-      cursor: pointer;
-    }
-
-    .role-option.selected {
-      border-color: var(--brand-500);
-      background: var(--brand-soft);
-    }
-
-    .role-option input {
-      margin-top: 0.2rem;
-      accent-color: var(--brand-500);
-    }
-
-    .role-name {
-      display: block;
-      font-size: 0.9375rem;
-      font-weight: 600;
-    }
-
-    .role-detail {
-      display: block;
-      font-size: 0.8125rem;
-      color: var(--text-muted);
-    }
-
     .submit {
       width: 100%;
       margin-top: 0.5rem;
@@ -212,10 +146,6 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
   `,
 })
 export class Register {
-  protected readonly roles = SELECTABLE_ROLES;
-  protected readonly labels = ROLE_LABELS;
-  protected readonly descriptions = ROLE_DESCRIPTIONS;
-
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
@@ -231,7 +161,6 @@ export class Register {
       email: ['', [Validators.required, Validators.email]],
       password: ['', [Validators.required, Validators.minLength(8)]],
       confirmPassword: ['', [Validators.required]],
-      role: ['customer' as UserRole, [Validators.required]],
       acceptTerms: [false, [Validators.requiredTrue]],
     },
     { validators: passwordsMatch },
@@ -257,11 +186,14 @@ export class Register {
       return;
     }
 
-    const { name, email, password, role } = this.form.getRawValue();
+    const { name, email, password } = this.form.getRawValue();
     this.busy.set(true);
 
     try {
-      const step = await this.auth.signUp(email, password, name, role);
+      // Self sign-up always produces a customer. Organiser and event-helper
+      // access is granted later by an organiser, from the event team page —
+      // never chosen by the visitor at sign-up time.
+      const step = await this.auth.signUp(email, password, name, 'customer');
 
       // A pool that verifies by email always lands here: Cognito has created
       // the user but it cannot sign in until the emailed code is entered.

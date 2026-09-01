@@ -118,6 +118,7 @@ h1 {
 
 .arrow {
   position: absolute;
+  z-index: 3;
   top: 50%;
   transform: translateY(-50%);
   display: grid;
@@ -147,6 +148,7 @@ h1 {
 
 .dots {
   position: absolute;
+  z-index: 3;
   bottom: 1.5rem;
   left: 50%;
   transform: translateX(-50%);

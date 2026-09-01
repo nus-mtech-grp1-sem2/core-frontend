@@ -1,8 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 
-import { COGNITO_CONFIG } from './auth-config';
 import { AuthenticatedUser, CognitoGateway, NextStep } from './cognito-gateway';
-import { UserRole, resolveRole } from './roles';
 
 type Status = 'unknown' | 'authenticated' | 'anonymous';
 
@@ -11,11 +9,14 @@ type Status = 'unknown' | 'authenticated' | 'anonymous';
  *
  * Holds the signed-in user as a signal so the header and route guards react to
  * it, and turns Cognito's exception names into messages a visitor can act on.
+ *
+ * There is no per-user role here: every signed-in account has the same
+ * access, to the storefront, the organiser workspace and the event-helper
+ * workspace alike.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly gateway = inject(CognitoGateway);
-  private readonly config = inject(COGNITO_CONFIG);
 
   private readonly _user = signal<AuthenticatedUser | null>(null);
   private readonly _status = signal<Status>('unknown');
@@ -23,15 +24,6 @@ export class AuthService {
   readonly user = this._user.asReadonly();
   readonly status = this._status.asReadonly();
   readonly isAuthenticated = computed(() => this._status() === 'authenticated');
-
-  /** Role for the signed-in user, derived from their Cognito groups. */
-  readonly role = computed<UserRole | null>(() => {
-    const user = this._user();
-    if (!user) {
-      return null;
-    }
-    return resolveRole(user.groups, user.declaredRole, this.config.trustSelfDeclaredRole);
-  });
 
   /** Restores the session on startup; safe to call more than once. */
   async restore(): Promise<void> {
@@ -80,15 +72,6 @@ export class AuthService {
 
   accessToken(): Promise<string | null> {
     return this.gateway.accessToken();
-  }
-
-  hasGroup(group: string): boolean {
-    return this._user()?.groups.includes(group) ?? false;
-  }
-
-  hasRole(...roles: readonly UserRole[]): boolean {
-    const role = this.role();
-    return role !== null && roles.includes(role);
   }
 
   private apply(user: AuthenticatedUser | null): void {

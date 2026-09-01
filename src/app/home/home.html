@@ -1,4 +1,5 @@
-<app-carousel />
+<app-workspace-shell workspace="customer">
+<app-carousel [slides]="featuredSlides()" />
 
 @if (auth.isAuthenticated()) {
   <section class="shell section" aria-labelledby="orders-heading">
@@ -22,7 +23,7 @@
     </header>
 
     <ul class="orders">
-      @for (order of orders; track order.reference) {
+      @for (order of orders(); track order.reference) {
         <li>
           <div class="order-when">
             <span class="order-date">{{ order.date }}</span>
@@ -91,7 +92,7 @@
   </header>
 
   <ul class="venue-grid">
-    @for (venue of venues; track venue.id) {
+    @for (venue of venues(); track venue.id) {
       <li>
         <a class="venue-card" routerLink="/events">
           <span class="thumb">
@@ -134,7 +135,7 @@
   </header>
 
   <app-ticket-table
-    [tickets]="featuredTickets"
+    [tickets]="featuredTickets()"
     caption="A selection of tickets on sale now"
     (buy)="buy($event)"
   />
@@ -151,3 +152,4 @@
     </div>
   </section>
 }
+</app-workspace-shell>

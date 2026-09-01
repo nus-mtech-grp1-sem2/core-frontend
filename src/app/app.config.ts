@@ -99,10 +99,6 @@ export const appConfig: ApplicationConfig = {
       useValue: {
         userPoolId: 'ap-southeast-1_cgmx4fpO2',
         userPoolClientId: 'gh94lqsterju3qoffje1grep8',
-
-        // TODO: set to false once the PostConfirmation Lambda is deployed, so
-        // roles come only from real Cognito group membership.
-        trustSelfDeclaredRole: true,
       },
     },
   ],

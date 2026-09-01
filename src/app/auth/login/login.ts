@@ -3,7 +3,6 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
 import { AuthService, describeAuthError } from '../../core/auth';
-import { RoleSyncService } from '../../core/role-sync';
 import { AuthShell } from '../auth-shell/auth-shell';
 
 /** Sign-in form, backed by the Cognito user pool. */
@@ -112,7 +111,6 @@ import { AuthShell } from '../auth-shell/auth-shell';
 export class Login {
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
-  private readonly roleSync = inject(RoleSyncService);
   private readonly router = inject(Router);
 
   /** True once the visitor has pressed submit, so errors stay hidden until then. */
@@ -157,29 +155,11 @@ export class Login {
         return;
       }
 
-      await this.grantRequestedRole();
       await this.router.navigateByUrl(this.returnUrl());
     } catch (err) {
       this.error.set(describeAuthError(err));
     } finally {
       this.busy.set(false);
-    }
-  }
-
-  /**
-   * Asks the backend to grant the group for the role chosen at sign-up, then
-   * reloads the tokens so the new claim is visible.
-   *
-   * Sign-in must not fail when this does — an unreachable auth service should
-   * leave the user signed in as a customer, not locked out.
-   */
-  private async grantRequestedRole(): Promise<void> {
-    try {
-      if (await this.roleSync.sync()) {
-        await this.auth.refresh();
-      }
-    } catch (err) {
-      console.warn('role sync unavailable; continuing with existing claims', err);
     }
   }
 

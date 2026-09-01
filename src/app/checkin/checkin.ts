@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { AuthService } from '../core/auth';
+import { ApiService } from '../core/api';
+import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 interface ScanResult {
   readonly code: string;
@@ -9,69 +11,67 @@ interface ScanResult {
   readonly at: string;
 }
 
-/** Ticket codes the sample data recognises, until the ticket service is live. */
-const KNOWN_CODES = new Set(['TKT-1001', 'TKT-1002', 'TKT-1003', 'TKT-1005', 'TKT-1006']);
-
 /**
  * Door workspace for event helpers: enter a ticket code and admit the holder.
- * Scaffolding — validation is against sample codes held in memory, so the
- * session resets on reload.
+ * Validation and duplicate detection are persisted by the ticket service.
  */
 @Component({
   selector: 'app-checkin',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, WorkspaceShell],
   template: `
-    <section class="page-head">
-      <div class="shell">
-        <p class="eyebrow">Event helper</p>
-        <h1>Door check-in</h1>
-        <p class="lead">Signed in as {{ auth.user()?.email }}.</p>
-      </div>
-    </section>
-
-    <section class="shell body">
-      <form [formGroup]="form" (ngSubmit)="scan()" novalidate class="scan">
-        <div class="field">
-          <label for="code">Ticket code</label>
-          <input
-            id="code"
-            type="text"
-            formControlName="code"
-            placeholder="TKT-1001"
-            autocomplete="off"
-          />
+    <app-workspace-shell workspace="event-helper">
+      <section class="page-head">
+        <div class="shell">
+          <p class="eyebrow">Event helper</p>
+          <h1>Door check-in</h1>
+          <p class="lead">Signed in as {{ auth.user()?.email }}.</p>
         </div>
-        <button class="btn btn-primary" type="submit">Check in</button>
-      </form>
+      </section>
 
-      @if (last(); as result) {
-        <p
-          class="verdict"
-          role="status"
-          [class.ok]="result.outcome === 'admitted'"
-          [class.warn]="result.outcome === 'duplicate'"
-          [class.bad]="result.outcome === 'unknown'"
-        >
-          {{ describe(result) }}
-        </p>
-      }
+      <section class="shell body">
+        <form [formGroup]="form" (ngSubmit)="scan()" novalidate class="scan">
+          <div class="field">
+            <label for="code">Ticket code</label>
+            <input
+              id="code"
+              type="text"
+              formControlName="code"
+              placeholder="TKT-1001"
+              autocomplete="off"
+            />
+          </div>
+          <button class="btn btn-primary" type="submit">Check in</button>
+        </form>
 
-      <h2>This session</h2>
-      @if (scans().length) {
-        <ul class="log">
-          @for (scan of scans(); track scan.code + scan.at) {
-            <li>
-              <span class="code">{{ scan.code }}</span>
-              <span class="outcome">{{ describe(scan) }}</span>
-              <span class="at">{{ scan.at }}</span>
-            </li>
-          }
-        </ul>
-      } @else {
-        <p class="empty">No tickets scanned yet.</p>
-      }
-    </section>
+        @if (last(); as result) {
+          <p
+            class="verdict"
+            role="status"
+            [class.ok]="result.outcome === 'admitted'"
+            [class.warn]="result.outcome === 'duplicate'"
+            [class.bad]="result.outcome === 'unknown'"
+          >
+            {{ describe(result) }}
+          </p>
+        }
+
+        <h2>This session</h2>
+        @if (scans().length) {
+          <ul class="log">
+            @for (scan of scans(); track scan.code + scan.at) {
+              <li>
+                <span class="code">{{ scan.code }}</span>
+                <span class="outcome">{{ describe(scan) }}</span>
+                <span class="at">{{ scan.at }}</span>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="empty">No tickets scanned yet.</p>
+        }
+      </section>
+    </app-workspace-shell>
   `,
   styles: `
     .body {
@@ -164,6 +164,7 @@ const KNOWN_CODES = new Set(['TKT-1001', 'TKT-1002', 'TKT-1003', 'TKT-1005', 'TK
 })
 export class Checkin {
   private readonly fb = inject(FormBuilder);
+  private readonly api = inject(ApiService);
   protected readonly auth = inject(AuthService);
 
   protected readonly scans = signal<readonly ScanResult[]>([]);
@@ -179,17 +180,15 @@ export class Checkin {
       return;
     }
 
-    const alreadyScanned = this.scans().some((scan) => scan.code === code);
-    const outcome: ScanResult['outcome'] = !KNOWN_CODES.has(code)
-      ? 'unknown'
-      : alreadyScanned
-        ? 'duplicate'
-        : 'admitted';
-
-    const result: ScanResult = { code, outcome, at: timestamp() };
-    this.scans.update((scans) => [result, ...scans]);
-    this.last.set(result);
-    this.form.reset();
+    this.api.post<{ code: string; outcome: ScanResult['outcome']; at: string }>('ticket', '/check-ins', {
+      code,
+      helperEmail: this.auth.user()?.email ?? '',
+    }).subscribe({
+      next: (response) => this.record({ ...response, at: timestamp(response.at) }),
+      error: (error: { status?: number }) => {
+        if (error.status === 404) this.record({ code, outcome: 'unknown', at: timestamp() });
+      },
+    });
   }
 
   protected describe(result: ScanResult): string {
@@ -202,8 +201,14 @@ export class Checkin {
         return `${result.code} is not a valid ticket`;
     }
   }
+
+  private record(result: ScanResult): void {
+    this.scans.update((scans) => [result, ...scans]);
+    this.last.set(result);
+    this.form.reset();
+  }
 }
 
-function timestamp(): string {
-  return new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' });
+function timestamp(value?: string): string {
+  return new Date(value ?? Date.now()).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' });
 }

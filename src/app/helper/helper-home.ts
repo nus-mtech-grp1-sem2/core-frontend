@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 
 import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
+import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
@@ -37,23 +38,24 @@ interface ShiftView {
 @Component({
   selector: 'app-helper-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [RouterLink, WorkspaceShell],
   template: `
-    <section class="page-head">
-      <div class="shell">
-        <p class="eyebrow">Event helper</p>
-        <h1>{{ greeting() }}</h1>
-        <p class="lead">
-          {{
-            today()
-              ? 'You are on the door tonight. Open check-in when the queue starts moving.'
-              : 'No shift today. Your next one is listed below.'
-          }}
-        </p>
-      </div>
-    </section>
+    <app-workspace-shell workspace="event-helper">
+      <section class="page-head">
+        <div class="shell">
+          <p class="eyebrow">Event helper</p>
+          <h1>{{ greeting() }}</h1>
+          <p class="lead">
+            {{
+              today()
+                ? 'You are on the door tonight. Open check-in when the queue starts moving.'
+                : 'No shift today. Your next one is listed below.'
+            }}
+          </p>
+        </div>
+      </section>
 
-    <section class="shell body">
+      <section class="shell body">
       @switch (status()) {
         @case ('loading') {
           <p class="status-message" role="status">Loading your shifts…</p>
@@ -111,7 +113,8 @@ interface ShiftView {
           </p>
         }
       }
-    </section>
+      </section>
+    </app-workspace-shell>
   `,
   styles: `
     .body {
@@ -119,26 +122,6 @@ interface ShiftView {
       display: flex;
       flex-direction: column;
       gap: 1.5rem;
-    }
-
-    .status-message {
-      color: var(--text-muted);
-      font-size: 0.9375rem;
-    }
-
-    .status-message.error {
-      color: #8c1d18;
-    }
-
-    .retry {
-      margin-left: 0.5rem;
-      font: inherit;
-      color: inherit;
-      text-decoration: underline;
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 0;
     }
 
     .on-now {
@@ -295,7 +278,8 @@ export class HelperHome {
     this.status.set('loading');
     const now = new Date();
 
-    this.api.get<readonly HelperShiftDto[]>('event', '/helper/shifts').subscribe({
+    const email = encodeURIComponent(this.auth.user()?.email ?? '');
+    this.api.get<readonly HelperShiftDto[]>('event', `/helper/shifts?email=${email}`).subscribe({
       next: (shifts) => {
         this.shifts.set(shifts.map((shift) => toShiftView(shift, now)));
         this.status.set('ready');

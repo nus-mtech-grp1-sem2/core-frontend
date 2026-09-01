@@ -1,69 +1,89 @@
-@if (event(); as event) {
-  <section class="page-head">
-    <div class="shell head-grid">
-      <div class="thumb">
-        <img
-          [ngSrc]="event.image"
-          [alt]="event.alt"
-          fill
-          sizes="(max-width: 900px) 100vw, 40vw"
-          priority
-        />
-        <span class="pill category">{{ event.category }}</span>
-      </div>
+<app-workspace-shell workspace="customer">
+@switch (status()) {
+  @case ('loading') {
+    <section class="shell body">
+      <p class="status-message" role="status">Loading event…</p>
+    </section>
+  }
+  @case ('error') {
+    <section class="shell body">
+      <p class="status-message error" role="alert">
+        Couldn't load this event.
+        <button type="button" class="retry" (click)="load(id())">Try again</button>
+      </p>
+    </section>
+  }
+  @case ('not-found') {
+    <section class="shell body not-found">
+      <h1>Event not found</h1>
+      <p>It may have been removed or the link is out of date.</p>
+      <a class="btn btn-primary" routerLink="/events">Back to all events</a>
+    </section>
+  }
+  @case ('ready') {
+    @if (event(); as event) {
+      <section class="page-head">
+        <div class="shell head-grid">
+          <div class="thumb">
+            <img
+              [ngSrc]="event.image"
+              [alt]="event.alt"
+              fill
+              sizes="(max-width: 900px) 100vw, 40vw"
+              priority
+            />
+            <span class="pill category">{{ event.category }}</span>
+          </div>
 
-      <div class="head-copy">
-        <a class="back" routerLink="/events">← All events</a>
-        <h1>{{ event.title }}</h1>
-        <p class="where">{{ event.venue }}</p>
-        <p class="when">{{ event.date }} · {{ event.time }}</p>
-        <span
-          class="pill status"
-          [class.on-sale]="event.status === 'On sale'"
-          [class.few-left]="event.status === 'Few left'"
-          [class.sold-out]="event.status === 'Sold out'"
-          >{{ event.status }}</span
-        >
-      </div>
-    </div>
-  </section>
-
-  <section class="shell body" aria-labelledby="ticket-types-heading">
-    <h2 id="ticket-types-heading">Ticket types</h2>
-
-    @if (ticketTypes().length) {
-      <ul class="type-list">
-        @for (ticket of ticketTypes(); track ticket.id) {
-          <li class="type-row">
-            <span class="type-name">{{ ticket.section }}</span>
-            <span class="type-price">{{ ticket.price | currency: 'SGD' : 'S$' : '1.0-0' }}</span>
+          <div class="head-copy">
+            <a class="back" routerLink="/events">← All events</a>
+            <h1>{{ event.title }}</h1>
+            <p class="where">{{ event.venue }}</p>
+            <p class="when">{{ event.date }} · {{ event.time }}</p>
             <span
               class="pill status"
-              [class.on-sale]="ticket.status === 'On sale'"
-              [class.few-left]="ticket.status === 'Few left'"
-              [class.sold-out]="ticket.status === 'Sold out'"
-              >{{ ticket.status }}</span
+              [class.on-sale]="event.status === 'On sale'"
+              [class.few-left]="event.status === 'Few left'"
+              [class.sold-out]="event.status === 'Sold out'"
+              >{{ event.status }}</span
             >
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              [disabled]="ticket.status === 'Sold out'"
-              (click)="buy(ticket)"
-            >
-              {{ ticket.status === 'Sold out' ? 'Sold out' : 'Buy' }}
-              <span class="visually-hidden"> — {{ ticket.section }}, {{ event.title }}</span>
-            </button>
-          </li>
+          </div>
+        </div>
+      </section>
+
+      <section class="shell body" aria-labelledby="ticket-types-heading">
+        <h2 id="ticket-types-heading">Ticket types</h2>
+
+        @if (event.ticketTypes.length) {
+          <ul class="type-list">
+            @for (ticket of event.ticketTypes; track ticket.id) {
+              <li class="type-row">
+                <span class="type-name">{{ ticket.section }}</span>
+                <span class="type-price">{{ ticket.price | currency: 'SGD' : 'S$' : '1.0-0' }}</span>
+                <span
+                  class="pill status"
+                  [class.on-sale]="ticket.status === 'On sale'"
+                  [class.few-left]="ticket.status === 'Few left'"
+                  [class.sold-out]="ticket.status === 'Sold out'"
+                  >{{ ticket.status }}</span
+                >
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  [disabled]="ticket.status === 'Sold out'"
+                  (click)="buy(ticket)"
+                >
+                  {{ ticket.status === 'Sold out' ? 'Sold out' : 'Buy' }}
+                  <span class="visually-hidden"> — {{ ticket.section }}, {{ event.title }}</span>
+                </button>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="empty">No ticket types are on sale for this event yet.</p>
         }
-      </ul>
-    } @else {
-      <p class="empty">No ticket types are on sale for this event yet.</p>
+      </section>
     }
-  </section>
-} @else {
-  <section class="shell body not-found">
-    <h1>Event not found</h1>
-    <p>It may have been removed or the link is out of date.</p>
-    <a class="btn btn-primary" routerLink="/events">Back to all events</a>
-  </section>
+  }
 }
+</app-workspace-shell>
