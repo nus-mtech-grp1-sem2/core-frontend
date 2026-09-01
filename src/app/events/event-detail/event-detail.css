@@ -104,6 +104,40 @@
   font-weight: 600;
 }
 
+.table-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  background: var(--bg);
+}
+
+.table-card table {
+  width: 100%;
+  min-width: 40rem;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.table-card th,
+.table-card td {
+  text-align: left;
+  padding: 0.875rem 1.25rem;
+}
+
+.table-card thead th {
+  background: var(--bg-subtle);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.table-card tbody tr + tr th,
+.table-card tbody tr + tr td {
+  border-top: 1px solid var(--border);
+}
+
 .empty {
   padding-block: 2.5rem;
   text-align: center;

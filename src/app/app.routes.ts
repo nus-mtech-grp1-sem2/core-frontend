@@ -58,6 +58,18 @@ export const routes: Routes = [
     loadComponent: () => import('./auth/confirm/confirm').then((m) => m.Confirm),
   },
   {
+    path: 'forgot-password',
+    title: 'Reset your password — OneStage',
+    loadComponent: () =>
+      import('./auth/forgot-password/forgot-password').then((m) => m.ForgotPassword),
+  },
+  {
+    path: 'reset-password',
+    title: 'Reset your password — OneStage',
+    loadComponent: () =>
+      import('./auth/forgot-password/forgot-password').then((m) => m.ForgotPassword),
+  },
+  {
     path: 'health',
     title: 'Backend health — OneStage',
     loadComponent: () => import('./backend-health/backend-health').then((m) => m.BackendHealth),

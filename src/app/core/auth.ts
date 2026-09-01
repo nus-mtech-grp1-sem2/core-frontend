@@ -1,10 +1,18 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 
 import { COGNITO_CONFIG } from './auth-config';
+import { ApiService } from './api';
 import { AuthenticatedUser, CognitoGateway, NextStep } from './cognito-gateway';
 import { UserRole, resolveRole } from './roles';
 
 type Status = 'unknown' | 'authenticated' | 'anonymous';
+
+interface RegistrationDraft {
+  readonly email: string;
+  readonly name: string;
+  readonly password: string;
+}
 
 /**
  * Application-facing auth state.
@@ -16,21 +24,34 @@ type Status = 'unknown' | 'authenticated' | 'anonymous';
 export class AuthService {
   private readonly gateway = inject(CognitoGateway);
   private readonly config = inject(COGNITO_CONFIG);
+  private readonly api = inject(ApiService);
 
   private readonly _user = signal<AuthenticatedUser | null>(null);
   private readonly _status = signal<Status>('unknown');
+  private readonly _demoRole = signal<UserRole | null>(null);
+  private registrationDraft: RegistrationDraft | null = null;
 
   readonly user = this._user.asReadonly();
   readonly status = this._status.asReadonly();
   readonly isAuthenticated = computed(() => this._status() === 'authenticated');
 
-  /** Role for the signed-in user, derived from their Cognito groups. */
+  /**
+   * Local demo role override used when a developer selects a login type in the
+   * browser for testing. This is never authoritative authorization; it only
+   * drives the UI state in a local development session.
+   */
   readonly role = computed<UserRole | null>(() => {
     const user = this._user();
     if (!user) {
       return null;
     }
-    return resolveRole(user.groups, user.declaredRole, this.config.trustSelfDeclaredRole);
+
+    const demoRole = this._demoRole();
+    if (demoRole) {
+      return demoRole;
+    }
+
+    return resolveRole([], null, this.config.trustSelfDeclaredRole);
   });
 
   /** Restores the session on startup; safe to call more than once. */
@@ -56,8 +77,37 @@ export class AuthService {
     const result = await this.gateway.signIn(email, password);
     if (result.signedIn) {
       await this.restore();
+      this.recordLogin();
     }
     return result.nextStep;
+  }
+
+  /**
+   * Best-effort login audit call. Fire-and-forget and always swallows its own
+   * errors: a network hiccup or backend outage must never stop a sign-in that
+   * Cognito already approved.
+   */
+  private recordLogin(): void {
+    this.gateway
+      .idToken()
+      .then((token) =>
+        token
+          ? firstValueFrom(
+              this.api.post('auth', '/login-history', {}, {
+                headers: { Authorization: `Bearer ${token}` },
+              }),
+            )
+          : undefined,
+      )
+      .catch(() => {});
+  }
+
+  setDemoRole(role: UserRole): void {
+    this._demoRole.set(role);
+  }
+
+  clearDemoRole(): void {
+    this._demoRole.set(null);
   }
 
   async signUp(email: string, password: string, name: string, role: string): Promise<NextStep> {
@@ -65,16 +115,45 @@ export class AuthService {
     return result.nextStep;
   }
 
+  rememberRegistration(email: string, name: string, password: string): void {
+    this.registrationDraft = { email, name, password };
+  }
+
+  registrationDetails(email: string): { name: string; password: string } | null {
+    if (!this.registrationDraft || this.registrationDraft.email !== email) {
+      return null;
+    }
+    return { name: this.registrationDraft.name, password: this.registrationDraft.password };
+  }
+
+  clearRegistration(): void {
+    this.registrationDraft = null;
+  }
+
   async confirmSignUp(email: string, code: string): Promise<boolean> {
     return this.gateway.confirmSignUp(email, code);
+  }
+
+  /** Creates the `users` row (see backend-repo/database/TABLES.md §1); auth stays with Cognito. */
+  async createUser(name: string, email?: string): Promise<void> {
+    await firstValueFrom(this.api.post('auth', '/users', { name, ...(email ? { email } : {}) }));
   }
 
   async resendCode(email: string): Promise<void> {
     await this.gateway.resendCode(email);
   }
 
+  async forgotPassword(email: string): Promise<void> {
+    await this.gateway.forgotPassword(email);
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string): Promise<void> {
+    await this.gateway.resetPassword(email, code, newPassword);
+  }
+
   async signOut(): Promise<void> {
     await this.gateway.signOut();
+    this.clearDemoRole();
     this.apply(null);
   }
 

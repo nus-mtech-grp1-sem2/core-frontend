@@ -28,8 +28,11 @@ import { RouterLink } from '@angular/router';
           </span>
           <p class="name">OneStage</p>
           <p class="tagline">
-            Concerts, sports and theatre tickets across Singapore and the region.
+            Concerts, sports and theatre tickets across Singapore and the region.           
           </p>
+          <p class="tagline">
+             ✉️ <a href="mailto:onestagecontacts@gmail.com">onestagecontacts@gmail.com</a>
+           </p>
         </div>
 
         <nav class="columns" aria-label="Footer">

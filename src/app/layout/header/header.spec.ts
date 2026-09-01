@@ -3,13 +3,14 @@ import { provideRouter } from '@angular/router';
 
 import { AuthService } from '../../core/auth';
 import { AuthenticatedUser, CognitoGateway } from '../../core/cognito-gateway';
+import { UserRole } from '../../core/roles';
 import { Header } from './header';
 
 function user(groups: readonly string[]): AuthenticatedUser {
   return { sub: 's', email: 'someone@example.com', groups, declaredRole: null };
 }
 
-async function navFor(current: AuthenticatedUser | null) {
+async function navFor(current: AuthenticatedUser | null, demoRole?: UserRole) {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [Header],
@@ -22,7 +23,11 @@ async function navFor(current: AuthenticatedUser | null) {
     ],
   });
 
-  await TestBed.inject(AuthService).restore();
+  const auth = TestBed.inject(AuthService);
+  await auth.restore();
+  if (demoRole) {
+    auth.setDemoRole(demoRole);
+  }
   const fixture = TestBed.createComponent(Header);
   await fixture.whenStable();
   const host = fixture.nativeElement as HTMLElement;
@@ -44,35 +49,34 @@ describe('Header navigation', () => {
     expect(host.textContent).toContain('Register');
   });
 
-  it('offers the same storefront to a customer, with their account actions', async () => {
+  it('offers only Tickets to a customer, with their account actions', async () => {
     const { labels, hasSearch, host } = await navFor(user(['customer']));
 
-    expect(labels).toEqual(['Events', 'Tickets']);
+    expect(labels).toEqual(['Tickets']);
     expect(hasSearch).toBe(true);
     expect(host.textContent).toContain('Sign out');
     expect(host.textContent).not.toContain('Login');
   });
 
-  it('gives an organiser only their dashboard, and no search box', async () => {
-    const { labels, hasSearch } = await navFor(user(['organiser']));
+  it('gives an organiser (admin) only Events, and no search box', async () => {
+    const { labels, hasSearch } = await navFor(user(['organiser']), 'organiser');
 
-    expect(labels).toEqual(['Dashboard']);
+    expect(labels).toEqual(['Events']);
     expect(labels).not.toContain('Tickets');
-    expect(labels).not.toContain('Events');
     expect(hasSearch).toBe(false);
   });
 
-  it('gives an event helper only their two screens', async () => {
-    const { labels, hasSearch } = await navFor(user(['event-helper']));
+  it('gives an event helper only Events', async () => {
+    const { labels, hasSearch } = await navFor(user(['event-helper']), 'event-helper');
 
-    expect(labels).toEqual(['My shifts', 'Check-in']);
-    expect(labels).not.toContain('Dashboard');
+    expect(labels).toEqual(['Events']);
+    expect(labels).not.toContain('Tickets');
     expect(hasSearch).toBe(false);
   });
 
   it('shows the role badge next to the signed-in email', async () => {
-    const { host } = await navFor(user(['event-helper']));
+    const { host } = await navFor(user(['event-helper']), 'event-helper');
 
-    expect(host.querySelector('.role')?.textContent?.trim()).toBe('Event helper');
+    expect(host.querySelector('.role')?.textContent?.trim()).toBe('Event Helper');
   });
 });

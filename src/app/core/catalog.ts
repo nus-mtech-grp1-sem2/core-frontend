@@ -42,6 +42,8 @@ export interface EventListing {
   readonly date: string;
   readonly time: string;
   readonly priceFrom: number;
+  readonly totalCapacity?: number;
+  readonly ticketType?: string;
   readonly image: string;
   readonly alt: string;
   readonly status: 'On sale' | 'Few left' | 'Sold out';
@@ -380,6 +382,76 @@ export interface Order {
   readonly seats: string;
   readonly quantity: number;
 }
+
+/** One customer's ticket purchase for an event — shown to event helpers on the door. */
+export interface Attendee {
+  readonly id: string;
+  readonly eventId: number;
+  readonly customerName: string;
+  readonly email: string;
+  readonly section: string;
+  readonly quantity: number;
+  readonly purchaseDate: string;
+  readonly checkedIn: boolean;
+}
+
+/**
+ * Placeholder purchase records standing in for the `order`/`ticket` service.
+ * Event helpers use this to see who bought tickets for the event they are
+ * working, ahead of scanning them in at `/checkin`.
+ */
+export const ATTENDEES: readonly Attendee[] = [
+  {
+    id: 'ATT-1',
+    eventId: 1,
+    customerName: 'Wei Ling Tan',
+    email: 'weiling.tan@example.com',
+    section: 'Cat 1 — Floor',
+    quantity: 2,
+    purchaseDate: 'Fri 01 Aug 2026',
+    checkedIn: true,
+  },
+  {
+    id: 'ATT-2',
+    eventId: 1,
+    customerName: 'Marcus Lee',
+    email: 'marcus.lee@example.com',
+    section: 'General Admission',
+    quantity: 1,
+    purchaseDate: 'Sun 03 Aug 2026',
+    checkedIn: false,
+  },
+  {
+    id: 'ATT-3',
+    eventId: 1,
+    customerName: 'Aisyah Rahman',
+    email: 'aisyah.rahman@example.com',
+    section: 'General Admission',
+    quantity: 4,
+    purchaseDate: 'Wed 06 Aug 2026',
+    checkedIn: false,
+  },
+  {
+    id: 'ATT-4',
+    eventId: 2,
+    customerName: 'Priya Nair',
+    email: 'priya.nair@example.com',
+    section: 'North Stand',
+    quantity: 3,
+    purchaseDate: 'Tue 12 Aug 2026',
+    checkedIn: false,
+  },
+  {
+    id: 'ATT-5',
+    eventId: 3,
+    customerName: 'Daniel Ong',
+    email: 'daniel.ong@example.com',
+    section: 'Circle',
+    quantity: 2,
+    purchaseDate: 'Mon 18 Aug 2026',
+    checkedIn: true,
+  },
+];
 
 export const MY_ORDERS: readonly Order[] = [
   {

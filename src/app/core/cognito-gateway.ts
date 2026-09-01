@@ -1,8 +1,10 @@
 import { Injectable } from '@angular/core';
 import {
+  confirmResetPassword,
   confirmSignUp,
   fetchAuthSession,
   resendSignUpCode,
+  resetPassword,
   signIn,
   signOut,
   signUp,
@@ -34,7 +36,11 @@ export interface SignInResult {
 @Injectable({ providedIn: 'root' })
 export class CognitoGateway {
   async signIn(email: string, password: string): Promise<SignInResult> {
-    const result = await signIn({ username: email, password });
+    const result = await signIn({
+      username: email,
+      password,
+      options: { authFlowType: 'USER_PASSWORD_AUTH' },
+    });
     return { signedIn: result.isSignedIn, nextStep: mapStep(result.nextStep.signInStep) };
   }
 
@@ -66,6 +72,14 @@ export class CognitoGateway {
     await resendSignUpCode({ username: email });
   }
 
+  async forgotPassword(email: string): Promise<void> {
+    await resetPassword({ username: email });
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string): Promise<void> {
+    await confirmResetPassword({ username: email, confirmationCode: code, newPassword });
+  }
+
   async signOut(): Promise<void> {
     await signOut();
   }
@@ -74,6 +88,12 @@ export class CognitoGateway {
   async accessToken(): Promise<string | null> {
     const session = await fetchAuthSession();
     return session.tokens?.accessToken.toString() ?? null;
+  }
+
+  /** The ID token contains the verified email used to link a profile to its Cognito sub. */
+  async idToken(): Promise<string | null> {
+    const session = await fetchAuthSession();
+    return session.tokens?.idToken?.toString() ?? null;
   }
 
   /**

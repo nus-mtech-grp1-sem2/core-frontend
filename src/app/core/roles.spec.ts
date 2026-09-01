@@ -7,48 +7,18 @@ import { AuthenticatedUser, CognitoGateway } from './cognito-gateway';
 import { resolveRole, roleFromGroups } from './roles';
 
 describe('roleFromGroups', () => {
-  it('treats a user with no groups as a customer', () => {
+  it('never treats Cognito groups as the application authorization source', () => {
     expect(roleFromGroups([])).toBe('customer');
-  });
-
-  it('reads each role from its Cognito group', () => {
-    expect(roleFromGroups(['organiser'])).toBe('organiser');
-    expect(roleFromGroups(['event-helper'])).toBe('event-helper');
+    expect(roleFromGroups(['organiser'])).toBe('customer');
+    expect(roleFromGroups(['event-helper'])).toBe('customer');
     expect(roleFromGroups(['customer'])).toBe('customer');
-  });
-
-  it('gives the most privileged role when a user is in several groups', () => {
-    expect(roleFromGroups(['customer', 'event-helper', 'organiser'])).toBe('organiser');
-    expect(roleFromGroups(['customer', 'event-helper'])).toBe('event-helper');
-  });
-
-  it('ignores casing and stray whitespace from the pool', () => {
-    expect(roleFromGroups([' Organiser '])).toBe('organiser');
-  });
-
-  it('ignores groups it does not know', () => {
-    expect(roleFromGroups(['admin', 'finance'])).toBe('customer');
   });
 });
 
 describe('resolveRole', () => {
-  it('prefers real group membership over the declared attribute', () => {
-    expect(resolveRole(['customer'], 'organiser', true)).toBe('customer');
-    expect(resolveRole(['organiser'], 'customer', true)).toBe('organiser');
-  });
-
-  it('falls back to the declared role only when the user has no groups', () => {
-    expect(resolveRole([], 'organiser', true)).toBe('organiser');
-    expect(resolveRole([], 'event-helper', true)).toBe('event-helper');
-  });
-
-  it('ignores the declared role when the build does not trust it', () => {
-    expect(resolveRole([], 'organiser', false)).toBe('customer');
-  });
-
-  it('ignores a declared role that is not a real role', () => {
-    expect(resolveRole([], 'admin', true)).toBe('customer');
+  it('defaults to a customer role until the backend customer record is loaded', () => {
     expect(resolveRole([], null, true)).toBe('customer');
+    expect(resolveRole(['organiser'], 'customer', true)).toBe('customer');
   });
 });
 

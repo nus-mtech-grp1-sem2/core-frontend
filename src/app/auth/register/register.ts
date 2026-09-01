@@ -9,12 +9,6 @@ import {
 import { Router, RouterLink } from '@angular/router';
 
 import { AuthService, describeAuthError } from '../../core/auth';
-import {
-  ROLE_DESCRIPTIONS,
-  ROLE_LABELS,
-  SELECTABLE_ROLES,
-  UserRole,
-} from '../../core/roles';
 import { AuthShell } from '../auth-shell/auth-shell';
 
 /** Group validator: the two password fields must match. */
@@ -74,14 +68,26 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
 
         <div class="field">
           <label for="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            autocomplete="new-password"
-            formControlName="password"
-            [attr.aria-invalid]="invalid('password')"
-            aria-describedby="password-hint"
-          />
+          <div class="password-control">
+            <input
+              id="password"
+              [type]="showPassword() ? 'text' : 'password'"
+              autocomplete="new-password"
+              formControlName="password"
+              [attr.aria-invalid]="invalid('password')"
+              aria-describedby="password-hint"
+            />
+            <button
+              class="password-toggle"
+              type="button"
+              [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+              [attr.aria-pressed]="showPassword()"
+              [title]="showPassword() ? 'Hide password' : 'Show password'"
+              (click)="showPassword.set(!showPassword())"
+            >
+              <span class="eye-icon" aria-hidden="true"></span>
+            </button>
+          </div>
           <p class="field-hint" id="password-hint">At least 8 characters.</p>
           @if (invalid('password')) {
             <p class="field-error">Your password must be at least 8 characters.</p>
@@ -90,31 +96,30 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
 
         <div class="field">
           <label for="confirmPassword">Confirm password</label>
-          <input
-            id="confirmPassword"
-            type="password"
-            autocomplete="new-password"
-            formControlName="confirmPassword"
-            [attr.aria-invalid]="mismatch()"
-            [attr.aria-describedby]="mismatch() ? 'confirm-error' : null"
-          />
+          <div class="password-control">
+            <input
+              id="confirmPassword"
+              [type]="showConfirmPassword() ? 'text' : 'password'"
+              autocomplete="new-password"
+              formControlName="confirmPassword"
+              [attr.aria-invalid]="mismatch()"
+              [attr.aria-describedby]="mismatch() ? 'confirm-error' : null"
+            />
+            <button
+              class="password-toggle"
+              type="button"
+              [attr.aria-label]="showConfirmPassword() ? 'Hide password' : 'Show password'"
+              [attr.aria-pressed]="showConfirmPassword()"
+              [title]="showConfirmPassword() ? 'Hide password' : 'Show password'"
+              (click)="showConfirmPassword.set(!showConfirmPassword())"
+            >
+              <span class="eye-icon" aria-hidden="true"></span>
+            </button>
+          </div>
           @if (mismatch()) {
             <p class="field-error" id="confirm-error">Both passwords must match.</p>
           }
         </div>
-
-        <fieldset class="roles">
-          <legend>How will you use OneStage?</legend>
-          @for (role of roles; track role) {
-            <label class="role-option" [class.selected]="form.controls.role.value === role">
-              <input type="radio" [value]="role" formControlName="role" />
-              <span>
-                <span class="role-name">{{ labels[role] }}</span>
-                <span class="role-detail">{{ descriptions[role] }}</span>
-              </span>
-            </label>
-          }
-        </fieldset>
 
         <label class="checkbox">
           <input
@@ -172,6 +177,59 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
       accent-color: var(--brand-500);
     }
 
+    .password-control {
+      position: relative;
+      width: 100%;
+    }
+
+    .password-control input {
+      box-sizing: border-box;
+      width: 100%;
+      padding-right: 3.25rem;
+    }
+
+    .password-toggle {
+      position: absolute;
+      top: 50%;
+      right: 0.75rem;
+      display: grid;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      place-items: center;
+      border: 0;
+      border-radius: 0.35rem;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transform: translateY(-50%);
+    }
+
+    .password-toggle:hover,
+    .password-toggle:focus-visible {
+      color: var(--brand-600);
+      background: var(--surface-muted);
+    }
+
+    .eye-icon {
+      display: block;
+      width: 1.15rem;
+      height: 0.72rem;
+      border: 1.8px solid currentColor;
+      border-radius: 75% 15%;
+      transform: rotate(45deg);
+    }
+
+    .eye-icon::after {
+      display: block;
+      width: 0.32rem;
+      height: 0.32rem;
+      margin: 0.08rem auto;
+      border-radius: 50%;
+      background: currentColor;
+      content: '';
+    }
+
     .role-name {
       display: block;
       font-size: 0.9375rem;
@@ -212,10 +270,6 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
   `,
 })
 export class Register {
-  protected readonly roles = SELECTABLE_ROLES;
-  protected readonly labels = ROLE_LABELS;
-  protected readonly descriptions = ROLE_DESCRIPTIONS;
-
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
@@ -224,6 +278,8 @@ export class Register {
   protected readonly attempted = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  protected readonly showPassword = signal(false);
+  protected readonly showConfirmPassword = signal(false);
 
   protected readonly form = this.fb.nonNullable.group(
     {
@@ -231,7 +287,6 @@ export class Register {
       email: ['', [Validators.required, Validators.email]],
       password: ['', [Validators.required, Validators.minLength(8)]],
       confirmPassword: ['', [Validators.required]],
-      role: ['customer' as UserRole, [Validators.required]],
       acceptTerms: [false, [Validators.requiredTrue]],
     },
     { validators: passwordsMatch },
@@ -257,16 +312,17 @@ export class Register {
       return;
     }
 
-    const { name, email, password, role } = this.form.getRawValue();
+    const { name, email, password } = this.form.getRawValue();
     this.busy.set(true);
 
     try {
-      const step = await this.auth.signUp(email, password, name, role);
+      const step = await this.auth.signUp(email, password, name, 'customer');
+      this.auth.rememberRegistration(email, name, password);
 
       // A pool that verifies by email always lands here: Cognito has created
       // the user but it cannot sign in until the emailed code is entered.
       await this.router.navigate(['/confirm'], {
-        queryParams: { email, ...(step === 'done' ? { confirmed: 'true' } : {}) },
+        queryParams: { email, name, ...(step === 'done' ? { confirmed: 'true' } : {}) },
       });
     } catch (err) {
       this.error.set(describeAuthError(err));

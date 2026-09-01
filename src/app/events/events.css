@@ -18,7 +18,49 @@
 .count {
   font-size: 0.875rem;
   color: var(--text-muted);
+  margin-inline-end: auto;
 }
+
+.new-event-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1rem;
+  align-items: end;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.new-event-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.new-event-form label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.new-event-form input,
+.new-event-form select {
+  font: inherit;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg);
+  color: inherit;
+}
+
+.delete {
+  margin-top: 0.75rem;
+  align-self: flex-start;
+}
+
 
 .event-grid {
   list-style: none;

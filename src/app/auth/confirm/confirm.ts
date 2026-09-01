@@ -64,6 +64,23 @@ import { AuthShell } from '../auth-shell/auth-shell';
         </button>
         · <a routerLink="/login">Back to sign in</a>
       </p>
+
+      <p class="contact-info">
+        <svg
+          class="email-icon"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+        >
+          <path
+            d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z"
+          />
+          <path
+            d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z"
+          />
+        </svg>
+        <a href="mailto:onestagecontacts@gmail.com">onestagecontacts@gmail.com</a>
+      </p>
     </app-auth-shell>
   `,
   styles: `
@@ -95,6 +112,33 @@ import { AuthShell } from '../auth-shell/auth-shell';
 
     .alt-action a:hover,
     .linklike:hover {
+      text-decoration: underline;
+    }
+
+    .contact-info {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border, #e5e7eb);
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+
+    .email-icon {
+      width: 1rem;
+      height: 1rem;
+      flex-shrink: 0;
+    }
+
+    .contact-info a {
+      color: var(--brand-600);
+      text-decoration: none;
+    }
+
+    .contact-info a:hover {
       text-decoration: underline;
     }
   `,
@@ -137,13 +181,25 @@ export class Confirm {
     }
 
     const { email, code } = this.form.getRawValue();
+    const registration = this.auth.registrationDetails(email);
     this.busy.set(true);
 
     try {
+      if (!registration) {
+        throw new Error('Registration session expired. Please register again.');
+      }
+
       await this.auth.confirmSignUp(email, code);
-      await this.router.navigate(['/login'], { queryParams: { confirmed: 'true' } });
+      // Create the users-table row before the visitor signs in again.
+      // The confirmation step does not yet have a Cognito session, so we send the
+      // email along with the name and let the backend create the profile row.
+      await this.auth.createUser(registration.name, email);
+      this.auth.clearRegistration();
+      await this.router.navigate(['/login'], {
+        queryParams: { confirmed: 'true', email },
+      });
     } catch (err) {
-      this.error.set(describeAuthError(err));
+      this.error.set(describeConfirmationError(err));
     } finally {
       this.busy.set(false);
     }
@@ -169,4 +225,23 @@ export class Confirm {
       this.busy.set(false);
     }
   }
+}
+
+function describeConfirmationError(error: unknown): string {
+  const message = describeAuthError(error);
+  if (message !== 'Something went wrong. Please try again.') {
+    return message;
+  }
+
+  const status = (error as { status?: number })?.status;
+  if (status === 401) {
+    return 'Your account was confirmed, but the sign-in session could not be created. Return to login and try again.';
+  }
+  if (status === 502 || status === 503) {
+    return 'Your account was confirmed, but the customer database is temporarily unavailable.';
+  }
+  if ((error as { message?: string })?.message?.includes('Registration session expired')) {
+    return 'This registration session expired. Please register again.';
+  }
+  return message;
 }

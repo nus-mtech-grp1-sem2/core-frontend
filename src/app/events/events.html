@@ -27,7 +27,76 @@
     </div>
 
     <p class="count" aria-live="polite">{{ events().length }} events</p>
+
+    @if (isAdmin()) {
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        [attr.aria-expanded]="showNewEventForm()"
+        aria-controls="new-event-form"
+        (click)="toggleNewEventForm()"
+      >
+        {{ showNewEventForm() ? 'Cancel' : 'New event' }}
+      </button>
+    }
   </div>
+
+  @if (isAdmin() && showNewEventForm()) {
+    <form
+      id="new-event-form"
+      class="new-event-form"
+      [formGroup]="newEventForm"
+      (ngSubmit)="addEvent()"
+    >
+      <h2 class="visually-hidden">Add a new event</h2>
+
+      <div class="field">
+        <label for="new-event-title">Title</label>
+        <input id="new-event-title" type="text" formControlName="title" required />
+      </div>
+
+      <div class="field">
+        <label for="new-event-category">Category</label>
+        <select id="new-event-category" formControlName="category">
+          <option value="Concerts">Concerts</option>
+          <option value="Sports">Sports</option>
+          <option value="Theatre">Theatre</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="new-event-venue">Venue</label>
+        <input id="new-event-venue" type="text" formControlName="venue" required />
+      </div>
+
+      <div class="field">
+        <label for="new-event-date">Date</label>
+        <input id="new-event-date" type="text" formControlName="date" placeholder="Fri 12 Sep 2026" required />
+      </div>
+
+      <div class="field">
+        <label for="new-event-time">Time</label>
+        <input id="new-event-time" type="text" formControlName="time" placeholder="8:00 PM" required />
+      </div>
+
+      <div class="field">
+        <label for="new-event-price">Price from (S$)</label>
+        <input id="new-event-price" type="number" min="0" formControlName="priceFrom" required />
+      </div>
+
+      <div class="field">
+        <label for="new-event-seats">Total seats</label>
+        <input id="new-event-seats" type="number" min="1" formControlName="totalCapacity" required />
+      </div>
+
+      <div class="field">
+        <label for="new-event-type">Ticket type</label>
+        <input id="new-event-type" type="text" placeholder="e.g. Standard, VIP, Economy" formControlName="ticketType" required />
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-sm">Add event</button>
+    </form>
+  }
 
   <ul class="event-grid">
     @for (event of events(); track event.id) {
@@ -68,6 +137,17 @@
               >{{ event.status }}</span
             >
           </div>
+
+          @if (isAdmin()) {
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm delete"
+              (click)="deleteEvent(event.id)"
+            >
+              Delete
+              <span class="visually-hidden"> — {{ event.title }}</span>
+            </button>
+          }
         </div>
       </li>
     } @empty {
@@ -75,3 +155,4 @@
     }
   </ul>
 </section>
+

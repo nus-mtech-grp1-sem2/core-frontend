@@ -28,8 +28,13 @@ export class ApiService {
     return this.http.get<T>(this.url(service, path));
   }
 
-  post<T>(service: BackendService, path: string, body: unknown): Observable<T> {
-    return this.http.post<T>(this.url(service, path), body);
+  post<T>(
+    service: BackendService,
+    path: string,
+    body: unknown,
+    options?: { headers?: Record<string, string> },
+  ): Observable<T> {
+    return this.http.post<T>(this.url(service, path), body, options);
   }
 
   put<T>(service: BackendService, path: string, body: unknown): Observable<T> {

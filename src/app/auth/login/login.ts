@@ -3,7 +3,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
 import { AuthService, describeAuthError } from '../../core/auth';
-import { RoleSyncService } from '../../core/role-sync';
+import { UserRole } from '../../core/roles';
 import { AuthShell } from '../auth-shell/auth-shell';
 
 /** Sign-in form, backed by the Cognito user pool. */
@@ -21,6 +21,9 @@ import { AuthShell } from '../auth-shell/auth-shell';
     >
       @if (error()) {
         <p class="form-error-banner" role="alert">{{ error() }}</p>
+      }
+      @if (notice()) {
+        <p class="form-notice" role="status">{{ notice() }}</p>
       }
 
       <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
@@ -41,20 +44,48 @@ import { AuthShell } from '../auth-shell/auth-shell';
 
         <div class="field">
           <label for="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            autocomplete="current-password"
-            formControlName="password"
-            [attr.aria-invalid]="invalid('password')"
-            [attr.aria-describedby]="invalid('password') ? 'password-error' : null"
-          />
+          <div class="password-control">
+            <input
+              id="password"
+              [type]="showPassword() ? 'text' : 'password'"
+              autocomplete="current-password"
+              formControlName="password"
+              [attr.aria-invalid]="invalid('password')"
+              [attr.aria-describedby]="invalid('password') ? 'password-error' : null"
+            />
+            <button
+              class="password-toggle"
+              type="button"
+              [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+              [attr.aria-pressed]="showPassword()"
+              [title]="showPassword() ? 'Hide password' : 'Show password'"
+              (click)="showPassword.set(!showPassword())"
+            >
+              <span class="eye-icon" aria-hidden="true"></span>
+            </button>
+          </div>
           @if (invalid('password')) {
             <p class="field-error" id="password-error">
               Your password must be at least 8 characters.
             </p>
           }
         </div>
+
+        <fieldset class="login-type-group" aria-label="Demo login type">
+          <legend>Login as</legend>
+          <label class="login-option">
+            <input type="radio" formControlName="loginType" value="customer" />
+            <span>Customer</span>
+          </label>
+          <label class="login-option">
+            <input type="radio" formControlName="loginType" value="event-helper" />
+            <span>Event Helper</span>
+          </label>
+          <label class="login-option">
+            <input type="radio" formControlName="loginType" value="organiser" />
+            <span>Admin</span>
+          </label>
+        </fieldset>
 
         <div class="row">
           <label class="checkbox">
@@ -63,6 +94,10 @@ import { AuthShell } from '../auth-shell/auth-shell';
           </label>
           <a class="link" routerLink="/register">Need an account?</a>
         </div>
+
+        <p class="secondary-action">
+          <a class="link" routerLink="/forgot-password">Forgot password?</a>
+        </p>
 
         <button class="btn btn-primary submit" type="submit" [disabled]="busy()">
           {{ busy() ? 'Signing in…' : 'Sign in' }}
@@ -73,6 +108,36 @@ import { AuthShell } from '../auth-shell/auth-shell';
     </app-auth-shell>
   `,
   styles: `
+    .login-type-group {
+      border: 0;
+      margin: 0 0 1.25rem;
+      padding: 0;
+      display: grid;
+      gap: 0.625rem;
+    }
+
+    .login-type-group legend {
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .login-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.625rem 0.75rem;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+    }
+
+    .login-option input {
+      accent-color: var(--brand-500);
+    }
+
     .row {
       display: flex;
       align-items: center;
@@ -83,6 +148,63 @@ import { AuthShell } from '../auth-shell/auth-shell';
 
     .row .checkbox {
       margin-bottom: 0;
+    }
+
+    .secondary-action {
+      margin-bottom: 1.25rem;
+    }
+
+    .password-control {
+      position: relative;
+      width: 100%;
+    }
+
+    .password-control input {
+      box-sizing: border-box;
+      width: 100%;
+      padding-right: 3.25rem;
+    }
+
+    .password-toggle {
+      position: absolute;
+      top: 50%;
+      right: 0.75rem;
+      display: grid;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      place-items: center;
+      border: 0;
+      border-radius: 0.35rem;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transform: translateY(-50%);
+    }
+
+    .password-toggle:hover,
+    .password-toggle:focus-visible {
+      color: var(--brand-600);
+      background: var(--surface-muted);
+    }
+
+    .eye-icon {
+      display: block;
+      width: 1.15rem;
+      height: 0.72rem;
+      border: 1.8px solid currentColor;
+      border-radius: 75% 15%;
+      transform: rotate(45deg);
+    }
+
+    .eye-icon::after {
+      display: block;
+      width: 0.32rem;
+      height: 0.32rem;
+      margin: 0.08rem auto;
+      border-radius: 50%;
+      background: currentColor;
+      content: '';
     }
 
     .link,
@@ -112,19 +234,48 @@ import { AuthShell } from '../auth-shell/auth-shell';
 export class Login {
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
-  private readonly roleSync = inject(RoleSyncService);
   private readonly router = inject(Router);
 
   /** True once the visitor has pressed submit, so errors stay hidden until then. */
   protected readonly attempted = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  protected readonly notice = signal('');
+  protected readonly showPassword = signal(false);
 
   protected readonly form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
+    loginType: ['customer' as UserRole, [Validators.required]],
     remember: [false],
   });
+
+  constructor() {
+    const params = this.router.parseUrl(this.router.url).queryParams;
+    if (params['confirmed'] === 'true') {
+      const email = typeof params['email'] === 'string' ? params['email'] : '';
+      this.notice.set(
+        email
+          ? `Your account is confirmed. Sign in with ${email} to continue.`
+          : 'Your account is confirmed. Please sign in with your new credentials.',
+      );
+      if (email) {
+        this.form.controls.email.setValue(email);
+      }
+    }
+
+    if (params['reset'] === 'true') {
+      const email = typeof params['email'] === 'string' ? params['email'] : '';
+      this.notice.set(
+        email
+          ? `Your password was reset. Sign in with ${email} using your new password.`
+          : 'Your password was reset. Please sign in with your new password.',
+      );
+      if (email) {
+        this.form.controls.email.setValue(email);
+      }
+    }
+  }
 
   protected invalid(control: 'email' | 'password'): boolean {
     const field = this.form.controls[control];
@@ -140,7 +291,7 @@ export class Login {
       return;
     }
 
-    const { email, password } = this.form.getRawValue();
+    const { email, password, loginType } = this.form.getRawValue();
     this.busy.set(true);
 
     try {
@@ -152,34 +303,22 @@ export class Login {
         return;
       }
 
+      if (step === 'reset-password') {
+        await this.router.navigate(['/forgot-password'], { queryParams: { email } });
+        return;
+      }
+
       if (step !== 'done') {
         this.error.set('This account needs a sign-in step that is not supported yet.');
         return;
       }
 
-      await this.grantRequestedRole();
+      this.auth.setDemoRole(loginType);
       await this.router.navigateByUrl(this.returnUrl());
     } catch (err) {
       this.error.set(describeAuthError(err));
     } finally {
       this.busy.set(false);
-    }
-  }
-
-  /**
-   * Asks the backend to grant the group for the role chosen at sign-up, then
-   * reloads the tokens so the new claim is visible.
-   *
-   * Sign-in must not fail when this does — an unreachable auth service should
-   * leave the user signed in as a customer, not locked out.
-   */
-  private async grantRequestedRole(): Promise<void> {
-    try {
-      if (await this.roleSync.sync()) {
-        await this.auth.refresh();
-      }
-    } catch (err) {
-      console.warn('role sync unavailable; continuing with existing claims', err);
     }
   }
 

@@ -29,35 +29,77 @@
   </section>
 
   <section class="shell body" aria-labelledby="ticket-types-heading">
-    <h2 id="ticket-types-heading">Ticket types</h2>
+    @if (isHelper()) {
+      <h2 id="ticket-types-heading">Customers who bought tickets</h2>
 
-    @if (ticketTypes().length) {
-      <ul class="type-list">
-        @for (ticket of ticketTypes(); track ticket.id) {
-          <li class="type-row">
-            <span class="type-name">{{ ticket.section }}</span>
-            <span class="type-price">{{ ticket.price | currency: 'SGD' : 'S$' : '1.0-0' }}</span>
-            <span
-              class="pill status"
-              [class.on-sale]="ticket.status === 'On sale'"
-              [class.few-left]="ticket.status === 'Few left'"
-              [class.sold-out]="ticket.status === 'Sold out'"
-              >{{ ticket.status }}</span
-            >
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              [disabled]="ticket.status === 'Sold out'"
-              (click)="buy(ticket)"
-            >
-              {{ ticket.status === 'Sold out' ? 'Sold out' : 'Buy' }}
-              <span class="visually-hidden"> — {{ ticket.section }}, {{ event.title }}</span>
-            </button>
-          </li>
-        }
-      </ul>
+      @if (attendees().length) {
+        <div class="table-card">
+          <table>
+            <caption class="visually-hidden">
+              Customers who purchased tickets for {{ event.title }}
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Customer</th>
+                <th scope="col">Email</th>
+                <th scope="col">Ticket type</th>
+                <th scope="col">Qty</th>
+                <th scope="col">Purchased</th>
+                <th scope="col">Check-in status</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (attendee of attendees(); track attendee.id) {
+                <tr>
+                  <th scope="row">{{ attendee.customerName }}</th>
+                  <td>{{ attendee.email }}</td>
+                  <td>{{ attendee.section }}</td>
+                  <td>{{ attendee.quantity }}</td>
+                  <td>{{ attendee.purchaseDate }}</td>
+                  <td>
+                    <span class="pill status" [class.on-sale]="attendee.checkedIn">
+                      {{ attendee.checkedIn ? 'Checked in' : 'Not checked in' }}
+                    </span>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <p class="empty">No one has bought tickets for this event yet.</p>
+      }
     } @else {
-      <p class="empty">No ticket types are on sale for this event yet.</p>
+      <h2 id="ticket-types-heading">Ticket types</h2>
+
+      @if (ticketTypes().length) {
+        <ul class="type-list">
+          @for (ticket of ticketTypes(); track ticket.id) {
+            <li class="type-row">
+              <span class="type-name">{{ ticket.section }}</span>
+              <span class="type-price">{{ ticket.price | currency: 'SGD' : 'S$' : '1.0-0' }}</span>
+              <span
+                class="pill status"
+                [class.on-sale]="ticket.status === 'On sale'"
+                [class.few-left]="ticket.status === 'Few left'"
+                [class.sold-out]="ticket.status === 'Sold out'"
+                >{{ ticket.status }}</span
+              >
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                [disabled]="ticket.status === 'Sold out'"
+                (click)="buy(ticket)"
+              >
+                {{ ticket.status === 'Sold out' ? 'Sold out' : 'Buy' }}
+                <span class="visually-hidden"> — {{ ticket.section }}, {{ event.title }}</span>
+              </button>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="empty">No ticket types are on sale for this event yet.</p>
+      }
     }
   </section>
 } @else {

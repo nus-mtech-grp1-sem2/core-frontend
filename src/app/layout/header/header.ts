@@ -368,15 +368,9 @@ export class Header {
       { label: 'Events', path: '/events' },
       { label: 'Tickets', path: '/tickets' },
     ],
-    customer: [
-      { label: 'Events', path: '/events' },
-      { label: 'Tickets', path: '/tickets' },
-    ],
-    organiser: [{ label: 'Dashboard', path: '/organiser' }],
-    'event-helper': [
-      { label: 'My shifts', path: '/helper' },
-      { label: 'Check-in', path: '/checkin' },
-    ],
+    customer: [{ label: 'Tickets', path: '/tickets' }],
+    organiser: [{ label: 'Events', path: '/events' }],
+    'event-helper': [{ label: 'Events', path: '/events' }],
   };
 
   protected readonly links = computed(() => this.navByRole[this.auth.role() ?? 'anonymous']);

@@ -1,7 +1,10 @@
 import { Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, Routes, provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 
+import { ApiService } from '../core/api';
+import { AuthService } from '../core/auth';
 import { CognitoGateway, SignInResult } from '../core/cognito-gateway';
 import { RoleSyncService } from '../core/role-sync';
 import { Confirm } from './confirm/confirm';
@@ -22,7 +25,12 @@ class FakeGateway implements Partial<CognitoGateway> {
     return this.signInResult;
   }
 
-  async signUp(email: string, _password: string, _name: string, role: string): Promise<SignInResult> {
+  async signUp(
+    email: string,
+    _password: string,
+    _name: string,
+    role: string,
+  ): Promise<SignInResult> {
     this.calls.push(`signUp:${email}:${role}`);
     if (this.failWith) throw this.failWith;
     return this.signUpResult;
@@ -39,12 +47,26 @@ class FakeGateway implements Partial<CognitoGateway> {
     if (this.failWith) throw this.failWith;
   }
 
+  async forgotPassword(email: string): Promise<void> {
+    this.calls.push(`forgotPassword:${email}`);
+    if (this.failWith) throw this.failWith;
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string): Promise<void> {
+    this.calls.push(`resetPassword:${email}:${code}:${newPassword}`);
+    if (this.failWith) throw this.failWith;
+  }
+
   async currentUser() {
     return { sub: 'sub-1', email: 'fan@example.com', groups: ['customer'], declaredRole: null };
   }
 
   async accessToken() {
     return 'token';
+  }
+
+  async idToken() {
+    return 'id-token';
   }
 
   async signOut(): Promise<void> {
@@ -70,6 +92,15 @@ class FakeRoleSync {
   }
 }
 
+class FakeApiService {
+  readonly calls: string[] = [];
+
+  post(service: string, path: string, body: unknown) {
+    this.calls.push(`${service}:${path}:${JSON.stringify(body)}`);
+    return of({});
+  }
+}
+
 const roleSync = new FakeRoleSync();
 
 function typeInto(fixture: ComponentFixture<unknown>, selector: string, value: string): void {
@@ -88,6 +119,8 @@ const stubRoutes: Routes = [
   { path: '', children: [] },
   { path: 'login', children: [] },
   { path: 'confirm', children: [] },
+  { path: 'forgot-password', children: [] },
+  { path: 'reset-password', children: [] },
 ];
 
 function setup<T>(component: Type<T>, gateway: FakeGateway): ComponentFixture<T> {
@@ -96,6 +129,7 @@ function setup<T>(component: Type<T>, gateway: FakeGateway): ComponentFixture<T>
     providers: [
       provideRouter(stubRoutes),
       { provide: CognitoGateway, useValue: gateway },
+      { provide: ApiService, useClass: FakeApiService },
       { provide: RoleSyncService, useValue: roleSync },
     ],
   });
@@ -133,14 +167,14 @@ describe('Login', () => {
     expect(TestBed.inject(Router).url).toBe('/');
   });
 
-  it('grants the requested role group and refreshes the token', async () => {
+  it('does not try to sync Cognito groups during sign in', async () => {
     typeInto(fixture, '#email', 'fan@example.com');
     typeInto(fixture, '#password', 'supersecret');
     submit(fixture);
     await fixture.whenStable();
 
-    expect(roleSync.calls).toBe(1);
-    expect(gateway.calls).toContain('refresh');
+    expect(roleSync.calls).toBe(0);
+    expect(gateway.calls).not.toContain('refresh');
   });
 
   it('signs in anyway when the auth service is unreachable', async () => {
@@ -172,6 +206,17 @@ describe('Login', () => {
 
     const banner = (fixture.nativeElement as HTMLElement).querySelector('.form-error-banner');
     expect(banner?.textContent).toContain('not correct');
+  });
+
+  it('routes a user who needs a password reset to the forgot-password flow', async () => {
+    gateway.signInResult = { signedIn: false, nextStep: 'reset-password' };
+    typeInto(fixture, '#email', 'fan@example.com');
+    typeInto(fixture, '#password', 'supersecret');
+    submit(fixture);
+    await fixture.whenStable();
+
+    expect(TestBed.inject(Router).url).toContain('/forgot-password');
+    expect(TestBed.inject(Router).url).toContain('email=fan@example.com');
   });
 });
 
@@ -233,21 +278,12 @@ describe('Register', () => {
     expect(TestBed.inject(Router).url).toContain('email=alex@example.com');
   });
 
-  it('sends the chosen role with the sign-up', async () => {
+  it('always registers a new user as a customer', async () => {
     fillValidForm();
-    // The radios carry their value as a directive input, not a DOM attribute,
-    // so pick the one whose label says Organiser.
-    const option = Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLLabelElement>('.role-option'),
-    ).find((label) => label.textContent?.includes('Organiser'));
-    const organiser = option?.querySelector('input') as HTMLInputElement;
-    organiser.checked = true;
-    organiser.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
     submit(fixture);
     await fixture.whenStable();
 
-    expect(gateway.calls).toContain('signUp:alex@example.com:organiser');
+    expect(gateway.calls).toContain('signUp:alex@example.com:customer');
   });
 
   it('reports an email that is already registered', async () => {
@@ -262,6 +298,44 @@ describe('Register', () => {
   });
 });
 
+describe('ForgotPassword', () => {
+  let gateway: FakeGateway;
+  let fixture: ComponentFixture<any>;
+
+  beforeEach(async () => {
+    gateway = new FakeGateway();
+    fixture = setup(
+      (await import('./forgot-password/forgot-password')).ForgotPassword,
+      gateway,
+    );
+    await fixture.whenStable();
+  });
+
+  it('requests a reset code and then confirms a new password in Cognito', async () => {
+    typeInto(fixture, '#email', 'alex@example.com');
+    const requestButton = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="request-reset-code"]',
+    ) as HTMLButtonElement;
+    requestButton.click();
+    await fixture.whenStable();
+
+    expect(gateway.calls).toContain('forgotPassword:alex@example.com');
+
+    typeInto(fixture, '#code', '654321');
+    typeInto(fixture, '#newPassword', 'brandnewpass');
+    typeInto(fixture, '#confirmPassword', 'brandnewpass');
+    const submitButton = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="confirm-reset-password"]',
+    ) as HTMLButtonElement;
+    submitButton.click();
+    await fixture.whenStable();
+
+    expect(gateway.calls).toContain('resetPassword:alex@example.com:654321:brandnewpass');
+    expect(TestBed.inject(Router).url).toContain('/login');
+    expect(TestBed.inject(Router).url).toContain('reset=true');
+  });
+});
+
 describe('Confirm', () => {
   let gateway: FakeGateway;
   let fixture: ComponentFixture<Confirm>;
@@ -272,20 +346,27 @@ describe('Confirm', () => {
     await fixture.whenStable();
   });
 
-  it('confirms the code and sends the visitor to sign in', async () => {
+  it('confirms the code and sends the visitor to a fresh sign-in', async () => {
     typeInto(fixture, '#email', 'alex@example.com');
     typeInto(fixture, '#code', '123456');
+    const auth = TestBed.inject(AuthService);
+    auth.rememberRegistration('alex@example.com', 'Alex Tan', 'supersecret');
+    const api = TestBed.inject(ApiService) as unknown as FakeApiService;
     submit(fixture);
     await fixture.whenStable();
 
     expect(gateway.calls).toContain('confirmSignUp:alex@example.com:123456');
+    expect(api.calls).toContain('auth:/users:{"name":"Alex Tan","email":"alex@example.com"}');
+    expect(gateway.calls).not.toContain('signIn:alex@example.com');
     expect(TestBed.inject(Router).url).toContain('/login');
+    expect(TestBed.inject(Router).url).toContain('confirmed=true');
   });
 
   it('explains a wrong code', async () => {
     gateway.failWith = Object.assign(new Error('nope'), { name: 'CodeMismatchException' });
     typeInto(fixture, '#email', 'alex@example.com');
     typeInto(fixture, '#code', '000000');
+    TestBed.inject(AuthService).rememberRegistration('alex@example.com', 'Alex Tan', 'supersecret');
     submit(fixture);
     await fixture.whenStable();
 

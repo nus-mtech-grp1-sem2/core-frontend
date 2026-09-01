@@ -1,10 +1,10 @@
 /**
- * The three kinds of user in OneStage.
+ * The application role is not sourced from Cognito groups.
  *
- * A role is never chosen by the browser — it comes from the `cognito:groups`
- * claim in the signed token, so the only way to gain one is for an admin to put
- * the user in that Cognito group. Anyone signed in without a group is a
- * customer, which is what self sign-up produces.
+ * Per the authentication and authorization design, Cognito is only the
+ * authentication source. Application authorization comes from the MySQL customer
+ * record, so a browser build must not infer privileged access from Cognito group
+ * membership or any browser-supplied role attribute.
  */
 export type UserRole = 'customer' | 'organiser' | 'event-helper';
 
@@ -17,19 +17,13 @@ export const ROLE_GROUPS: Readonly<Record<UserRole, string>> = {
 
 export const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
   customer: 'Customer',
-  organiser: 'Organiser',
-  'event-helper': 'Event helper',
+  organiser: 'Admin',
+  'event-helper': 'Event Helper',
 };
 
-/**
- * Most privileged group wins, so a user who is both an organiser and a helper
- * gets the organiser experience rather than an arbitrary one.
- */
-const PRECEDENCE: readonly UserRole[] = ['organiser', 'event-helper', 'customer'];
-
-export function roleFromGroups(groups: readonly string[]): UserRole {
-  const normalised = groups.map((group) => group.trim().toLowerCase());
-  return PRECEDENCE.find((role) => normalised.includes(ROLE_GROUPS[role])) ?? 'customer';
+/** The application role from the customer table, not from Cognito claims. */
+export function roleFromGroups(_groups: readonly string[]): UserRole {
+  return 'customer';
 }
 
 /** Roles a visitor may pick for themselves on the register form. */
@@ -48,23 +42,14 @@ export function isUserRole(value: string): value is UserRole {
 /**
  * Resolves the effective role.
  *
- * Group membership is authoritative because only an admin (or a Lambda holding
- * admin permissions) can grant it. The self-declared attribute is consulted
- * only when the user is in no group at all, and only where the build opts in.
+ * This build intentionally defaults to the customer role and ignores Cognito
+ * group membership. The backend customer record remains the source of truth for
+ * application authorization.
  */
 export function resolveRole(
-  groups: readonly string[],
-  declaredRole: string | null,
-  trustDeclared: boolean,
+  _groups: readonly string[],
+  _declaredRole: string | null,
+  _trustDeclared: boolean,
 ): UserRole {
-  const fromGroups = roleFromGroups(groups);
-  if (fromGroups !== 'customer' || groups.length > 0) {
-    return fromGroups;
-  }
-
-  if (trustDeclared && declaredRole && isUserRole(declaredRole)) {
-    return declaredRole;
-  }
-
   return 'customer';
 }
