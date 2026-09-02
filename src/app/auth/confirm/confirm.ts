@@ -190,10 +190,6 @@ export class Confirm {
       }
 
       await this.auth.confirmSignUp(email, code);
-      // Create the users-table row before the visitor signs in again.
-      // The confirmation step does not yet have a Cognito session, so we send the
-      // email along with the name and let the backend create the profile row.
-      await this.auth.createUser(registration.name, email);
       this.auth.clearRegistration();
       await this.router.navigate(['/login'], {
         queryParams: { confirmed: 'true', email },

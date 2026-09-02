@@ -83,7 +83,7 @@ import { AuthShell } from '../auth-shell/auth-shell';
           </label>
           <label class="login-option">
             <input type="radio" formControlName="loginType" value="organiser" />
-            <span>Admin</span>
+            <span>Organizer</span>
           </label>
         </fieldset>
 
@@ -314,7 +314,7 @@ export class Login {
       }
 
       this.auth.setDemoRole(loginType);
-      await this.router.navigateByUrl(this.returnUrl());
+      await this.router.navigateByUrl(loginType === 'organiser' && this.returnUrl() === '/' ? '/events' : this.returnUrl());
     } catch (err) {
       this.error.set(describeAuthError(err));
     } finally {

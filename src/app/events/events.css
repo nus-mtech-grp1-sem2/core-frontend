@@ -57,9 +57,55 @@
 }
 
 .delete {
-  margin-top: 0.75rem;
-  align-self: flex-start;
+  color: var(--danger, #b42318);
 }
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.error {
+  margin-bottom: 1rem;
+  color: var(--danger, #b42318);
+}
+
+.invitations,
+.team {
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.invitations h2 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.invitation,
+.user-result,
+.team-search {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.invitation + .invitation,
+.user-result {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.team { margin-top: 1rem; margin-bottom: 0; }
+.team label { display: block; font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.5rem; }
+.team-search input, .team-search select { min-width: 0; font: inherit; padding: 0.5rem 0.625rem; border: 1px solid var(--border); background: var(--bg); color: inherit; }
+.team-search input { flex: 1; }
+.user-result small { display: block; color: var(--text-muted); }
 
 
 .event-grid {

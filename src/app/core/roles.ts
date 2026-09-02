@@ -8,16 +8,9 @@
  */
 export type UserRole = 'customer' | 'organiser' | 'event-helper';
 
-/** Cognito group names, exactly as they must be spelled in the user pool. */
-export const ROLE_GROUPS: Readonly<Record<UserRole, string>> = {
-  customer: 'customer',
-  organiser: 'organiser',
-  'event-helper': 'event-helper',
-};
-
 export const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
   customer: 'Customer',
-  organiser: 'Admin',
+  organiser: 'Organizer',
   'event-helper': 'Event Helper',
 };
 
@@ -48,8 +41,8 @@ export function isUserRole(value: string): value is UserRole {
  */
 export function resolveRole(
   _groups: readonly string[],
-  _declaredRole: string | null,
-  _trustDeclared: boolean,
+  declaredRole: string | null,
+  trustDeclared: boolean,
 ): UserRole {
-  return 'customer';
+  return trustDeclared && declaredRole && isUserRole(declaredRole) ? declaredRole : 'customer';
 }

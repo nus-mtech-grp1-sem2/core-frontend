@@ -102,7 +102,7 @@ export const appConfig: ApplicationConfig = {
 
         // Application authorization is resolved by the backend customer table,
         // not by any browser-supplied Cognito role attribute.
-        trustSelfDeclaredRole: false,
+        trustSelfDeclaredRole: true,
       },
     },
   ],

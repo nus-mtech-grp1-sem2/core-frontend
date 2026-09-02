@@ -6,7 +6,6 @@ import { of } from 'rxjs';
 import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
 import { CognitoGateway, SignInResult } from '../core/cognito-gateway';
-import { RoleSyncService } from '../core/role-sync';
 import { Confirm } from './confirm/confirm';
 import { Login } from './login/login';
 import { Register } from './register/register';
@@ -79,19 +78,6 @@ class FakeGateway implements Partial<CognitoGateway> {
   }
 }
 
-/** Stands in for the auth service call that grants the role group. */
-class FakeRoleSync {
-  granted = true;
-  failWith: Error | null = null;
-  calls = 0;
-
-  async sync(): Promise<boolean> {
-    this.calls += 1;
-    if (this.failWith) throw this.failWith;
-    return this.granted;
-  }
-}
-
 class FakeApiService {
   readonly calls: string[] = [];
 
@@ -100,8 +86,6 @@ class FakeApiService {
     return of({});
   }
 }
-
-const roleSync = new FakeRoleSync();
 
 function typeInto(fixture: ComponentFixture<unknown>, selector: string, value: string): void {
   const input = (fixture.nativeElement as HTMLElement).querySelector(selector) as HTMLInputElement;
@@ -130,7 +114,6 @@ function setup<T>(component: Type<T>, gateway: FakeGateway): ComponentFixture<T>
       provideRouter(stubRoutes),
       { provide: CognitoGateway, useValue: gateway },
       { provide: ApiService, useClass: FakeApiService },
-      { provide: RoleSyncService, useValue: roleSync },
     ],
   });
   return TestBed.createComponent(component);
@@ -142,9 +125,6 @@ describe('Login', () => {
 
   beforeEach(async () => {
     gateway = new FakeGateway();
-    roleSync.calls = 0;
-    roleSync.failWith = null;
-    roleSync.granted = true;
     fixture = setup(Login, gateway);
     await fixture.whenStable();
   });
@@ -164,26 +144,6 @@ describe('Login', () => {
     await fixture.whenStable();
 
     expect(gateway.calls).toContain('signIn:fan@example.com');
-    expect(TestBed.inject(Router).url).toBe('/');
-  });
-
-  it('does not try to sync Cognito groups during sign in', async () => {
-    typeInto(fixture, '#email', 'fan@example.com');
-    typeInto(fixture, '#password', 'supersecret');
-    submit(fixture);
-    await fixture.whenStable();
-
-    expect(roleSync.calls).toBe(0);
-    expect(gateway.calls).not.toContain('refresh');
-  });
-
-  it('signs in anyway when the auth service is unreachable', async () => {
-    roleSync.failWith = new Error('ECONNREFUSED');
-    typeInto(fixture, '#email', 'fan@example.com');
-    typeInto(fixture, '#password', 'supersecret');
-    submit(fixture);
-    await fixture.whenStable();
-
     expect(TestBed.inject(Router).url).toBe('/');
   });
 
