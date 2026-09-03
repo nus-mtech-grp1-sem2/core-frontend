@@ -53,7 +53,7 @@ describe('Header navigation', () => {
     const { host } = await navFor(null);
 
     const labels = Array.from(host.querySelectorAll('.primary a')).map((a) => a.textContent?.trim());
-    expect(labels).toEqual(['Events', 'Tickets']);
+    expect(labels).toEqual(['Events']);
     expect(host.querySelector('.search')).not.toBeNull();
     expect(host.textContent).toContain('Login');
     expect(host.textContent).toContain('Register');

@@ -25,15 +25,18 @@ export interface FeaturedSlide {
   readonly alt: string;
 }
 
-/** A venue as returned by `GET /event/venues` — organisers create these implicitly by naming a new venue on their event. */
+/**
+ * A venue and how many published events are happening there, from
+ * `GET /event/venues`. There is no venues table — a venue is just the free
+ * text `events.venue` column, grouped and counted — so there is no id, city
+ * or capacity to return. `sampleEventId` is one published event at that
+ * venue, so the frontend can show that event's real uploaded artwork
+ * (`GET /event/events/{id}/image`) rather than a placeholder.
+ */
 export interface Venue {
-  readonly id: number;
-  readonly name: string;
-  readonly city: string;
-  readonly capacity: string;
+  readonly venue: string;
   readonly upcoming: number;
-  readonly image: string;
-  readonly alt: string;
+  readonly sample_event_id: number;
 }
 
 export interface EventListing {
@@ -52,34 +55,8 @@ export interface EventListing {
   readonly status: 'On sale' | 'Few left' | 'Sold out';
 }
 
-export interface TicketRow {
-  readonly id: string;
-  /** The event this ticket type belongs to — see `EventListing.id`. */
-  readonly eventId: number;
-  readonly event: string;
-  readonly category: EventCategory;
-  readonly venue: string;
-  readonly date: string;
-  readonly time: string;
-  readonly section: string;
-  readonly price: number;
-  readonly status: 'On sale' | 'Few left' | 'Sold out';
-}
-
 /** Intrinsic size of the hero artwork, in pixels. */
 export const HERO_IMAGE_SIZE = { width: 1800, height: 900 } as const;
 
 /** Intrinsic size of the venue card artwork, in pixels. */
 export const VENUE_IMAGE_SIZE = { width: 800, height: 600 } as const;
-
-/** A customer's own purchases, from `GET /order/orders?email=`. */
-export interface Order {
-  readonly eventId: number;
-  readonly reference: string;
-  readonly event: string;
-  readonly venue: string;
-  readonly date: string;
-  readonly time: string;
-  readonly seats: string;
-  readonly quantity: number;
-}

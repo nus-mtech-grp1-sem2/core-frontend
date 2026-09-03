@@ -13,12 +13,11 @@ type Workspace = 'customer' | 'organiser' | 'event-helper';
 const LINKS_BY_WORKSPACE: Readonly<Record<Workspace, readonly SidebarLink[]>> = {
   customer: [
     { label: 'Events', path: '/events' },
-    { label: 'Tickets', path: '/tickets' },
     { label: 'My events', path: '/my-events' },
   ],
   organiser: [
     { label: 'Dashboard', path: '/organiser' },
-    { label: 'Create event', path: '/organiser/create' },
+    { label: 'Events', path: '/organiser/events' },
     { label: 'Sales', path: '/organiser/sales' },
     { label: 'Attendees', path: '/organiser/attendees' },
   ],

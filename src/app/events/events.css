@@ -18,7 +18,95 @@
 .count {
   font-size: 0.875rem;
   color: var(--text-muted);
+  margin-inline-end: auto;
 }
+
+.new-event-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1rem;
+  align-items: end;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.new-event-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.new-event-form label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.new-event-form input,
+.new-event-form select {
+  font: inherit;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg);
+  color: inherit;
+}
+
+.delete {
+  color: var(--danger, #b42318);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.error {
+  margin-bottom: 1rem;
+  color: var(--danger, #b42318);
+}
+
+.invitations,
+.team {
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.invitations h2 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.invitation,
+.user-result,
+.team-search {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.invitation + .invitation,
+.user-result {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.team { margin-top: 1rem; margin-bottom: 0; }
+.team label { display: block; font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.5rem; }
+.team-search input, .team-search select { min-width: 0; font: inherit; padding: 0.5rem 0.625rem; border: 1px solid var(--border); background: var(--bg); color: inherit; }
+.team-search input { flex: 1; }
+.user-result small { display: block; color: var(--text-muted); }
+
 
 .event-grid {
   list-style: none;
@@ -54,6 +142,10 @@
 }
 
 .thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 

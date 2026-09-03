@@ -8,15 +8,19 @@ import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
-/** Shape returned by `GET /api/event/helper/shifts` (see backend-repo/API_DESIGN.md §1). */
-interface HelperShiftDto {
-  readonly staffId: number;
-  readonly eventName: string;
-  readonly venueName: string;
-  readonly gate: string | null;
-  readonly eventStartDatetime: string;
-  readonly doorsOpenTime: string | null;
-  readonly expectedAttendance: number | null;
+/** Current event-service response used as the helper's read-only shift list. */
+interface HelperEventDto {
+  readonly event_id: number;
+  readonly title?: string;
+  readonly event_name?: string;
+  readonly venue: string;
+  readonly starts_at?: string;
+  readonly event_start_datetime?: string;
+  readonly total_seats: number;
+}
+
+interface HelperEventsResponse {
+  readonly events: readonly HelperEventDto[];
 }
 
 interface ShiftView {
@@ -278,10 +282,9 @@ export class HelperHome {
     this.status.set('loading');
     const now = new Date();
 
-    const email = encodeURIComponent(this.auth.user()?.email ?? '');
-    this.api.get<readonly HelperShiftDto[]>('event', `/helper/shifts?email=${email}`).subscribe({
-      next: (shifts) => {
-        this.shifts.set(shifts.map((shift) => toShiftView(shift, now)));
+    this.api.get<HelperEventsResponse>('event', '/helper/shifts').subscribe({
+      next: (result) => {
+        this.shifts.set(result.events.map((event) => toShiftView(event, now)));
         this.status.set('ready');
       },
       error: () => this.status.set('error'),
@@ -289,18 +292,18 @@ export class HelperHome {
   }
 }
 
-function toShiftView(dto: HelperShiftDto, now: Date): ShiftView {
-  const eventStart = new Date(dto.eventStartDatetime);
-  const doorsOpen = dto.doorsOpenTime ? new Date(dto.doorsOpenTime) : eventStart;
+function toShiftView(dto: HelperEventDto, now: Date): ShiftView {
+  const eventStart = new Date(dto.starts_at ?? dto.event_start_datetime ?? '');
+  const doorsOpen = new Date(eventStart.getTime() - 60 * 60 * 1000);
 
   return {
-    id: dto.staffId,
-    event: dto.eventName,
-    venue: dto.venueName,
-    gate: dto.gate ?? 'Gate TBC',
+    id: dto.event_id,
+    event: dto.title ?? dto.event_name ?? `Event ${dto.event_id}`,
+    venue: dto.venue,
+    gate: 'Gate TBC',
     date: formatDate(eventStart, 'EEE d MMM yyyy', 'en-SG'),
     doorsOpen: formatDate(doorsOpen, 'h:mm a', 'en-SG'),
-    expected: dto.expectedAttendance ?? 0,
+    expected: dto.total_seats,
     today: isSameDay(eventStart, now),
   };
 }

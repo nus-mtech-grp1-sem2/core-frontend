@@ -23,7 +23,7 @@ const PRECEDENCE: readonly UserRole[] = ['organiser', 'event-helper', 'customer'
 
 export function roleFromGroups(groups: readonly string[]): UserRole {
   const normalised = groups.map((group) => group.trim().toLowerCase());
-  return PRECEDENCE.find((role) => normalised.includes(ROLE_GROUPS[role])) ?? 'customer';
+  return PRECEDENCE.find((role) => normalised.includes(role)) ?? 'customer';
 }
 
 export const ROLE_DESCRIPTIONS: Readonly<Record<UserRole, string>> = {

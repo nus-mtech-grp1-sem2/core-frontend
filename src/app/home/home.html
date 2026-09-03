@@ -8,8 +8,8 @@
         <p class="eyebrow">Your account</p>
         <h2 id="orders-heading">Upcoming tickets</h2>
       </div>
-      <a class="link-more" routerLink="/tickets">
-        Browse tickets
+      <a class="link-more" routerLink="/events">
+        Browse events
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
           <path
             d="M5 12h13m0 0-5-5m5 5-5 5"
@@ -23,21 +23,18 @@
     </header>
 
     <ul class="orders">
-      @for (order of orders(); track order.reference) {
+      @for (ticket of tickets(); track ticket.ticket_id) {
         <li>
           <div class="order-when">
-            <span class="order-date">{{ order.date }}</span>
-            <span class="order-time">{{ order.time }}</span>
+            <span class="order-date">{{ ticket.starts_at | date: 'd MMM y' }}</span>
+            <span class="order-time">{{ ticket.starts_at | date: 'h:mm a' }}</span>
           </div>
           <div class="order-what">
-            <span class="order-event">{{ order.event }}</span>
-            <span class="order-detail">{{ order.venue }} · {{ order.seats }}</span>
+            <span class="order-event">{{ ticket.event_title }}</span>
+            <span class="order-detail">{{ ticket.venue }} · {{ ticket.seat_label ?? 'General admission' }}</span>
           </div>
           <div class="order-meta">
-            <span class="qty"
-              >{{ order.quantity }} {{ order.quantity === 1 ? 'ticket' : 'tickets' }}</span
-            >
-            <span class="ref">{{ order.reference }}</span>
+            <span class="qty">{{ ticket.status === 'CHECKED_IN' ? 'Checked in' : 'Ready to scan' }}</span>
           </div>
         </li>
       } @empty {
@@ -92,53 +89,25 @@
   </header>
 
   <ul class="venue-grid">
-    @for (venue of venues(); track venue.id) {
+    @for (venue of venues(); track venue.venue) {
       <li>
         <a class="venue-card" routerLink="/events">
           <span class="thumb">
             <img
-              [ngSrc]="venue.image"
-              [alt]="venue.alt"
-              fill
-              sizes="(max-width: 560px) 100vw, (max-width: 900px) 50vw, 33vw"
+              [src]="venueImageUrl(venue.sample_event_id)"
+              (error)="useFallbackImage($event.target)"
+              [alt]="venue.venue + ' artwork'"
+              loading="lazy"
             />
             <span class="pill upcoming">{{ venue.upcoming }} events</span>
           </span>
           <span class="venue-body">
-            <span class="venue-name">{{ venue.name }}</span>
-            <span class="venue-detail">{{ venue.city }} · {{ venue.capacity }}</span>
+            <span class="venue-name">{{ venue.venue }}</span>
           </span>
         </a>
       </li>
     }
   </ul>
-</section>
-
-<section class="shell section" aria-labelledby="tickets-heading">
-  <header class="section-head">
-    <div>
-      <p class="eyebrow">On sale now</p>
-      <h2 id="tickets-heading">Tickets</h2>
-    </div>
-    <a class="link-more" routerLink="/tickets">
-      All tickets
-      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
-        <path
-          d="M5 12h13m0 0-5-5m5 5-5 5"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </a>
-  </header>
-
-  <app-ticket-table
-    [tickets]="featuredTickets()"
-    caption="A selection of tickets on sale now"
-    (buy)="buy($event)"
-  />
 </section>
 
 @if (!auth.isAuthenticated()) {

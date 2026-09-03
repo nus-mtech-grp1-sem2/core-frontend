@@ -171,7 +171,7 @@ export class Footer {
         { label: 'Concerts', path: '/events' },
         { label: 'Sports', path: '/events' },
         { label: 'Theatre', path: '/events' },
-        { label: 'All tickets', path: '/tickets' },
+        { label: 'All tickets', path: '/events' },
       ],
     },
     {

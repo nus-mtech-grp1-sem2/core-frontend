@@ -57,6 +57,10 @@ export class AuthService {
     await this.gateway.signIn();
   }
 
+  async signUp(): Promise<void> {
+    await this.gateway.signUp();
+  }
+
   async signOut(): Promise<void> {
     await this.gateway.signOut();
     this.apply(null);
@@ -64,6 +68,11 @@ export class AuthService {
 
   accessToken(): Promise<string | null> {
     return this.gateway.accessToken();
+  }
+
+  hasRole(...roles: readonly UserRole[]): boolean {
+    const role = this.role();
+    return role !== null && roles.includes(role);
   }
 
   private apply(user: AuthenticatedUser | null): void {

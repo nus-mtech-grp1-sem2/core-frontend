@@ -1,92 +1,34 @@
-<app-workspace-shell workspace="customer">
-  <section class="page-head">
-    <div class="shell">
-      <p class="eyebrow">What's on</p>
-      <h1>Events</h1>
-      <p class="lead">
-        Every concert, match and performance currently listed on OneStage, across all venues.
-      </p>
-    </div>
-  </section>
-
-  <section class="shell listing" aria-labelledby="listing-heading">
-    <h2 class="visually-hidden" id="listing-heading">Event listings</h2>
-
-    @switch (status()) {
-      @case ('loading') {
-        <p class="status-message" role="status">Loading events…</p>
-      }
-      @case ('error') {
-        <p class="status-message error" role="alert">
-          Couldn't load events.
-          <button type="button" class="retry" (click)="load()">Try again</button>
-        </p>
-      }
-      @case ('ready') {
-        <div class="toolbar">
-          <div class="filters" role="group" aria-label="Filter events by category">
-            @for (filter of filters; track filter) {
-              <button
-                type="button"
-                class="chip"
-                [class.selected]="filter === activeFilter()"
-                [attr.aria-pressed]="filter === activeFilter()"
-                (click)="setFilter(filter)"
-              >
-                {{ filter }}
-              </button>
-            }
-          </div>
-
-          <p class="count" aria-live="polite">{{ events().length }} events</p>
-        </div>
-
-        <ul class="event-grid">
-          @for (event of events(); track event.id) {
-            <li class="event-card">
-              <a
-                class="thumb"
-                [routerLink]="['/events', event.id]"
-                [attr.aria-label]="'Tickets for ' + event.title"
-              >
-                <img
-                  [ngSrc]="event.image"
-                  [alt]="event.alt"
-                  fill
-                  sizes="(max-width: 640px) 100vw, (max-width: 1000px) 50vw, 33vw"
-                />
-                <span class="pill category">{{ event.category }}</span>
-              </a>
-
-              <div class="body">
-                <p class="when">{{ event.date }} · {{ event.time }}</p>
-                <h3>
-                  <a [routerLink]="['/events', event.id]">{{ event.title }}</a>
-                </h3>
-                <p class="where">{{ event.venue }}</p>
-
-                <div class="foot">
-                  <p class="from">
-                    <span class="from-label">From</span>
-                    <span class="from-price">{{
-                      event.priceFrom | currency: 'SGD' : 'S$' : '1.0-0'
-                    }}</span>
-                  </p>
-                  <span
-                    class="pill status"
-                    [class.on-sale]="event.status === 'On sale'"
-                    [class.few-left]="event.status === 'Few left'"
-                    [class.sold-out]="event.status === 'Sold out'"
-                    >{{ event.status }}</span
-                  >
-                </div>
-              </div>
-            </li>
-          } @empty {
-            <li class="empty">No events in this category right now.</li>
+<app-workspace-shell [workspace]="shellWorkspace()">
+<section class="page-head"><div class="shell"><p class="eyebrow">What's on</p><h1>Events</h1><p class="lead">Every concert, match and performance currently listed on OneStage, across all venues.</p></div></section>
+<section class="shell listing" aria-labelledby="listing-heading">
+  <h2 class="visually-hidden" id="listing-heading">Event listings</h2>
+  <div class="toolbar"><p class="count" aria-live="polite">{{ allEvents().length }} events</p>@if (isAdmin()) { <button type="button" class="btn btn-primary btn-sm" [attr.aria-expanded]="showEventForm()" (click)="toggleEventForm()">{{ showEventForm() ? 'Cancel' : 'New event' }}</button> }</div>
+  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+  @if (invitations().length) { <section class="invitations" aria-labelledby="invitation-heading"><h2 id="invitation-heading">Event invitations</h2>@for (invitation of invitations(); track invitation.membership_id) { <div class="invitation"><span><strong>{{ invitation.title }}</strong> at {{ invitation.venue }} as {{ invitation.role | lowercase }}</span><div class="actions"><button type="button" class="btn btn-primary btn-sm" (click)="decideInvitation(invitation, 'accept')">Accept</button><button type="button" class="btn btn-ghost btn-sm" (click)="decideInvitation(invitation, 'reject')">Reject</button></div></div> }</section> }
+  @if (isAdmin() && showEventForm()) {
+    <form class="new-event-form" [formGroup]="eventForm" (ngSubmit)="saveEvent()">
+      <div class="field"><label for="event-title">Title</label><input id="event-title" type="text" formControlName="title" required /></div>
+      <div class="field"><label for="event-description">Description</label><input id="event-description" type="text" formControlName="description" /></div>
+      <div class="field"><label for="event-venue">Venue</label><input id="event-venue" type="text" formControlName="venue" required /></div>
+      <div class="field"><label for="event-start">Starts at</label><input id="event-start" type="datetime-local" formControlName="startsAt" required /></div>
+      <div class="field"><label for="event-total-seats">Total seats</label><input id="event-total-seats" type="number" formControlName="totalSeats" min="1" max="1000000" step="1" required /></div>
+      <div class="field"><label for="event-price">Price</label><input id="event-price" type="number" formControlName="price" min="0" step="0.01" required /></div>
+      <div class="field"><label for="event-tier">Ticketing</label><select id="event-tier" formControlName="tier"><option value="TIER1_GA">General admission</option><option value="TIER2_SEATED">Reserved seating</option></select></div>
+      <button type="submit" class="btn btn-primary btn-sm" [disabled]="submitting()">{{ editingEventId() === null ? 'Create event' : 'Save changes' }}</button>
+    </form>
+  }
+  @if (loading()) { <p class="empty">Loading events...</p> } @else { <ul class="event-grid">
+    @for (event of allEvents(); track event.event_id) {
+      <li class="event-card">
+        <a class="thumb" [routerLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'"><img [src]="eventImageUrl(event.event_id)" (error)="useFallbackImage($event.target)" [alt]="event.title + ' artwork'" loading="lazy" /><span class="pill category">{{ tierFor(event) }}</span></a>
+        <div class="body">
+          <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p><h3><a [routerLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'">{{ event.title }}</a></h3>@if (event.venue) { <p class="where">{{ event.venue }}</p> }<p class="where">{{ event.remaining_qty ?? event.total_seats }} out of {{ event.total_seats }} seats remaining</p>@if (event.price_cents !== null) { <p class="where">{{ priceFor(event) }} per seat</p> }@if (event.description) { <p class="where">{{ event.description }}</p> }
+          @if (isAdmin()) {
+            @if (event.status === 'DRAFT') { <div class="actions"><button type="button" class="btn btn-primary btn-sm" (click)="publishEvent(event.event_id)">Publish</button></div> }
           }
-        </ul>
-      }
-    }
-  </section>
+        </div>
+      </li>
+    } @empty { <li class="empty">No events right now.</li> }
+  </ul> }
+</section>
 </app-workspace-shell>

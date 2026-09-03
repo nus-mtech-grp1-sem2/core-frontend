@@ -9,6 +9,25 @@ import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
+interface ManagedEventResponse {
+  readonly events: readonly {
+    readonly event_id: number;
+    readonly title: string;
+    readonly description: string | null;
+    readonly venue: string;
+    readonly starts_at: string;
+    readonly total_seats: number;
+    readonly remaining_qty: number;
+    readonly price_cents: number | null;
+    readonly tier: 'TIER1_GA' | 'TIER2_SEATED';
+    readonly status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+  }[];
+}
+
+interface OrganiserEvent extends EventListing {
+  readonly lifecycleStatus: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+}
+
 /** Organiser workspace: every event, its sale status, and a link to edit it. */
 @Component({
   selector: 'app-organiser',
@@ -81,11 +100,17 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                         >
                       </td>
                       <td class="actions">
-                        <a class="btn btn-primary btn-sm" [routerLink]="['/organiser/events', event.id, 'edit']">
+                        <a class="btn btn-primary btn-sm" [routerLink]="['/organiser/events', event.id]">
                           Update
                           <span class="visually-hidden"> {{ event.title }}</span>
                         </a>
-                        <button type="button" class="btn btn-ghost btn-sm danger" (click)="remove(event)">Delete</button>
+                        @if (event.lifecycleStatus === 'DRAFT') {
+                          <button type="button" class="btn btn-ghost btn-sm danger" (click)="changeLifecycle(event)">Delete draft</button>
+                        } @else if (event.lifecycleStatus === 'PUBLISHED') {
+                          <button type="button" class="btn btn-ghost btn-sm danger" (click)="changeLifecycle(event)">Cancel event</button>
+                        } @else {
+                          <button type="button" class="btn btn-primary btn-sm" (click)="changeLifecycle(event)">Enable event</button>
+                        }
                       </td>
                     </tr>
                   }
@@ -94,7 +119,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
             </div>
 
             <p class="note">
-              Creating and editing events will call the event service once those endpoints exist.
+              <a routerLink="/organiser/events">Create a new event</a> from the events page.
             </p>
           }
         }
@@ -193,7 +218,7 @@ export class Organiser {
   protected readonly auth = inject(AuthService);
 
   protected readonly status = signal<LoadStatus>('loading');
-  protected readonly events = signal<readonly EventListing[]>([]);
+  protected readonly events = signal<readonly OrganiserEvent[]>([]);
 
   protected readonly onSale = computed(
     () => this.events().filter((event) => event.status !== 'Sold out').length,
@@ -210,9 +235,26 @@ export class Organiser {
 
   protected load(): void {
     this.status.set('loading');
-    const email = encodeURIComponent(this.auth.user()?.email ?? '');
-    this.api.get<EventListing[]>('event', `/events?organizerEmail=${email}`).subscribe({
-      next: (events) => {
+    this.api.get<ManagedEventResponse>('event', '/events/manage').subscribe({
+      next: (result) => {
+        const events = result.events.map((event): OrganiserEvent => ({
+          id: event.event_id,
+          title: event.title,
+          description: event.description ?? '',
+          category: event.tier === 'TIER2_SEATED' ? 'Theatre' : 'Concerts',
+          venueId: event.event_id,
+          venue: event.venue,
+          date: new Date(event.starts_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }),
+          time: new Date(event.starts_at).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }),
+          featured: false,
+          priceFrom: (event.price_cents ?? 0) / 100,
+          image: this.api.url('event', `/events/${event.event_id}/image`),
+          alt: `${event.title} artwork`,
+          status: event.status === 'CANCELLED' || event.remaining_qty <= 0
+            ? 'Sold out'
+            : event.remaining_qty / event.total_seats < 0.15 ? 'Few left' : 'On sale',
+          lifecycleStatus: event.status,
+        }));
         this.events.set(events);
         this.status.set('ready');
       },
@@ -220,12 +262,20 @@ export class Organiser {
     });
   }
 
-  protected remove(event: EventListing): void {
-    if (!window.confirm(`Cancel and remove ${event.title} from active event listings?`)) return;
-    const email = encodeURIComponent(this.auth.user()?.email ?? '');
-    this.api.delete<void>('event', `/events/${event.id}?organizerEmail=${email}`).subscribe({
-      next: () => this.events.update((events) => events.filter((item) => item.id !== event.id)),
-      error: () => window.alert('This event could not be deleted. Only its creator can delete it.'),
+  protected changeLifecycle(event: OrganiserEvent): void {
+    const deleting = event.lifecycleStatus === 'DRAFT';
+    const enabling = event.lifecycleStatus === 'CANCELLED';
+    const action = deleting
+      ? 'permanently delete this draft'
+      : enabling ? 'enable this event and put it back on sale' : 'cancel this published event';
+    if (!window.confirm(`Are you sure you want to ${action}: ${event.title}?`)) return;
+
+    const request = deleting
+      ? this.api.delete<void>('event', `/events/${event.id}`)
+      : this.api.post<void>('event', `/events/${event.id}/${enabling ? 'publish' : 'cancel'}`, {});
+    request.subscribe({
+      next: () => this.load(),
+      error: () => window.alert(`This event could not be ${deleting ? 'deleted' : enabling ? 'enabled' : 'cancelled'}. Check that you still have organiser access.`),
     });
   }
 }

@@ -20,6 +20,26 @@ export class CognitoGateway {
     await signInWithRedirect();
   }
 
+  /**
+   * Starts Cognito Managed Login on the sign-up screen.
+   *
+   * Amplify has no first-class "open on sign-up" option, so this reuses its
+   * own authorize URL (state and PKCE included) and swaps the path from
+   * `/oauth2/authorize` to Cognito's `/signup` alias, which renders the same
+   * hosted UI with the sign-up form active. `authSessionOpener` is Amplify's
+   * supported hook for controlling how the redirect is opened.
+   */
+  async signUp(): Promise<void> {
+    await signInWithRedirect({
+      options: {
+        authSessionOpener: async (url) => {
+          const signUpUrl = url.replace('/oauth2/authorize', '/signup');
+          window.location.href = signUpUrl.replace('http://', 'https://');
+        },
+      },
+    });
+  }
+
   async signOut(): Promise<void> {
     await signOut();
   }

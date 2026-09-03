@@ -25,10 +25,7 @@ const WORKSPACE_TABS: readonly WorkspaceTab[] = [
   { key: 'event-helper', label: 'Event helper', path: '/helper' },
 ];
 
-const ANONYMOUS_LINKS: readonly NavLink[] = [
-  { label: 'Events', path: '/events' },
-  { label: 'Tickets', path: '/tickets' },
-];
+const ANONYMOUS_LINKS: readonly NavLink[] = [{ label: 'Events', path: '/events' }];
 
 /**
  * Sticky top bar: brand, primary nav, search and account actions.

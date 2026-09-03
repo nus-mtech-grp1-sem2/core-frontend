@@ -1,8 +1,20 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 
 import { ApiService } from '../../core/api';
-import { EventListing } from '../../core/catalog';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
+
+interface EventOption {
+  readonly id: number;
+  readonly title: string;
+}
+
+interface EventResponse {
+  readonly events: readonly {
+    readonly event_id: number;
+    readonly title?: string;
+    readonly event_name?: string;
+  }[];
+}
 
 interface AttendeeRow {
   readonly buyer: string;
@@ -179,7 +191,7 @@ export class Attendees {
   private readonly api = inject(ApiService);
 
   protected readonly eventsStatus = signal<LoadStatus>('loading');
-  protected readonly events = signal<readonly EventListing[]>([]);
+  protected readonly events = signal<readonly EventOption[]>([]);
   protected readonly selectedEventId = signal<number | null>(null);
 
   protected readonly selectedEvent = computed(() =>
@@ -203,8 +215,12 @@ export class Attendees {
 
   protected loadEvents(): void {
     this.eventsStatus.set('loading');
-    this.api.get<EventListing[]>('event', '/events').subscribe({
-      next: (events) => {
+    this.api.get<EventResponse>('event', '/events').subscribe({
+      next: (result) => {
+        const events = result.events.map((event) => ({
+          id: event.event_id,
+          title: event.title ?? event.event_name ?? `Event ${event.event_id}`,
+        }));
         this.events.set(events);
         this.eventsStatus.set('ready');
         if (events.length) {
