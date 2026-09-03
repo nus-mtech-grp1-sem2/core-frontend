@@ -14,3 +14,20 @@ export const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
   organiser: 'Organiser',
   'event-helper': 'Event helper',
 };
+
+/**
+ * Most privileged group wins, so a user who is both an organiser and a helper
+ * gets the organiser experience rather than an arbitrary one.
+ */
+const PRECEDENCE: readonly UserRole[] = ['organiser', 'event-helper', 'customer'];
+
+export function roleFromGroups(groups: readonly string[]): UserRole {
+  const normalised = groups.map((group) => group.trim().toLowerCase());
+  return PRECEDENCE.find((role) => normalised.includes(ROLE_GROUPS[role])) ?? 'customer';
+}
+
+export const ROLE_DESCRIPTIONS: Readonly<Record<UserRole, string>> = {
+  customer: 'Buy tickets and manage your own orders.',
+  organiser: 'List events, manage inventory and see sales.',
+  'event-helper': 'Scan tickets and admit attendees at the door.',
+};

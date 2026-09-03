@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 
-import { AuthenticatedUser, CognitoGateway, NextStep } from './cognito-gateway';
+import { AuthenticatedUser, CognitoGateway } from './cognito-gateway';
+import { UserRole, roleFromGroups } from './roles';
 
 type Status = 'unknown' | 'authenticated' | 'anonymous';
 
@@ -17,13 +18,21 @@ type Status = 'unknown' | 'authenticated' | 'anonymous';
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly gateway = inject(CognitoGateway);
-
   private readonly _user = signal<AuthenticatedUser | null>(null);
   private readonly _status = signal<Status>('unknown');
 
   readonly user = this._user.asReadonly();
   readonly status = this._status.asReadonly();
   readonly isAuthenticated = computed(() => this._status() === 'authenticated');
+
+  /** Role for the signed-in user, derived from their Cognito groups. */
+  readonly role = computed<UserRole | null>(() => {
+    const user = this._user();
+    if (!user) {
+      return null;
+    }
+    return roleFromGroups(user.groups);
+  });
 
   /** Restores the session on startup; safe to call more than once. */
   async restore(): Promise<void> {
@@ -44,25 +53,8 @@ export class AuthService {
     }
   }
 
-  async signIn(email: string, password: string): Promise<NextStep> {
-    const result = await this.gateway.signIn(email, password);
-    if (result.signedIn) {
-      await this.restore();
-    }
-    return result.nextStep;
-  }
-
-  async signUp(email: string, password: string, name: string, role: string): Promise<NextStep> {
-    const result = await this.gateway.signUp(email, password, name, role);
-    return result.nextStep;
-  }
-
-  async confirmSignUp(email: string, code: string): Promise<boolean> {
-    return this.gateway.confirmSignUp(email, code);
-  }
-
-  async resendCode(email: string): Promise<void> {
-    await this.gateway.resendCode(email);
+  async signIn(): Promise<void> {
+    await this.gateway.signIn();
   }
 
   async signOut(): Promise<void> {

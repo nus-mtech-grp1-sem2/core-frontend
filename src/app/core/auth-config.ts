@@ -11,14 +11,29 @@ import { InjectionToken } from '@angular/core';
 export interface CognitoConfig {
   readonly userPoolId: string;
   readonly userPoolClientId: string;
+  readonly domain: string;
+  readonly redirectSignIn: readonly string[];
+  readonly redirectSignOut: readonly string[];
 }
 
 export const COGNITO_CONFIG = new InjectionToken<CognitoConfig>('COGNITO_CONFIG', {
   providedIn: 'root',
-  factory: () => ({ userPoolId: '', userPoolClientId: '' }),
+  factory: () => ({
+    userPoolId: '',
+    userPoolClientId: '',
+    domain: '',
+    redirectSignIn: [],
+    redirectSignOut: [],
+  }),
 });
 
 /** True once the pool has actually been configured for this build. */
 export function isConfigured(config: CognitoConfig): boolean {
-  return config.userPoolId.length > 0 && config.userPoolClientId.length > 0;
+  return (
+    config.userPoolId.length > 0 &&
+    config.userPoolClientId.length > 0 &&
+    config.domain.length > 0 &&
+    config.redirectSignIn.length > 0 &&
+    config.redirectSignOut.length > 0
+  );
 }

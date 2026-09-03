@@ -5,8 +5,8 @@ import { AuthService } from '../../core/auth';
 import { AuthenticatedUser, CognitoGateway } from '../../core/cognito-gateway';
 import { Header } from './header';
 
-function user(): AuthenticatedUser {
-  return { sub: 's', email: 'someone@example.com', groups: [], declaredRole: null };
+function user(groups: readonly string[]): AuthenticatedUser {
+  return { sub: 's', email: 'someone@example.com', groups };
 }
 
 const stubRoutes: Routes = [
