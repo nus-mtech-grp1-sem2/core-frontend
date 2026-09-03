@@ -10,6 +10,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
 /** Shape returned by `GET /api/event/helper/shifts` (see backend-repo/API_DESIGN.md §1). */
 interface HelperShiftDto {
   readonly staffId: number;
+  readonly eventId: number;
   readonly eventName: string;
   readonly venueName: string;
   readonly gate: string | null;
@@ -20,6 +21,7 @@ interface HelperShiftDto {
 
 interface ShiftView {
   readonly id: number;
+  readonly eventId: number;
   readonly event: string;
   readonly venue: string;
   readonly gate: string;
@@ -83,7 +85,7 @@ interface ShiftView {
                   <dd>{{ shift.expected.toLocaleString('en-SG') }} attendees</dd>
                 </div>
               </dl>
-              <a class="btn btn-primary" routerLink="/checkin">Open door check-in</a>
+              <a class="btn btn-primary" [routerLink]="['/checkin', shift.eventId]">Open door check-in</a>
             </article>
           }
 
@@ -311,6 +313,7 @@ function toShiftView(dto: HelperShiftDto, now: Date): ShiftView {
 
   return {
     id: dto.staffId,
+    eventId: dto.eventId,
     event: dto.eventName,
     venue: dto.venueName,
     gate: dto.gate ?? 'Gate TBC',

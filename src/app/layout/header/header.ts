@@ -375,7 +375,6 @@ export class Header {
     organiser: [{ label: 'Dashboard', path: '/organiser' }],
     'event-helper': [
       { label: 'My shifts', path: '/helper' },
-      { label: 'Check-in', path: '/checkin' },
     ],
   };
 
