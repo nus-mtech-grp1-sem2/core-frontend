@@ -10,12 +10,12 @@ interface SyncResponse {
 }
 
 /**
- * Asks the auth service to grant the Cognito group for the role this user chose
- * at sign-up.
+ * Asks the auth service to ensure a self-registered user belongs to the
+ * customer Cognito group.
  *
  * The browser cannot do this itself — group membership is an admin API — so the
- * service does it against the token we send. Idempotent, and a no-op once the
- * user is in a group, so calling it on every sign-in is fine.
+ * service does it against the token we send. It never grants a privileged
+ * group. The call is idempotent and a no-op once the user is in any group.
  */
 @Injectable({ providedIn: 'root' })
 export class RoleSyncService {
@@ -23,9 +23,7 @@ export class RoleSyncService {
 
   /** Returns true when a group was newly granted, so the caller can refresh. */
   async sync(): Promise<boolean> {
-    const result = await firstValueFrom(
-      this.api.post<SyncResponse>('auth', '/roles/sync', {}),
-    );
+    const result = await firstValueFrom(this.api.post<SyncResponse>('auth', '/roles/sync', {}));
     return result.changed;
   }
 }

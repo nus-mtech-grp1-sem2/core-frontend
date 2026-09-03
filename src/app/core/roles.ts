@@ -32,39 +32,8 @@ export function roleFromGroups(groups: readonly string[]): UserRole {
   return PRECEDENCE.find((role) => normalised.includes(ROLE_GROUPS[role])) ?? 'customer';
 }
 
-/** Roles a visitor may pick for themselves on the register form. */
-export const SELECTABLE_ROLES: readonly UserRole[] = ['customer', 'organiser', 'event-helper'];
-
 export const ROLE_DESCRIPTIONS: Readonly<Record<UserRole, string>> = {
   customer: 'Buy tickets and manage your own orders.',
   organiser: 'List events, manage inventory and see sales.',
   'event-helper': 'Scan tickets and admit attendees at the door.',
 };
-
-export function isUserRole(value: string): value is UserRole {
-  return (SELECTABLE_ROLES as readonly string[]).includes(value);
-}
-
-/**
- * Resolves the effective role.
- *
- * Group membership is authoritative because only an admin (or a Lambda holding
- * admin permissions) can grant it. The self-declared attribute is consulted
- * only when the user is in no group at all, and only where the build opts in.
- */
-export function resolveRole(
-  groups: readonly string[],
-  declaredRole: string | null,
-  trustDeclared: boolean,
-): UserRole {
-  const fromGroups = roleFromGroups(groups);
-  if (fromGroups !== 'customer' || groups.length > 0) {
-    return fromGroups;
-  }
-
-  if (trustDeclared && declaredRole && isUserRole(declaredRole)) {
-    return declaredRole;
-  }
-
-  return 'customer';
-}

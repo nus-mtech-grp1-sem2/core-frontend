@@ -13,9 +13,9 @@ describe('site navigation', () => {
     }).compileComponents();
   });
 
-  for (const [label, path] of [
+  for (const [label, path, destination = path] of [
     ['Login', '/login'],
-    ['Register', '/register'],
+    ['Register', '/register', '/login'],
     ['Events', '/events'],
     ['Tickets', '/tickets'],
   ] as const) {
@@ -35,7 +35,7 @@ describe('site navigation', () => {
       link?.click();
       await fixture.whenStable();
 
-      expect(TestBed.inject(Location).path()).toBe(path);
+      expect(TestBed.inject(Location).path()).toBe(destination);
     });
   }
 

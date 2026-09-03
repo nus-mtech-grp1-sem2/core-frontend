@@ -16,8 +16,7 @@ export const routes: Routes = [
   {
     path: 'events/:id',
     title: 'Event — OneStage',
-    loadComponent: () =>
-      import('./events/event-detail/event-detail').then((m) => m.EventDetail),
+    loadComponent: () => import('./events/event-detail/event-detail').then((m) => m.EventDetail),
   },
   {
     path: 'tickets',
@@ -31,8 +30,7 @@ export const routes: Routes = [
   },
   {
     path: 'register',
-    title: 'Create an account — OneStage',
-    loadComponent: () => import('./auth/register/register').then((m) => m.Register),
+    redirectTo: 'login',
   },
   {
     path: 'organiser',
@@ -54,8 +52,7 @@ export const routes: Routes = [
   },
   {
     path: 'confirm',
-    title: 'Confirm your email — OneStage',
-    loadComponent: () => import('./auth/confirm/confirm').then((m) => m.Confirm),
+    redirectTo: 'login',
   },
   {
     path: 'health',

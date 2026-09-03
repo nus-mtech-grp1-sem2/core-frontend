@@ -1,8 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 
-import { COGNITO_CONFIG } from './auth-config';
-import { AuthenticatedUser, CognitoGateway, NextStep } from './cognito-gateway';
-import { UserRole, resolveRole } from './roles';
+import { AuthenticatedUser, CognitoGateway } from './cognito-gateway';
+import { UserRole, roleFromGroups } from './roles';
 
 type Status = 'unknown' | 'authenticated' | 'anonymous';
 
@@ -15,8 +14,6 @@ type Status = 'unknown' | 'authenticated' | 'anonymous';
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly gateway = inject(CognitoGateway);
-  private readonly config = inject(COGNITO_CONFIG);
-
   private readonly _user = signal<AuthenticatedUser | null>(null);
   private readonly _status = signal<Status>('unknown');
 
@@ -30,7 +27,7 @@ export class AuthService {
     if (!user) {
       return null;
     }
-    return resolveRole(user.groups, user.declaredRole, this.config.trustSelfDeclaredRole);
+    return roleFromGroups(user.groups);
   });
 
   /** Restores the session on startup; safe to call more than once. */
@@ -52,25 +49,8 @@ export class AuthService {
     }
   }
 
-  async signIn(email: string, password: string): Promise<NextStep> {
-    const result = await this.gateway.signIn(email, password);
-    if (result.signedIn) {
-      await this.restore();
-    }
-    return result.nextStep;
-  }
-
-  async signUp(email: string, password: string, name: string, role: string): Promise<NextStep> {
-    const result = await this.gateway.signUp(email, password, name, role);
-    return result.nextStep;
-  }
-
-  async confirmSignUp(email: string, code: string): Promise<boolean> {
-    return this.gateway.confirmSignUp(email, code);
-  }
-
-  async resendCode(email: string): Promise<void> {
-    await this.gateway.resendCode(email);
+  async signIn(): Promise<void> {
+    await this.gateway.signIn();
   }
 
   async signOut(): Promise<void> {
