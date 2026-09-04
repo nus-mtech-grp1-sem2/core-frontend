@@ -28,12 +28,17 @@ export class Events {
   private readonly route = inject(ActivatedRoute);
   private readonly organiserMode = this.route.snapshot.data['workspace'] === 'organiser';
   protected readonly allEvents = signal<readonly ManagedEvent[]>([]);
+  protected readonly visibleEvents = computed(() => {
+    const events = this.allEvents();
+    return this.includeCancelled() ? events : events.filter((event) => event.status !== 'CANCELLED');
+  });
   protected readonly loading = signal(true);
   protected readonly error = signal('');
   protected readonly submitting = signal(false);
   protected readonly shellWorkspace = () => this.organiserMode ? 'organiser' as const : 'customer' as const;
   protected readonly editingEventId = signal<number | null>(null);
-  protected readonly isAdmin = computed(() => this.organiserMode && this.auth.hasRole('organiser'));
+  protected readonly isAdmin = computed(() => this.organiserMode);
+  protected readonly includeCancelled = signal(false);
   protected readonly canViewEventDetails = this.auth.isAuthenticated;
   protected readonly showEventForm = signal(false);
   protected readonly teamEventId = signal<number | null>(null);
@@ -73,11 +78,6 @@ export class Events {
     finally { this.submitting.set(false); }
   }
 
-  protected editEvent(event: ManagedEvent): void {
-    this.editingEventId.set(event.event_id);
-    this.eventForm.reset({ title: event.title, description: event.description ?? '', venue: event.venue ?? '', startsAt: event.starts_at.replace(' ', 'T').slice(0, 16), totalSeats: event.total_seats, price: (event.price_cents ?? 0) / 100, tier: event.tier });
-    this.showEventForm.set(true);
-  }
   protected async publishEvent(eventId: number): Promise<void> {
     if (!window.confirm('Are you sure you want to publish this event?')) return;
     await this.performAction(`/events/${eventId}/publish`);

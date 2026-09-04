@@ -87,7 +87,13 @@ export class EventDetail {
   protected readonly purchasing = signal(false);
   protected readonly purchaseError = signal('');
   protected readonly needsQueue = () => this.event()?.tier === 'TIER2_SEATED' && !this.queue.admissionToken();
-  protected readonly isOrganiser = () => this.organiserMode && this.auth.hasRole('organiser');
+  /**
+   * Organiser access is per-event, owned by the backend's event_team_memberships
+   * table — not a global Cognito group. This reflects whether loading this
+   * event's team roster succeeded, which the backend only allows for that
+   * event's organisers.
+   */
+  protected readonly isOrganiser = signal(false);
   protected readonly shellWorkspace = () => this.organiserMode ? 'organiser' as const : 'customer' as const;
   protected readonly backLink = this.organiserMode ? '/organiser/events' : '/events';
   protected readonly isOwner = () => this.event()?.organiser_sub === this.auth.user()?.sub;
@@ -287,7 +293,7 @@ export class EventDetail {
         price: (result.event.price_cents ?? 0) / 100,
         tier: result.event.tier,
       });
-      if (this.isOrganiser()) await this.loadMembers(eventId);
+      if (this.organiserMode) await this.loadMembers(eventId);
       if (result.event.tier === 'TIER2_SEATED') await this.loadSeats(eventId);
     } catch (error) {
       this.event.set(null);
@@ -301,8 +307,10 @@ export class EventDetail {
     try {
       const result = await firstValueFrom(this.api.get<TeamResponse>('event', `/events/${eventId}/team-members`));
       this.members.set(result.members);
+      this.isOrganiser.set(true);
     } catch {
       this.members.set([]);
+      this.isOrganiser.set(false);
     }
   }
 

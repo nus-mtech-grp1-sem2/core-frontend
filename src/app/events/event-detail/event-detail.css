@@ -15,6 +15,7 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--bg-sunken);
+  box-shadow: var(--shadow-sm);
 }
 
 .thumb img {
@@ -76,6 +77,21 @@
   font-size: 0.875rem;
 }
 
+.event-facts .status {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+
+.event-facts .status.on-sale {
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.event-facts .status.cancelled {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
 .body {
   padding-block: clamp(1.25rem, 3vw, 2rem);
 }
@@ -93,10 +109,11 @@
 .purchase {
   display: grid;
   gap: 0.75rem;
-  padding: 1rem;
+  padding: 1.25rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg);
+  box-shadow: var(--shadow-sm);
   max-width: 24rem;
 }
 
@@ -142,11 +159,16 @@
 .edit-form,
 .team {
   display: grid;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: 1rem;
+  padding: 1.5rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.edit-form + .team {
+  margin-top: 1.5rem;
 }
 
 .edit-form {
@@ -154,9 +176,27 @@
 }
 
 .edit-form h2,
+.team h2,
 .field-wide,
 .form-actions {
   grid-column: 1 / -1;
+}
+
+.edit-form h2,
+.team h2 {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-action {
+  margin-inline-start: auto;
 }
 
 .field {
@@ -185,7 +225,7 @@
 .invite-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 10rem auto;
-  align-items: end;
+  align-items: center;
   gap: 0.5rem;
 }
 
@@ -324,5 +364,18 @@
 
   .invite-form .btn {
     width: 100%;
+  }
+
+  .form-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+  }
+
+  .status-action {
+    margin-inline-start: 0;
   }
 }

@@ -15,7 +15,12 @@
         <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
         <p>{{ event.description }}</p>
         <div class="event-facts">
-          <span class="pill status">{{ statusLabel(event.status) }}</span>
+          <span
+            class="pill status"
+            [class.on-sale]="event.status === 'PUBLISHED'"
+            [class.cancelled]="event.status === 'CANCELLED'"
+            >{{ statusLabel(event.status) }}</span
+          >
           <span>{{ event.total_seats }} seats</span>
           <span>{{ priceLabel(event.price_cents) }} per ticket</span>
         </div>
@@ -80,12 +85,11 @@
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" [disabled]="saving()">{{ saving() ? 'Saving...' : 'Save changes' }}</button>
           @if (event.status === 'DRAFT') {
-            <button type="button" class="btn btn-primary" [disabled]="updatingStatus()" (click)="changeStatus('PUBLISHED')">Publish event</button>
-            <button type="button" class="btn btn-ghost delete" [disabled]="deleting()" (click)="deleteEvent()">{{ deleting() ? 'Deleting...' : 'Delete draft' }}</button>
+            <button type="button" class="btn btn-ghost delete status-action" [disabled]="deleting()" (click)="deleteEvent()">{{ deleting() ? 'Deleting...' : 'Delete draft' }}</button>
           } @else if (event.status === 'PUBLISHED') {
-            <button type="button" class="btn btn-ghost delete" [disabled]="updatingStatus()" (click)="changeStatus('CANCELLED')">{{ updatingStatus() ? 'Cancelling...' : 'Cancel event' }}</button>
+            <button type="button" class="btn btn-ghost delete status-action" [disabled]="updatingStatus()" (click)="changeStatus('CANCELLED')">{{ updatingStatus() ? 'Cancelling...' : 'Cancel event' }}</button>
           } @else {
-            <button type="button" class="btn btn-primary" [disabled]="updatingStatus()" (click)="changeStatus('PUBLISHED')">{{ updatingStatus() ? 'Enabling...' : 'Enable event' }}</button>
+            <button type="button" class="btn btn-primary status-action" [disabled]="updatingStatus()" (click)="changeStatus('PUBLISHED')">{{ updatingStatus() ? 'Re-publishing...' : 'Re-publish event' }}</button>
           }
         </div>
       </form>

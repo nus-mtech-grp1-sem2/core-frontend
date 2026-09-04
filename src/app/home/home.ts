@@ -31,11 +31,14 @@ interface VenueResponse {
 
 interface EventApiRecord {
   readonly event_id: number;
-  readonly title: string;
+  readonly title?: string;
+  readonly event_name?: string;
   readonly description: string | null;
   readonly venue: string;
-  readonly starts_at: string;
-  readonly tier: 'TIER1_GA' | 'TIER2_SEATED';
+  readonly starts_at?: string;
+  readonly event_start_datetime?: string;
+  readonly tier?: 'TIER1_GA' | 'TIER2_SEATED';
+  readonly event_type?: 'TIER1_GA' | 'TIER2_SEATED';
   readonly price_cents: number | null;
 }
 
@@ -65,17 +68,21 @@ export class Home {
   constructor() {
     this.api.get<EventResponse>('event', '/events').subscribe({
       next: (result) => this.featuredSlides.set(
-        result.events.slice(0, 3).map((event) => ({
-          id: event.event_id,
-          category: categoryFor(event),
-          title: event.title,
-          subtitle: event.description || `${event.title} at ${event.venue}`,
-          venue: event.venue,
-          date: formatEventDate(event.starts_at),
-          priceFrom: `S$${((event.price_cents ?? 0) / 100).toFixed(0)}`,
-          image: this.api.url('event', `/events/${event.event_id}/image`),
-          alt: `${event.title} artwork`,
-        })),
+        result.events.slice(0, 3).map((event) => {
+          const title = event.title ?? event.event_name ?? '';
+          const startsAt = event.starts_at ?? event.event_start_datetime ?? '';
+          return {
+            id: event.event_id,
+            category: categoryFor(event, title),
+            title,
+            subtitle: event.description || `${title} at ${event.venue}`,
+            venue: event.venue,
+            date: formatEventDate(startsAt),
+            priceFrom: `S$${((event.price_cents ?? 0) / 100).toFixed(0)}`,
+            image: this.api.url('event', `/events/${event.event_id}/image`),
+            alt: `${title} artwork`,
+          };
+        }),
       ),
       error: () => this.featuredSlides.set([]),
     });
@@ -119,10 +126,11 @@ export class Home {
   ] as const;
 }
 
-function categoryFor(event: EventApiRecord): EventCategory {
-  const text = `${event.title} ${event.venue}`.toLowerCase();
+function categoryFor(event: EventApiRecord, title: string): EventCategory {
+  const text = `${title} ${event.venue}`.toLowerCase();
+  const tier = event.tier ?? event.event_type;
   if (/cup|derby|stadium|match|football/.test(text)) return 'Sports';
-  if (event.tier === 'TIER2_SEATED' || /theatre|comedy|improv/.test(text)) return 'Theatre';
+  if (tier === 'TIER2_SEATED' || /theatre|comedy|improv/.test(text)) return 'Theatre';
   return 'Concerts';
 }
 

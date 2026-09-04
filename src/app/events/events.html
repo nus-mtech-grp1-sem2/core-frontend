@@ -2,7 +2,7 @@
 <section class="page-head"><div class="shell"><p class="eyebrow">What's on</p><h1>Events</h1><p class="lead">Every concert, match and performance currently listed on OneStage, across all venues.</p></div></section>
 <section class="shell listing" aria-labelledby="listing-heading">
   <h2 class="visually-hidden" id="listing-heading">Event listings</h2>
-  <div class="toolbar"><p class="count" aria-live="polite">{{ allEvents().length }} events</p>@if (isAdmin()) { <button type="button" class="btn btn-primary btn-sm" [attr.aria-expanded]="showEventForm()" (click)="toggleEventForm()">{{ showEventForm() ? 'Cancel' : 'New event' }}</button> }</div>
+  <div class="toolbar"><p class="count" aria-live="polite">{{ visibleEvents().length }} events</p>@if (isAdmin()) { <label class="include-cancelled"><input type="checkbox" [checked]="includeCancelled()" (change)="includeCancelled.set($any($event.target).checked)" /> Include cancelled</label> <button type="button" class="btn btn-primary btn-sm" [attr.aria-expanded]="showEventForm()" (click)="toggleEventForm()">{{ showEventForm() ? 'Cancel' : 'New event' }}</button> }</div>
   @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
   @if (invitations().length) { <section class="invitations" aria-labelledby="invitation-heading"><h2 id="invitation-heading">Event invitations</h2>@for (invitation of invitations(); track invitation.membership_id) { <div class="invitation"><span><strong>{{ invitation.title }}</strong> at {{ invitation.venue }} as {{ invitation.role | lowercase }}</span><div class="actions"><button type="button" class="btn btn-primary btn-sm" (click)="decideInvitation(invitation, 'accept')">Accept</button><button type="button" class="btn btn-ghost btn-sm" (click)="decideInvitation(invitation, 'reject')">Reject</button></div></div> }</section> }
   @if (isAdmin() && showEventForm()) {
@@ -18,13 +18,17 @@
     </form>
   }
   @if (loading()) { <p class="empty">Loading events...</p> } @else { <ul class="event-grid">
-    @for (event of allEvents(); track event.event_id) {
+    @for (event of visibleEvents(); track event.event_id) {
       <li class="event-card">
         <a class="thumb" [routerLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'"><img [src]="eventImageUrl(event.event_id)" (error)="useFallbackImage($event.target)" [alt]="event.title + ' artwork'" loading="lazy" /><span class="pill category">{{ tierFor(event) }}</span></a>
         <div class="body">
-          <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p><h3><a [routerLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'">{{ event.title }}</a></h3>@if (event.venue) { <p class="where">{{ event.venue }}</p> }<p class="where">{{ event.remaining_qty ?? event.total_seats }} out of {{ event.total_seats }} seats remaining</p>@if (event.price_cents !== null) { <p class="where">{{ priceFor(event) }} per seat</p> }@if (event.description) { <p class="where">{{ event.description }}</p> }
+          <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p><h3><a [routerLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'">{{ event.title }}</a></h3>@if (isAdmin()) { <p class="where">{{ statusFor(event) }}</p> }@if (event.venue) { <p class="where">{{ event.venue }}</p> }<p class="where">{{ event.remaining_qty ?? event.total_seats }} out of {{ event.total_seats }} seats remaining</p>@if (event.price_cents !== null) { <p class="where">{{ priceFor(event) }} per seat</p> }@if (event.description) { <p class="where">{{ event.description }}</p> }
           @if (isAdmin()) {
-            @if (event.status === 'DRAFT') { <div class="actions"><button type="button" class="btn btn-primary btn-sm" (click)="publishEvent(event.event_id)">Publish</button></div> }
+            <div class="actions">
+              @if (event.status === 'DRAFT') { <button type="button" class="btn btn-primary btn-sm" (click)="publishEvent(event.event_id)">Publish</button><button type="button" class="btn btn-ghost btn-sm delete" (click)="deleteEvent(event.event_id)">Delete</button> }
+              @else if (event.status === 'PUBLISHED') { <button type="button" class="btn btn-ghost btn-sm delete" (click)="cancelEvent(event.event_id)">Cancel</button> }
+              @else { <button type="button" class="btn btn-primary btn-sm" (click)="publishEvent(event.event_id)">Re-publish</button> }
+            </div>
           }
         </div>
       </li>

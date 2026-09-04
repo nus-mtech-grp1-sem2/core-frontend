@@ -24,9 +24,7 @@ interface ManagedEventResponse {
   }[];
 }
 
-interface OrganiserEvent extends EventListing {
-  readonly lifecycleStatus: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
-}
+type OrganiserEvent = EventListing;
 
 /** Organiser workspace: every event, its sale status, and a link to edit it. */
 @Component({
@@ -104,13 +102,6 @@ interface OrganiserEvent extends EventListing {
                           Update
                           <span class="visually-hidden"> {{ event.title }}</span>
                         </a>
-                        @if (event.lifecycleStatus === 'DRAFT') {
-                          <button type="button" class="btn btn-ghost btn-sm danger" (click)="changeLifecycle(event)">Delete draft</button>
-                        } @else if (event.lifecycleStatus === 'PUBLISHED') {
-                          <button type="button" class="btn btn-ghost btn-sm danger" (click)="changeLifecycle(event)">Cancel event</button>
-                        } @else {
-                          <button type="button" class="btn btn-primary btn-sm" (click)="changeLifecycle(event)">Enable event</button>
-                        }
                       </td>
                     </tr>
                   }
@@ -197,8 +188,6 @@ interface OrganiserEvent extends EventListing {
       text-align: right;
       white-space: nowrap;
     }
-    .actions .btn + .btn { margin-left: .5rem; }
-    .danger { color: #8c1d18; border-color: #d9a3a0; }
 
     .note {
       margin-top: 1rem;
@@ -253,29 +242,11 @@ export class Organiser {
           status: event.status === 'CANCELLED' || event.remaining_qty <= 0
             ? 'Sold out'
             : event.remaining_qty / event.total_seats < 0.15 ? 'Few left' : 'On sale',
-          lifecycleStatus: event.status,
         }));
         this.events.set(events);
         this.status.set('ready');
       },
       error: () => this.status.set('error'),
-    });
-  }
-
-  protected changeLifecycle(event: OrganiserEvent): void {
-    const deleting = event.lifecycleStatus === 'DRAFT';
-    const enabling = event.lifecycleStatus === 'CANCELLED';
-    const action = deleting
-      ? 'permanently delete this draft'
-      : enabling ? 'enable this event and put it back on sale' : 'cancel this published event';
-    if (!window.confirm(`Are you sure you want to ${action}: ${event.title}?`)) return;
-
-    const request = deleting
-      ? this.api.delete<void>('event', `/events/${event.id}`)
-      : this.api.post<void>('event', `/events/${event.id}/${enabling ? 'publish' : 'cancel'}`, {});
-    request.subscribe({
-      next: () => this.load(),
-      error: () => window.alert(`This event could not be ${deleting ? 'deleted' : enabling ? 'enabled' : 'cancelled'}. Check that you still have organiser access.`),
     });
   }
 }
