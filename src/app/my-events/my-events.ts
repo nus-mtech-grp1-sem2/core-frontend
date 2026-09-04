@@ -1,0 +1,132 @@
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
+import { toDataURL } from 'qrcode';
+
+import { ApiService } from '../core/api';
+import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
+
+type TicketStatus = 'ISSUED' | 'CHECKED_IN' | 'VOID';
+
+interface Ticket {
+  readonly ticket_id: number;
+  readonly event_id: number;
+  readonly event_title: string;
+  readonly venue: string;
+  readonly starts_at: string;
+  readonly seat_label: string | null;
+  readonly qr_token: string;
+  readonly status: TicketStatus;
+}
+
+interface TicketsResponse {
+  readonly tickets: readonly Ticket[];
+}
+
+interface TicketWithQr extends Ticket {
+  readonly qrDataUrl: string;
+}
+
+type LoadStatus = 'loading' | 'ready' | 'error';
+
+/** The signed-in customer's own issued tickets, each with a scannable QR code. */
+@Component({
+  selector: 'app-my-events',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [DatePipe, RouterLink, WorkspaceShell],
+  template: `
+    <app-workspace-shell workspace="customer">
+      <section class="page-head">
+        <div class="shell">
+          <p class="eyebrow">Your account</p>
+          <h1>My events</h1>
+          <p class="lead">Tickets issued to your account, ready to scan at the door.</p>
+        </div>
+      </section>
+
+      <section class="shell body">
+        @switch (status()) {
+          @case ('loading') { <p class="status-message" role="status">Loading your tickets…</p> }
+          @case ('error') {
+            <p class="status-message error" role="alert">
+              Couldn't load your tickets. <button type="button" class="retry" (click)="load()">Try again</button>
+            </p>
+          }
+          @case ('ready') {
+            <ul class="ticket-list">
+              @for (ticket of tickets(); track ticket.ticket_id) {
+                <li>
+                  <article class="ticket-card">
+                    <img class="qr" [src]="ticket.qrDataUrl" [alt]="'QR code for ticket ' + ticket.ticket_id" />
+                    <div class="details">
+                      <h2><a [routerLink]="['/events', ticket.event_id]">{{ ticket.event_title }}</a></h2>
+                      <p>{{ ticket.venue }} · {{ ticket.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+                      <dl>
+                        @if (ticket.seat_label) { <div><dt>Seat</dt><dd>{{ ticket.seat_label }}</dd></div> }
+                        <div><dt>Status</dt><dd>{{ statusLabel(ticket.status) }}</dd></div>
+                      </dl>
+                    </div>
+                  </article>
+                </li>
+              } @empty {
+                <li class="empty">
+                  <h2>No tickets yet</h2>
+                  <p>Tickets you buy will show up here with a scannable QR code.</p>
+                  <a class="btn btn-primary" routerLink="/events">Browse events</a>
+                </li>
+              }
+            </ul>
+          }
+        }
+      </section>
+    </app-workspace-shell>
+  `,
+  styles: `
+    .body { padding-block: clamp(2rem, 5vw, 3rem); }
+    .ticket-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+    .ticket-card { display: grid; grid-template-columns: 6.5rem 1fr; gap: 1.25rem; align-items: center; padding: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); }
+    .qr { width: 6.5rem; height: 6.5rem; border-radius: var(--radius); }
+    h2 { margin: 0; font-size: 1.125rem; }
+    h2 a { color: var(--text); text-decoration: none; }
+    h2 a:hover { color: var(--brand-600); text-decoration: underline; }
+    .details > p { margin: .25rem 0 .875rem; color: var(--text-muted); }
+    dl { display: flex; flex-wrap: wrap; gap: .75rem 2rem; margin: 0; }
+    dl div { display: grid; gap: .125rem; }
+    dt { color: var(--text-muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
+    dd { margin: 0; font-size: .875rem; }
+    .empty { padding: 2rem; text-align: center; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
+    .empty p { color: var(--text-muted); }
+    @media (max-width: 720px) { .ticket-card { grid-template-columns: 1fr; justify-items: start; } }
+  `,
+})
+export class MyEvents {
+  private readonly api = inject(ApiService);
+  protected readonly status = signal<LoadStatus>('loading');
+  protected readonly tickets = signal<readonly TicketWithQr[]>([]);
+
+  constructor() {
+    void this.load();
+  }
+
+  protected async load(): Promise<void> {
+    this.status.set('loading');
+    try {
+      const result = await firstValueFrom(this.api.get<TicketsResponse>('ticket', '/customers/me/tickets'));
+      const withQr = await Promise.all(
+        result.tickets.map(async (ticket) => ({
+          ...ticket,
+          qrDataUrl: await toDataURL(ticket.qr_token, { width: 160, margin: 1 }),
+        })),
+      );
+      this.tickets.set(withQr);
+      this.status.set('ready');
+    } catch {
+      this.status.set('error');
+    }
+  }
+
+  protected statusLabel(status: TicketStatus): string {
+    return status === 'CHECKED_IN' ? 'Checked in' : status === 'VOID' ? 'Void' : 'Ready to scan';
+  }
+}

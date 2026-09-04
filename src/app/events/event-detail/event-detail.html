@@ -1,21 +1,69 @@
+<app-workspace-shell [workspace]="shellWorkspace()">
 @if (loading()) {
   <section class="shell body"><p class="empty">Loading event...</p></section>
 } @else if (event(); as event) {
   <section class="page-head">
-    <div class="shell head-copy">
-      <a class="back" routerLink="/events">Back to all events</a>
-      <p class="eyebrow">{{ event.tier === 'TIER1_GA' ? 'General admission' : 'Reserved seating' }}</p>
-      <h1>{{ event.title }}</h1>
-      <p class="where">{{ event.venue }}</p>
-      <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
-      <p>{{ event.description }}</p>
-      <div class="event-facts">
-        <span class="pill status">{{ statusLabel(event.status) }}</span>
-        <span>{{ event.total_seats }} seats</span>
-        <span>{{ priceLabel(event.price_cents) }} per ticket</span>
+    <div class="shell head-grid">
+      <div class="thumb">
+        <img [src]="eventImageUrl(event.event_id)" (error)="useFallbackImage($event.target)" [alt]="event.title + ' artwork'" />
+        <span class="pill category">{{ event.tier === 'TIER1_GA' ? 'General admission' : 'Reserved seating' }}</span>
+      </div>
+      <div class="head-copy">
+        <a class="back" [routerLink]="backLink">{{ isOrganiser() ? 'Back to managed events' : 'Back to all events' }}</a>
+        <h1>{{ event.title }}</h1>
+        <p class="where">{{ event.venue }}</p>
+        <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+        <p>{{ event.description }}</p>
+        <div class="event-facts">
+          <span class="pill status">{{ statusLabel(event.status) }}</span>
+          <span>{{ event.total_seats }} seats</span>
+          <span>{{ priceLabel(event.price_cents) }} per ticket</span>
+        </div>
       </div>
     </div>
   </section>
+
+  @if (canBuy()) {
+    <section class="shell body purchase" aria-label="Buy tickets">
+      @if (purchaseError()) { <p class="error" role="alert">{{ purchaseError() }}</p> }
+      @if (needsQueue()) {
+        <p>Tickets for this event are released through the waiting room.</p>
+        <button type="button" class="btn btn-primary" (click)="goToQueue()">Join the queue</button>
+      } @else {
+        <div class="field">
+          <label for="quantity">Quantity</label>
+          <input
+            id="quantity"
+            type="number"
+            min="1"
+            [max]="event.total_seats"
+            [value]="quantity()"
+            (input)="quantity.set(+$any($event.target).value || 1)"
+          />
+        </div>
+        @if (event.tier === 'TIER2_SEATED') {
+          <div class="seat-grid" role="group" aria-label="Choose your seats">
+            @for (seat of seats(); track seat.seat_id) {
+              <button
+                type="button"
+                class="seat"
+                [class.selected]="selectedSeatIds().includes(seat.seat_id)"
+                [disabled]="seat.status !== 'AVAILABLE'"
+                (click)="toggleSeat(seat)"
+              >
+                {{ seat.seat_label }}
+              </button>
+            } @empty {
+              <p class="empty">No seats available.</p>
+            }
+          </div>
+        }
+        <button type="button" class="btn btn-primary" [disabled]="purchasing()" (click)="buy()">
+          {{ purchasing() ? 'Processing…' : 'Buy tickets' }}
+        </button>
+      }
+    </section>
+  }
 
   @if (isOrganiser()) {
     <section class="shell body management" aria-label="Event management">
@@ -29,7 +77,17 @@
         <div class="field"><label for="seats">Total seats</label><input id="seats" type="number" min="1" step="1" formControlName="totalSeats" /></div>
         <div class="field"><label for="price">Price</label><input id="price" type="number" min="0" step="0.01" formControlName="price" /></div>
         <div class="field"><label for="tier">Ticketing</label><select id="tier" formControlName="tier"><option value="TIER1_GA">General admission</option><option value="TIER2_SEATED">Reserved seating</option></select></div>
-        <div class="form-actions"><button type="submit" class="btn btn-primary" [disabled]="saving()">{{ saving() ? 'Saving...' : 'Save changes' }}</button>@if (event.status === 'DRAFT') { <button style="margin-left:15px;color:white;background-color:red;" type="button" class="btn btn-ghost delete" [disabled]="deleting()" (click)="deleteEvent()">{{ deleting() ? 'Deleting...' : 'Delete event' }}</button> }</div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" [disabled]="saving()">{{ saving() ? 'Saving...' : 'Save changes' }}</button>
+          @if (event.status === 'DRAFT') {
+            <button type="button" class="btn btn-primary" [disabled]="updatingStatus()" (click)="changeStatus('PUBLISHED')">Publish event</button>
+            <button type="button" class="btn btn-ghost delete" [disabled]="deleting()" (click)="deleteEvent()">{{ deleting() ? 'Deleting...' : 'Delete draft' }}</button>
+          } @else if (event.status === 'PUBLISHED') {
+            <button type="button" class="btn btn-ghost delete" [disabled]="updatingStatus()" (click)="changeStatus('CANCELLED')">{{ updatingStatus() ? 'Cancelling...' : 'Cancel event' }}</button>
+          } @else {
+            <button type="button" class="btn btn-primary" [disabled]="updatingStatus()" (click)="changeStatus('PUBLISHED')">{{ updatingStatus() ? 'Enabling...' : 'Enable event' }}</button>
+          }
+        </div>
       </form>
 
       <section class="team" aria-labelledby="team-heading">
@@ -52,5 +110,6 @@
     </section>
   }
 } @else {
-  <section class="shell body not-found"><h1>Event not found</h1><p>{{ error() || 'It may have been removed or the link is out of date.' }}</p><a class="btn btn-primary" routerLink="/events">Back to all events</a></section>
+  <section class="shell body not-found"><h1>Event not found</h1><p>{{ error() || 'It may have been removed or the link is out of date.' }}</p><a class="btn btn-primary" [routerLink]="backLink">Back to events</a></section>
 }
+</app-workspace-shell>

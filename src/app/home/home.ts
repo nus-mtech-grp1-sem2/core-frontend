@@ -1,32 +1,107 @@
-import { NgOptimizedImage } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
+import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
-import { MY_ORDERS, TICKETS, TicketRow, VENUES } from '../core/catalog';
-import { TicketTable } from '../tickets/ticket-table/ticket-table';
+import { EventCategory, FeaturedSlide, Venue } from '../core/catalog';
+import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 import { Carousel } from './carousel/carousel';
 
-/** Landing page: featured carousel, venue grid and available tickets. */
+type TicketStatus = 'ISSUED' | 'CHECKED_IN' | 'VOID';
+
+/** One row of `GET /customers/me/tickets` — see `my-events.ts` for the full shape. */
+interface UpcomingTicket {
+  readonly ticket_id: number;
+  readonly event_id: number;
+  readonly event_title: string;
+  readonly venue: string;
+  readonly starts_at: string;
+  readonly seat_label: string | null;
+  readonly status: TicketStatus;
+}
+
+interface TicketsResponse {
+  readonly tickets: readonly UpcomingTicket[];
+}
+
+interface VenueResponse {
+  readonly venues: readonly Venue[];
+}
+
+interface EventApiRecord {
+  readonly event_id: number;
+  readonly title: string;
+  readonly description: string | null;
+  readonly venue: string;
+  readonly starts_at: string;
+  readonly tier: 'TIER1_GA' | 'TIER2_SEATED';
+  readonly price_cents: number | null;
+}
+
+interface EventResponse {
+  readonly events: readonly EventApiRecord[];
+}
+
+/** Landing page: featured carousel and venue grid. */
 @Component({
   selector: 'app-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Carousel, NgOptimizedImage, RouterLink, TicketTable],
+  imports: [Carousel, DatePipe, RouterLink, WorkspaceShell],
   templateUrl: './home.html',
   styleUrl: './home.css',
 })
 export class Home {
+  private readonly api = inject(ApiService);
   protected readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  protected readonly orders = MY_ORDERS;
+  protected readonly tickets = signal<readonly UpcomingTicket[]>([]);
 
   /** First part of the email, which is the closest thing to a name we hold. */
   protected readonly firstName = computed(() => this.auth.user()?.email.split('@')[0] ?? '');
 
-  protected readonly venues = VENUES;
+  protected readonly venues = signal<readonly Venue[]>([]);
+  protected readonly featuredSlides = signal<readonly FeaturedSlide[]>([]);
 
-  /** A short taste of what is on sale; the full list with filters is /tickets. */
-  protected readonly featuredTickets = TICKETS.slice(0, 5);
+  constructor() {
+    this.api.get<EventResponse>('event', '/events').subscribe({
+      next: (result) => this.featuredSlides.set(
+        result.events.slice(0, 3).map((event) => ({
+          id: event.event_id,
+          category: categoryFor(event),
+          title: event.title,
+          subtitle: event.description || `${event.title} at ${event.venue}`,
+          venue: event.venue,
+          date: formatEventDate(event.starts_at),
+          priceFrom: `S$${((event.price_cents ?? 0) / 100).toFixed(0)}`,
+          image: this.api.url('event', `/events/${event.event_id}/image`),
+          alt: `${event.title} artwork`,
+        })),
+      ),
+      error: () => this.featuredSlides.set([]),
+    });
+    this.api.get<VenueResponse>('event', '/venues').subscribe({
+      next: (result) => this.venues.set(result.venues),
+      error: () => this.venues.set([]),
+    });
+    effect(() => {
+      if (!this.auth.isAuthenticated()) {
+        this.tickets.set([]);
+        return;
+      }
+      this.api.get<TicketsResponse>('ticket', '/customers/me/tickets').subscribe({
+        next: (result) => this.tickets.set(result.tickets.slice(0, 5)),
+        error: () => this.tickets.set([]),
+      });
+    });
+  }
+
+  protected venueImageUrl(sampleEventId: number): string {
+    return this.api.url('event', `/events/${sampleEventId}/image`);
+  }
+
+  protected useFallbackImage(target: EventTarget | null): void {
+    if (target instanceof HTMLImageElement) target.src = 'images/venue-arena.jpg';
+  }
 
   protected readonly assurances = [
     {
@@ -42,14 +117,16 @@ export class Home {
       detail: 'Mobile tickets land in your account the moment payment clears.',
     },
   ] as const;
+}
 
-  /** Signed-out visitors go to sign in first; checkout itself isn't built yet. */
-  protected buy(ticket: TicketRow): void {
-    if (!this.auth.isAuthenticated()) {
-      this.router.navigate(['/login'], { queryParams: { returnUrl: this.router.url } });
-      return;
-    }
+function categoryFor(event: EventApiRecord): EventCategory {
+  const text = `${event.title} ${event.venue}`.toLowerCase();
+  if (/cup|derby|stadium|match|football/.test(text)) return 'Sports';
+  if (event.tier === 'TIER2_SEATED' || /theatre|comedy|improv/.test(text)) return 'Theatre';
+  return 'Concerts';
+}
 
-    console.info('Checkout is not wired up yet.', ticket);
-  }
+function formatEventDate(value: string): string {
+  const date = new Date(value);
+  return `${date.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })} · ${date.toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' })}`;
 }

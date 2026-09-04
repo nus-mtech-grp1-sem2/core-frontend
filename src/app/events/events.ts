@@ -1,12 +1,13 @@
-import { DatePipe, LowerCasePipe, NgOptimizedImage } from '@angular/common';
+import { DatePipe, LowerCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
+import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
@@ -19,17 +20,20 @@ interface CognitoUserResponse { readonly users: readonly CognitoUser[]; }
 interface Invitation { readonly membership_id: number; readonly event_id: number; readonly role: 'ORGANISER' | 'HELPER'; readonly title: string; readonly venue: string; readonly starts_at: string; }
 interface InvitationResponse { readonly invitations: readonly Invitation[]; }
 
-@Component({ selector: 'app-events', changeDetection: ChangeDetectionStrategy.OnPush, imports: [DatePipe, LowerCasePipe, NgOptimizedImage, RouterLink, ReactiveFormsModule], templateUrl: './events.html', styleUrl: './events.css' })
+@Component({ selector: 'app-events', changeDetection: ChangeDetectionStrategy.OnPush, imports: [DatePipe, LowerCasePipe, RouterLink, ReactiveFormsModule, WorkspaceShell], templateUrl: './events.html', styleUrl: './events.css' })
 export class Events {
   private readonly auth = inject(AuthService);
   private readonly api = inject(ApiService);
   private readonly fb = inject(NonNullableFormBuilder);
+  private readonly route = inject(ActivatedRoute);
+  private readonly organiserMode = this.route.snapshot.data['workspace'] === 'organiser';
   protected readonly allEvents = signal<readonly ManagedEvent[]>([]);
   protected readonly loading = signal(true);
   protected readonly error = signal('');
   protected readonly submitting = signal(false);
+  protected readonly shellWorkspace = () => this.organiserMode ? 'organiser' as const : 'customer' as const;
   protected readonly editingEventId = signal<number | null>(null);
-  protected readonly isAdmin = computed(() => this.auth.hasRole('organiser'));
+  protected readonly isAdmin = computed(() => this.organiserMode && this.auth.hasRole('organiser'));
   protected readonly canViewEventDetails = this.auth.isAuthenticated;
   protected readonly showEventForm = signal(false);
   protected readonly teamEventId = signal<number | null>(null);
@@ -49,7 +53,7 @@ export class Events {
     effect(() => {
       if (this.auth.status() === 'unknown') return;
       void this.loadEvents(this.isAdmin());
-      if (this.auth.isAuthenticated()) void this.loadInvitations();
+      if (this.organiserMode && this.auth.isAuthenticated()) void this.loadInvitations();
       else this.invitations.set([]);
     });
   }
@@ -105,6 +109,18 @@ export class Events {
     try { await firstValueFrom(this.api.post('event', `/team-invitations/${invitation.membership_id}/${decision}`, {})); await this.loadInvitations(); await this.loadEvents(this.isAdmin()); }
     catch (error) { this.error.set(describeEventError(error, 'update the invitation')); }
   }
+  protected eventImageUrl(eventId: number): string {
+    return this.api.url('event', `/events/${eventId}/image`);
+  }
+
+  protected eventDetailLink(eventId: number): readonly (string | number)[] {
+    return this.organiserMode ? ['/organiser/events', eventId] : ['/events', eventId];
+  }
+
+  protected useFallbackImage(target: EventTarget | null): void {
+    if (target instanceof HTMLImageElement) target.src = 'images/hero-concert.jpg';
+  }
+
   protected statusFor(event: ManagedEvent): string { return event.status === 'PUBLISHED' ? 'On sale' : event.status === 'DRAFT' ? 'Draft' : 'Cancelled'; }
   protected tierFor(event: ManagedEvent): string { return event.tier === 'TIER1_GA' ? 'General admission' : 'Reserved seating'; }
   protected priceFor(event: ManagedEvent): string { return `$${((event.price_cents ?? 0) / 100).toFixed(2)}`; }

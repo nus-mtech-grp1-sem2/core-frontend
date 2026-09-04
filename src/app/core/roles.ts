@@ -1,48 +1,33 @@
 /**
- * The application role is not sourced from Cognito groups.
+ * The three areas of OneStage: buying tickets, running events, and working
+ * the door.
  *
- * Per the authentication and authorization design, Cognito is only the
- * authentication source. Application authorization comes from the MySQL customer
- * record, so a browser build must not infer privileged access from Cognito group
- * membership or any browser-supplied role attribute.
+ * Every signed-in account has all three — there is no access control by
+ * role. `UserRole` and its labels exist only for places that still need to
+ * name one of the three areas, such as the workspace switcher in the header
+ * and the per-event team roster.
  */
 export type UserRole = 'customer' | 'organiser' | 'event-helper';
 
 export const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
   customer: 'Customer',
-  organiser: 'Organizer',
-  'event-helper': 'Event Helper',
+  organiser: 'Organiser',
+  'event-helper': 'Event helper',
 };
 
-/** The application role from the customer table, not from Cognito claims. */
-export function roleFromGroups(_groups: readonly string[]): UserRole {
-  return 'customer';
-}
+/**
+ * Most privileged group wins, so a user who is both an organiser and a helper
+ * gets the organiser experience rather than an arbitrary one.
+ */
+const PRECEDENCE: readonly UserRole[] = ['organiser', 'event-helper', 'customer'];
 
-/** Roles a visitor may pick for themselves on the register form. */
-export const SELECTABLE_ROLES: readonly UserRole[] = ['customer', 'organiser', 'event-helper'];
+export function roleFromGroups(groups: readonly string[]): UserRole {
+  const normalised = groups.map((group) => group.trim().toLowerCase());
+  return PRECEDENCE.find((role) => normalised.includes(role)) ?? 'customer';
+}
 
 export const ROLE_DESCRIPTIONS: Readonly<Record<UserRole, string>> = {
   customer: 'Buy tickets and manage your own orders.',
   organiser: 'List events, manage inventory and see sales.',
   'event-helper': 'Scan tickets and admit attendees at the door.',
 };
-
-export function isUserRole(value: string): value is UserRole {
-  return (SELECTABLE_ROLES as readonly string[]).includes(value);
-}
-
-/**
- * Resolves the effective role.
- *
- * This build intentionally defaults to the customer role and ignores Cognito
- * group membership. The backend customer record remains the source of truth for
- * application authorization.
- */
-export function resolveRole(
-  _groups: readonly string[],
-  declaredRole: string | null,
-  trustDeclared: boolean,
-): UserRole {
-  return trustDeclared && declaredRole && isUserRole(declaredRole) ? declaredRole : 'customer';
-}

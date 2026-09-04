@@ -1,11 +1,12 @@
+@if (slides().length > 0) {
 <section class="hero" aria-roledescription="carousel" aria-label="Featured events">
-  @for (slide of slides; track slide.id; let i = $index) {
+  @for (slide of slides(); track slide.id; let i = $index) {
     <div
       class="slide"
       [class.active]="i === index()"
       role="group"
       aria-roledescription="slide"
-      [attr.aria-label]="i + 1 + ' of ' + slides.length + ': ' + slide.title"
+      [attr.aria-label]="i + 1 + ' of ' + slides().length + ': ' + slide.title"
       [attr.aria-hidden]="i === index() ? null : 'true'"
       [attr.inert]="i === index() ? null : ''"
     >
@@ -31,9 +32,11 @@
     </div>
   }
 
-  <p class="visually-hidden" aria-live="polite">
-    Slide {{ index() + 1 }} of {{ slides.length }}: {{ current().title }}
-  </p>
+  @if (current(); as slide) {
+    <p class="visually-hidden" aria-live="polite">
+      Slide {{ index() + 1 }} of {{ slides().length }}: {{ slide.title }}
+    </p>
+  }
 
   <button type="button" class="arrow prev" (click)="previous()">
     <span class="visually-hidden">Previous slide</span>
@@ -62,7 +65,7 @@
   </button>
 
   <div class="dots">
-    @for (slide of slides; track slide.id; let i = $index) {
+    @for (slide of slides(); track slide.id; let i = $index) {
       <button
         type="button"
         class="dot"
@@ -75,3 +78,4 @@
     }
   </div>
 </section>
+}

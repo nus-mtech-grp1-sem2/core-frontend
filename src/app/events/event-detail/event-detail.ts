@@ -2,11 +2,13 @@ import { DatePipe, LowerCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/api';
 import { AuthService } from '../../core/auth';
+import { QueueService } from '../../core/queue';
+import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
@@ -40,18 +42,35 @@ interface TeamResponse {
   readonly members: readonly TeamMember[];
 }
 
+interface SeatOption {
+  readonly seat_id: number;
+  readonly seat_label: string;
+  readonly status: 'AVAILABLE' | 'HELD' | 'SOLD';
+}
+
+interface SeatResponse {
+  readonly seats: readonly SeatOption[];
+}
+
+interface OrderResponse {
+  readonly order: { readonly order_id: number };
+}
+
 @Component({
   selector: 'app-event-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, LowerCasePipe, ReactiveFormsModule, RouterLink],
+  imports: [DatePipe, LowerCasePipe, ReactiveFormsModule, RouterLink, WorkspaceShell],
   templateUrl: './event-detail.html',
   styleUrl: './event-detail.css',
 })
 export class EventDetail {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly queue = inject(QueueService);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly organiserMode = this.route.snapshot.data['workspace'] === 'organiser';
 
   readonly id = input('');
   protected readonly event = signal<EventDetailData | null>(null);
@@ -59,9 +78,18 @@ export class EventDetail {
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
   protected readonly deleting = signal(false);
+  protected readonly updatingStatus = signal(false);
   protected readonly inviting = signal(false);
   protected readonly error = signal('');
-  protected readonly isOrganiser = () => this.auth.hasRole('organiser');
+  protected readonly seats = signal<readonly SeatOption[]>([]);
+  protected readonly quantity = signal(1);
+  protected readonly selectedSeatIds = signal<readonly number[]>([]);
+  protected readonly purchasing = signal(false);
+  protected readonly purchaseError = signal('');
+  protected readonly needsQueue = () => this.event()?.tier === 'TIER2_SEATED' && !this.queue.admissionToken();
+  protected readonly isOrganiser = () => this.organiserMode && this.auth.hasRole('organiser');
+  protected readonly shellWorkspace = () => this.organiserMode ? 'organiser' as const : 'customer' as const;
+  protected readonly backLink = this.organiserMode ? '/organiser/events' : '/events';
   protected readonly isOwner = () => this.event()?.organiser_sub === this.auth.user()?.sub;
   protected readonly form = this.fb.group({
     title: this.fb.control('', Validators.required),
@@ -128,11 +156,32 @@ export class EventDetail {
     this.error.set('');
     try {
       await firstValueFrom(this.api.delete('event', `/events/${event.event_id}`));
-      await this.router.navigateByUrl('/events');
+      await this.router.navigateByUrl('/organiser/events');
     } catch (error) {
       this.error.set(describeError(error, 'delete this event'));
     } finally {
       this.deleting.set(false);
+    }
+  }
+
+  protected async changeStatus(status: 'PUBLISHED' | 'CANCELLED'): Promise<void> {
+    const event = this.event();
+    if (!event || this.updatingStatus()) return;
+    const enabling = status === 'PUBLISHED';
+    const action = enabling ? 'enable this event and put it back on sale' : 'cancel this event';
+    if (!window.confirm(`Are you sure you want to ${action}?`)) return;
+
+    this.updatingStatus.set(true);
+    this.error.set('');
+    try {
+      await firstValueFrom(
+        this.api.post('event', `/events/${event.event_id}/${enabling ? 'publish' : 'cancel'}`, {}),
+      );
+      await this.load(event.event_id);
+    } catch (error) {
+      this.error.set(describeError(error, enabling ? 'enable this event' : 'cancel this event'));
+    } finally {
+      this.updatingStatus.set(false);
     }
   }
 
@@ -145,6 +194,68 @@ export class EventDetail {
       await this.loadMembers(event.event_id);
     } catch (error) {
       this.error.set(describeError(error, 'remove this team member'));
+    }
+  }
+
+  protected eventImageUrl(eventId: number): string {
+    return this.api.url('event', `/events/${eventId}/image`);
+  }
+
+  protected useFallbackImage(target: EventTarget | null): void {
+    if (target instanceof HTMLImageElement) target.src = 'images/hero-concert.jpg';
+  }
+
+  protected canBuy(): boolean {
+    return !this.organiserMode && this.event()?.status === 'PUBLISHED';
+  }
+
+  protected toggleSeat(seat: SeatOption): void {
+    if (seat.status !== 'AVAILABLE') return;
+    this.selectedSeatIds.update((ids) => {
+      if (ids.includes(seat.seat_id)) return ids.filter((id) => id !== seat.seat_id);
+      if (ids.length >= this.quantity()) return ids;
+      return [...ids, seat.seat_id];
+    });
+  }
+
+  protected goToQueue(): void {
+    void this.router.navigate(['/events', this.id(), 'queue']);
+  }
+
+  protected async buy(): Promise<void> {
+    const event = this.event();
+    if (!event || this.purchasing()) return;
+
+    if (!this.auth.isAuthenticated()) {
+      void this.router.navigate(['/login'], { queryParams: { returnUrl: this.router.url } });
+      return;
+    }
+
+    if (event.tier === 'TIER2_SEATED' && this.selectedSeatIds().length !== this.quantity()) {
+      this.purchaseError.set(`Select ${this.quantity()} seat(s) to continue.`);
+      return;
+    }
+
+    this.purchasing.set(true);
+    this.purchaseError.set('');
+    try {
+      const created = await firstValueFrom(
+        this.api.post<OrderResponse>('order', '/orders', {
+          eventId: event.event_id,
+          quantity: this.quantity(),
+          seatIds: event.tier === 'TIER2_SEATED' ? this.selectedSeatIds() : undefined,
+          customerEmail: this.auth.user()?.email ?? '',
+        }),
+      );
+      await firstValueFrom(
+        this.api.post('order', `/orders/${created.order.order_id}/payment`, { paymentToken: 'simulated' }),
+      );
+      this.queue.clear();
+      await this.router.navigateByUrl('/my-events');
+    } catch (error) {
+      this.purchaseError.set(describeError(error, 'complete your purchase'));
+    } finally {
+      this.purchasing.set(false);
     }
   }
 
@@ -177,6 +288,7 @@ export class EventDetail {
         tier: result.event.tier,
       });
       if (this.isOrganiser()) await this.loadMembers(eventId);
+      if (result.event.tier === 'TIER2_SEATED') await this.loadSeats(eventId);
     } catch (error) {
       this.event.set(null);
       this.error.set(describeError(error, 'load this event'));
@@ -191,6 +303,15 @@ export class EventDetail {
       this.members.set(result.members);
     } catch {
       this.members.set([]);
+    }
+  }
+
+  private async loadSeats(eventId: number): Promise<void> {
+    try {
+      const result = await firstValueFrom(this.api.get<SeatResponse>('event', `/events/${eventId}/seats`));
+      this.seats.set(result.seats);
+    } catch {
+      this.seats.set([]);
     }
   }
 }

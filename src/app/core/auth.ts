@@ -1,110 +1,73 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 
-import { COGNITO_CONFIG } from './auth-config';
-import { AuthenticatedUser, CognitoGateway, NextStep } from './cognito-gateway';
-import { UserRole, resolveRole } from './roles';
+import { AuthenticatedUser, CognitoGateway } from './cognito-gateway';
+import { UserRole, roleFromGroups } from './roles';
 
 type Status = 'unknown' | 'authenticated' | 'anonymous';
 
-interface RegistrationDraft {
-  readonly email: string;
-  readonly name: string;
-  readonly password: string;
-}
-
+/**
+ * Application-facing auth state.
+ *
+ * Holds the signed-in user as a signal so the header and route guards react to
+ * it, and turns Cognito's exception names into messages a visitor can act on.
+ *
+ * There is no per-user role here: every signed-in account has the same
+ * access, to the storefront, the organiser workspace and the event-helper
+ * workspace alike.
+ */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly gateway = inject(CognitoGateway);
-  private readonly config = inject(COGNITO_CONFIG);
   private readonly _user = signal<AuthenticatedUser | null>(null);
   private readonly _status = signal<Status>('unknown');
-  private readonly _demoRole = signal<UserRole | null>(null);
-  private registrationDraft: RegistrationDraft | null = null;
 
   readonly user = this._user.asReadonly();
   readonly status = this._status.asReadonly();
   readonly isAuthenticated = computed(() => this._status() === 'authenticated');
+
+  /** Role for the signed-in user, derived from their Cognito groups. */
   readonly role = computed<UserRole | null>(() => {
     const user = this._user();
-    if (!user) return null;
-    return this._demoRole() ?? resolveRole(user.groups, user.declaredRole, this.config.trustSelfDeclaredRole);
+    if (!user) {
+      return null;
+    }
+    return roleFromGroups(user.groups);
   });
 
+  /** Restores the session on startup; safe to call more than once. */
   async restore(): Promise<void> {
     try {
-      this.apply(await this.gateway.currentUser());
+      const user = await this.gateway.currentUser();
+      this.apply(user);
     } catch {
       this.apply(null);
     }
   }
 
+  /** Re-reads the session with new tokens, picking up any group just granted. */
   async refresh(): Promise<void> {
     try {
       this.apply(await this.gateway.refresh());
     } catch {
-      // Keep the current state until the next restore.
+      // Keep whatever we had; the next restore() will correct it.
     }
   }
 
-  async signIn(email: string, password: string): Promise<NextStep> {
-    const result = await this.gateway.signIn(email, password);
-    if (result.signedIn) await this.restore();
-    return result.nextStep;
+  async signIn(): Promise<void> {
+    await this.gateway.signIn();
   }
 
-  setDemoRole(role: UserRole): void {
-    this._demoRole.set(role);
-  }
-
-  clearDemoRole(): void {
-    this._demoRole.set(null);
-  }
-
-  async signUp(email: string, password: string, name: string, role: string): Promise<NextStep> {
-    return (await this.gateway.signUp(email, password, name, role)).nextStep;
-  }
-
-  rememberRegistration(email: string, name: string, password: string): void {
-    this.registrationDraft = { email, name, password };
-  }
-
-  registrationDetails(email: string): { name: string; password: string } | null {
-    if (!this.registrationDraft || this.registrationDraft.email !== email) return null;
-    return { name: this.registrationDraft.name, password: this.registrationDraft.password };
-  }
-
-  clearRegistration(): void {
-    this.registrationDraft = null;
-  }
-
-  async confirmSignUp(email: string, code: string): Promise<boolean> {
-    return this.gateway.confirmSignUp(email, code);
-  }
-
-  async resendCode(email: string): Promise<void> {
-    await this.gateway.resendCode(email);
-  }
-
-  async forgotPassword(email: string): Promise<void> {
-    await this.gateway.forgotPassword(email);
-  }
-
-  async resetPassword(email: string, code: string, newPassword: string): Promise<void> {
-    await this.gateway.resetPassword(email, code, newPassword);
+  async signUp(): Promise<void> {
+    await this.gateway.signUp();
   }
 
   async signOut(): Promise<void> {
     await this.gateway.signOut();
-    this.clearDemoRole();
     this.apply(null);
   }
 
   accessToken(): Promise<string | null> {
     return this.gateway.accessToken();
-  }
-
-  hasGroup(group: string): boolean {
-    return this._user()?.groups.includes(group) ?? false;
   }
 
   hasRole(...roles: readonly UserRole[]): boolean {
@@ -118,19 +81,35 @@ export class AuthService {
   }
 }
 
+/**
+ * Cognito reports failures by exception name. Map the ones a visitor can do
+ * something about; anything else gets a generic message so we never surface
+ * raw SDK text in the UI.
+ */
 export function describeAuthError(error: unknown): string {
   const name = (error as { name?: string })?.name ?? '';
+
   switch (name) {
-    case 'NotAuthorizedException': return 'That email and password combination is not correct.';
-    case 'UserNotFoundException': return 'No account exists for that email address.';
-    case 'UserNotConfirmedException': return 'Your account is not confirmed yet. Enter the code we emailed you.';
-    case 'UsernameExistsException': return 'An account with that email address already exists.';
-    case 'InvalidPasswordException': return 'That password does not meet the password policy.';
-    case 'CodeMismatchException': return 'That confirmation code is not correct.';
-    case 'ExpiredCodeException': return 'That confirmation code has expired. Request a new one.';
+    case 'NotAuthorizedException':
+      return 'That email and password combination is not correct.';
+    case 'UserNotFoundException':
+      return 'No account exists for that email address.';
+    case 'UserNotConfirmedException':
+      return 'Your account is not confirmed yet. Enter the code we emailed you.';
+    case 'UsernameExistsException':
+      return 'An account with that email address already exists.';
+    case 'InvalidPasswordException':
+      return 'That password does not meet the password policy.';
+    case 'CodeMismatchException':
+      return 'That confirmation code is not correct.';
+    case 'ExpiredCodeException':
+      return 'That confirmation code has expired. Request a new one.';
     case 'LimitExceededException':
-    case 'TooManyRequestsException': return 'Too many attempts. Wait a few minutes and try again.';
-    case 'AuthUserPoolException': return 'Authentication is not configured for this build yet.';
-    default: return 'Something went wrong. Please try again.';
+    case 'TooManyRequestsException':
+      return 'Too many attempts. Wait a few minutes and try again.';
+    case 'AuthUserPoolException':
+      return 'Authentication is not configured for this build yet.';
+    default:
+      return 'Something went wrong. Please try again.';
   }
 }
