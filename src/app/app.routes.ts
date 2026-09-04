@@ -85,7 +85,7 @@ export const routes: Routes = [
     loadComponent: () => import('./helper/helper-home').then((m) => m.HelperHome),
   },
   {
-    path: 'checkin',
+    path: 'checkin/:eventId',
     title: 'Door check-in — OneStage',
     canActivate: [authGuard],
     loadComponent: () => import('./checkin/checkin').then((m) => m.Checkin),
