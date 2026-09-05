@@ -65,12 +65,6 @@ h1 {
   text-wrap: balance;
 }
 
-.subtitle {
-  font-size: clamp(1rem, 2vw, 1.125rem);
-  color: rgba(255, 255, 255, 0.86);
-  max-width: 38ch;
-}
-
 .meta {
   display: flex;
   flex-wrap: wrap;

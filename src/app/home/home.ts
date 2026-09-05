@@ -33,13 +33,11 @@ interface EventApiRecord {
   readonly event_id: number;
   readonly title?: string;
   readonly event_name?: string;
-  readonly description: string | null;
   readonly venue: string;
   readonly starts_at?: string;
   readonly event_start_datetime?: string;
   readonly tier?: 'TIER1_GA' | 'TIER2_SEATED';
   readonly event_type?: 'TIER1_GA' | 'TIER2_SEATED';
-  readonly price_cents: number | null;
 }
 
 interface EventResponse {
@@ -75,10 +73,7 @@ export class Home {
             id: event.event_id,
             category: categoryFor(event, title),
             title,
-            subtitle: event.description || `${title} at ${event.venue}`,
-            venue: event.venue,
             date: formatEventDate(startsAt),
-            priceFrom: `S$${((event.price_cents ?? 0) / 100).toFixed(0)}`,
             image: this.api.url('event', `/events/${event.event_id}/image`),
             alt: `${title} artwork`,
           };

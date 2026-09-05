@@ -50,18 +50,6 @@ export class CognitoGateway {
     return session.tokens?.accessToken.toString() ?? null;
   }
 
-  /**
-   * Re-reads the user with freshly minted tokens.
-   *
-   * Group membership is baked into a token when it is issued, so after the
-   * backend grants a group the current token still says nothing about it. This
-   * exchanges the refresh token for new ones that carry the new claim.
-   */
-  async refresh(): Promise<AuthenticatedUser | null> {
-    await fetchAuthSession({ forceRefresh: true });
-    return this.currentUser();
-  }
-
   /** Reads the current user from the token claims, or null when signed out. */
   async currentUser(): Promise<AuthenticatedUser | null> {
     const session = await fetchAuthSession();

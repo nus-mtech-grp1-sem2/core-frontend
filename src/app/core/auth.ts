@@ -1,7 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 
 import { AuthenticatedUser, CognitoGateway } from './cognito-gateway';
-import { UserRole, roleFromGroups } from './roles';
 
 type Status = 'unknown' | 'authenticated' | 'anonymous';
 
@@ -25,15 +24,6 @@ export class AuthService {
   readonly status = this._status.asReadonly();
   readonly isAuthenticated = computed(() => this._status() === 'authenticated');
 
-  /** Role for the signed-in user, derived from their Cognito groups. */
-  readonly role = computed<UserRole | null>(() => {
-    const user = this._user();
-    if (!user) {
-      return null;
-    }
-    return roleFromGroups(user.groups);
-  });
-
   /** Restores the session on startup; safe to call more than once. */
   async restore(): Promise<void> {
     try {
@@ -41,15 +31,6 @@ export class AuthService {
       this.apply(user);
     } catch {
       this.apply(null);
-    }
-  }
-
-  /** Re-reads the session with new tokens, picking up any group just granted. */
-  async refresh(): Promise<void> {
-    try {
-      this.apply(await this.gateway.refresh());
-    } catch {
-      // Keep whatever we had; the next restore() will correct it.
     }
   }
 
@@ -68,11 +49,6 @@ export class AuthService {
 
   accessToken(): Promise<string | null> {
     return this.gateway.accessToken();
-  }
-
-  hasRole(...roles: readonly UserRole[]): boolean {
-    const role = this.role();
-    return role !== null && roles.includes(role);
   }
 
   private apply(user: AuthenticatedUser | null): void {

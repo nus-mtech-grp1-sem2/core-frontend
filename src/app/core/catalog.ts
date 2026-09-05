@@ -17,10 +17,7 @@ export interface FeaturedSlide {
   readonly id: number;
   readonly category: EventCategory;
   readonly title: string;
-  readonly subtitle: string;
-  readonly venue: string;
   readonly date: string;
-  readonly priceFrom: string;
   readonly image: string;
   readonly alt: string;
 }
