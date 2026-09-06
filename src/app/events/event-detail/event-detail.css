@@ -15,9 +15,14 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--bg-sunken);
+  box-shadow: var(--shadow-sm);
 }
 
 .thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 
@@ -63,13 +68,198 @@
   color: var(--brand-600);
 }
 
+.event-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.event-facts .status {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+
+.event-facts .status.on-sale {
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.event-facts .status.cancelled {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
 .body {
-  padding-block: clamp(2rem, 5vw, 3rem);
+  padding-block: clamp(1.25rem, 3vw, 2rem);
 }
 
 .body h2 {
   font-size: 1.25rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.management {
+  display: grid;
+  gap: 1rem;
+}
+
+.purchase {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  max-width: 24rem;
+}
+
+.purchase .field input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.625rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+
+.seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(3rem, 1fr));
+  gap: 0.5rem;
+}
+
+.seat {
+  padding: 0.5rem 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.seat:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.seat.selected {
+  background: var(--brand-500);
+  border-color: var(--brand-500);
+  color: var(--text-inverse);
+}
+
+.edit-form,
+.team {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.edit-form + .team {
+  margin-top: 1.5rem;
+}
+
+.edit-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.edit-form h2,
+.team h2,
+.field-wide,
+.form-actions {
+  grid-column: 1 / -1;
+}
+
+.edit-form h2,
+.team h2 {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-action {
+  margin-inline-start: auto;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.field label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.field input,
+.field textarea,
+.field select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.625rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+
+.invite-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 10rem auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.member-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.member-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.member-list small {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--text-muted);
+}
+
+.owner-note,
+.error {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.error,
+.delete {
+  color: var(--danger, #b42318);
 }
 
 .type-list {
@@ -104,6 +294,40 @@
   font-weight: 600;
 }
 
+.table-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  background: var(--bg);
+}
+
+.table-card table {
+  width: 100%;
+  min-width: 40rem;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.table-card th,
+.table-card td {
+  text-align: left;
+  padding: 0.875rem 1.25rem;
+}
+
+.table-card thead th {
+  background: var(--bg-subtle);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.table-card tbody tr + tr th,
+.table-card tbody tr + tr td {
+  border-top: 1px solid var(--border);
+}
+
 .empty {
   padding-block: 2.5rem;
   text-align: center;
@@ -131,5 +355,27 @@
 
   .type-row .btn {
     grid-column: 1 / -1;
+  }
+
+  .edit-form,
+  .invite-form {
+    grid-template-columns: 1fr;
+  }
+
+  .invite-form .btn {
+    width: 100%;
+  }
+
+  .form-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+  }
+
+  .status-action {
+    margin-inline-start: 0;
   }
 }

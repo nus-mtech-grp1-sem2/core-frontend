@@ -1,7 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 
 import { AuthenticatedUser, CognitoGateway } from './cognito-gateway';
-import { UserRole, roleFromGroups } from './roles';
 
 type Status = 'unknown' | 'authenticated' | 'anonymous';
 
@@ -10,6 +9,10 @@ type Status = 'unknown' | 'authenticated' | 'anonymous';
  *
  * Holds the signed-in user as a signal so the header and route guards react to
  * it, and turns Cognito's exception names into messages a visitor can act on.
+ *
+ * There is no per-user role here: every signed-in account has the same
+ * access, to the storefront, the organiser workspace and the event-helper
+ * workspace alike.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -21,15 +24,6 @@ export class AuthService {
   readonly status = this._status.asReadonly();
   readonly isAuthenticated = computed(() => this._status() === 'authenticated');
 
-  /** Role for the signed-in user, derived from their Cognito groups. */
-  readonly role = computed<UserRole | null>(() => {
-    const user = this._user();
-    if (!user) {
-      return null;
-    }
-    return roleFromGroups(user.groups);
-  });
-
   /** Restores the session on startup; safe to call more than once. */
   async restore(): Promise<void> {
     try {
@@ -40,17 +34,12 @@ export class AuthService {
     }
   }
 
-  /** Re-reads the session with new tokens, picking up any group just granted. */
-  async refresh(): Promise<void> {
-    try {
-      this.apply(await this.gateway.refresh());
-    } catch {
-      // Keep whatever we had; the next restore() will correct it.
-    }
-  }
-
   async signIn(): Promise<void> {
     await this.gateway.signIn();
+  }
+
+  async signUp(): Promise<void> {
+    await this.gateway.signUp();
   }
 
   async signOut(): Promise<void> {
@@ -60,15 +49,6 @@ export class AuthService {
 
   accessToken(): Promise<string | null> {
     return this.gateway.accessToken();
-  }
-
-  hasGroup(group: string): boolean {
-    return this._user()?.groups.includes(group) ?? false;
-  }
-
-  hasRole(...roles: readonly UserRole[]): boolean {
-    const role = this.role();
-    return role !== null && roles.includes(role);
   }
 
   private apply(user: AuthenticatedUser | null): void {

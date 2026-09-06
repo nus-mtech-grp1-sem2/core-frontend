@@ -20,6 +20,26 @@ export class CognitoGateway {
     await signInWithRedirect();
   }
 
+  /**
+   * Starts Cognito Managed Login on the sign-up screen.
+   *
+   * Amplify has no first-class "open on sign-up" option, so this reuses its
+   * own authorize URL (state and PKCE included) and swaps the path from
+   * `/oauth2/authorize` to Cognito's `/signup` alias, which renders the same
+   * hosted UI with the sign-up form active. `authSessionOpener` is Amplify's
+   * supported hook for controlling how the redirect is opened.
+   */
+  async signUp(): Promise<void> {
+    await signInWithRedirect({
+      options: {
+        authSessionOpener: async (url) => {
+          const signUpUrl = url.replace('/oauth2/authorize', '/signup');
+          window.location.href = signUpUrl.replace('http://', 'https://');
+        },
+      },
+    });
+  }
+
   async signOut(): Promise<void> {
     await signOut();
   }
@@ -28,18 +48,6 @@ export class CognitoGateway {
   async accessToken(): Promise<string | null> {
     const session = await fetchAuthSession();
     return session.tokens?.accessToken.toString() ?? null;
-  }
-
-  /**
-   * Re-reads the user with freshly minted tokens.
-   *
-   * Group membership is baked into a token when it is issued, so after the
-   * backend grants a group the current token still says nothing about it. This
-   * exchanges the refresh token for new ones that carry the new claim.
-   */
-  async refresh(): Promise<AuthenticatedUser | null> {
-    await fetchAuthSession({ forceRefresh: true });
-    return this.currentUser();
   }
 
   /** Reads the current user from the token claims, or null when signed out. */

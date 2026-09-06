@@ -65,12 +65,6 @@ h1 {
   text-wrap: balance;
 }
 
-.subtitle {
-  font-size: clamp(1rem, 2vw, 1.125rem);
-  color: rgba(255, 255, 255, 0.86);
-  max-width: 38ch;
-}
-
 .meta {
   display: flex;
   flex-wrap: wrap;
@@ -118,6 +112,7 @@ h1 {
 
 .arrow {
   position: absolute;
+  z-index: 3;
   top: 50%;
   transform: translateY(-50%);
   display: grid;
@@ -147,6 +142,7 @@ h1 {
 
 .dots {
   position: absolute;
+  z-index: 3;
   bottom: 1.5rem;
   left: 50%;
   transform: translateX(-50%);

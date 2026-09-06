@@ -1,15 +1,40 @@
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { filter, map } from 'rxjs';
 
 import { AuthService } from '../../core/auth';
-import { ROLE_LABELS, UserRole } from '../../core/roles';
 
 interface NavLink {
   readonly label: string;
   readonly path: string;
 }
 
-/** Sticky top bar: brand, primary nav, search and account actions. */
+type Workspace = 'customer' | 'organiser' | 'event-helper';
+
+interface WorkspaceTab {
+  readonly key: Workspace;
+  readonly label: string;
+  readonly path: string;
+}
+
+/** Where each workspace lives, in the order the tabs are shown. */
+const WORKSPACE_TABS: readonly WorkspaceTab[] = [
+  { key: 'customer', label: 'Customer', path: '/' },
+  { key: 'organiser', label: 'Organiser', path: '/organiser' },
+  { key: 'event-helper', label: 'Event helper', path: '/helper' },
+];
+
+const ANONYMOUS_LINKS: readonly NavLink[] = [{ label: 'Events', path: '/events' }];
+
+/**
+ * Sticky top bar: brand, primary nav, search and account actions.
+ *
+ * Every signed-in account can use all three areas of OneStage — there is no
+ * per-role restriction — so once someone is signed in the primary nav becomes
+ * a switcher between the three, rather than a fixed set of links picked for
+ * them. Signed-out visitors still just get the storefront links.
+ */
 @Component({
   selector: 'app-header',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -49,20 +74,34 @@ interface NavLink {
         </button>
 
         <div class="collapsible" id="primary-nav" [class.open]="menuOpen()">
-          <nav class="primary" aria-label="Main">
-            <ul>
-              @for (link of links(); track link.path) {
-                <li>
-                  <a
-                    [routerLink]="link.path"
-                    routerLinkActive="active"
-                    [routerLinkActiveOptions]="{ exact: true }"
-                    >{{ link.label }}</a
-                  >
-                </li>
-              }
-            </ul>
-          </nav>
+          @if (auth.isAuthenticated()) {
+            <nav class="tabs" aria-label="Workspace">
+              <ul>
+                @for (tab of tabs; track tab.key) {
+                  <li>
+                    <a [routerLink]="tab.path" [class.active]="activeWorkspace() === tab.key">{{
+                      tab.label
+                    }}</a>
+                  </li>
+                }
+              </ul>
+            </nav>
+          } @else {
+            <nav class="primary" aria-label="Main">
+              <ul>
+                @for (link of anonymousLinks; track link.path) {
+                  <li>
+                    <a
+                      [routerLink]="link.path"
+                      routerLinkActive="active"
+                      [routerLinkActiveOptions]="{ exact: true }"
+                      >{{ link.label }}</a
+                    >
+                  </li>
+                }
+              </ul>
+            </nav>
+          }
 
           @if (showSearch()) {
             <search class="search">
@@ -84,10 +123,7 @@ interface NavLink {
 
           <div class="account">
             @if (auth.isAuthenticated()) {
-              <span class="who" title="{{ auth.user()?.email }}">
-                {{ auth.user()?.email }}
-                <span class="role">{{ roleLabel() }}</span>
-              </span>
+              <span class="who" title="{{ auth.user()?.email }}">{{ auth.user()?.email }}</span>
               <button class="btn btn-ghost btn-sm" type="button" (click)="signOut()">
                 Sign out
               </button>
@@ -152,7 +188,8 @@ interface NavLink {
       display: contents;
     }
 
-    .primary ul {
+    .primary ul,
+    .tabs ul {
       display: flex;
       align-items: center;
       gap: 1.5rem;
@@ -185,6 +222,32 @@ interface NavLink {
       height: 2px;
       border-radius: 2px;
       background: linear-gradient(90deg, var(--brand-400), var(--accent-500));
+    }
+
+    .tabs ul {
+      gap: 0.375rem;
+    }
+
+    .tabs a {
+      display: inline-block;
+      color: var(--text-inverse-muted);
+      text-decoration: none;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      padding: 0.4375rem 0.875rem;
+      border-radius: 999px;
+      transition:
+        color 0.15s ease,
+        background-color 0.15s ease;
+    }
+
+    .tabs a:hover {
+      color: var(--text-inverse);
+    }
+
+    .tabs a.active {
+      background: var(--brand-500);
+      color: var(--text-inverse);
     }
 
     .search {
@@ -229,18 +292,6 @@ interface NavLink {
       align-items: center;
       gap: 0.5rem;
       margin-inline-start: auto;
-    }
-
-    .role {
-      display: inline-block;
-      margin-inline-start: 0.375rem;
-      padding: 0.0625rem 0.4375rem;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.14);
-      font-size: 0.6875rem;
-      font-weight: 600;
-      color: var(--text-inverse);
-      vertical-align: 1px;
     }
 
     .who {
@@ -305,8 +356,8 @@ interface NavLink {
     }
 
     @media (max-width: 860px) {
-      /* The address is the least useful thing here once space is tight — the
-         role badge and sign out still say who you are signed in as. */
+      /* The address is the least useful thing here once space is tight — sign
+         out still says who you are signed in as. */
       .who {
         display: none;
       }
@@ -330,7 +381,8 @@ interface NavLink {
         display: flex;
       }
 
-      .primary ul {
+      .primary ul,
+      .tabs ul {
         flex-direction: column;
         align-items: flex-start;
         gap: 0.75rem;
@@ -357,40 +409,33 @@ export class Header {
   private readonly router = inject(Router);
 
   protected readonly menuOpen = signal(false);
+  protected readonly tabs = WORKSPACE_TABS;
+  protected readonly anonymousLinks = ANONYMOUS_LINKS;
 
-  /**
-   * What each kind of user has any use for. Staff do not get the storefront
-   * links and shoppers do not get the workspace ones, so the bar only ever
-   * offers what the signed-in role can actually do.
-   */
-  private readonly navByRole: Readonly<Record<'anonymous' | UserRole, readonly NavLink[]>> = {
-    anonymous: [
-      { label: 'Events', path: '/events' },
-      { label: 'Tickets', path: '/tickets' },
-    ],
-    customer: [
-      { label: 'Events', path: '/events' },
-      { label: 'Tickets', path: '/tickets' },
-    ],
-    organiser: [{ label: 'Dashboard', path: '/organiser' }],
-    'event-helper': [
-      { label: 'My shifts', path: '/helper' },
-    ],
-  };
+  private readonly currentUrl = toSignal(
+    this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+      map((event) => event.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
 
-  protected readonly links = computed(() => this.navByRole[this.auth.role() ?? 'anonymous']);
-
-  /** Search is for browsing the catalogue, which is not what staff are here for. */
-  protected readonly showSearch = computed(() => {
-    const role = this.auth.role();
-    return role === null || role === 'customer';
+  /** Which of the three workspaces the current URL belongs to. */
+  protected readonly activeWorkspace = computed<Workspace>(() => {
+    const url = this.currentUrl();
+    if (url.startsWith('/organiser')) {
+      return 'organiser';
+    }
+    if (url.startsWith('/helper') || url.startsWith('/checkin')) {
+      return 'event-helper';
+    }
+    return 'customer';
   });
 
-  /** Human-readable role for the badge next to the signed-in email. */
-  protected readonly roleLabel = computed(() => {
-    const role = this.auth.role();
-    return role ? ROLE_LABELS[role] : '';
-  });
+  /** Search is for browsing the catalogue, which the other two workspaces do not need. */
+  protected readonly showSearch = computed(
+    () => !this.auth.isAuthenticated() || this.activeWorkspace() === 'customer',
+  );
 
   protected toggleMenu(): void {
     this.menuOpen.update((open) => !open);

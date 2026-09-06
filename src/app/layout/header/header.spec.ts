@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, Routes, provideRouter } from '@angular/router';
 
 import { AuthService } from '../../core/auth';
 import { AuthenticatedUser, CognitoGateway } from '../../core/cognito-gateway';
@@ -9,12 +9,19 @@ function user(groups: readonly string[]): AuthenticatedUser {
   return { sub: 's', email: 'someone@example.com', groups };
 }
 
+const stubRoutes: Routes = [
+  { path: '', children: [] },
+  { path: 'organiser', children: [] },
+  { path: 'helper', children: [] },
+  { path: 'checkin', children: [] },
+];
+
 async function navFor(current: AuthenticatedUser | null) {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [Header],
     providers: [
-      provideRouter([]),
+      provideRouter(stubRoutes),
       {
         provide: CognitoGateway,
         useValue: { currentUser: async () => current, signOut: async () => undefined },
@@ -25,54 +32,68 @@ async function navFor(current: AuthenticatedUser | null) {
   await TestBed.inject(AuthService).restore();
   const fixture = TestBed.createComponent(Header);
   await fixture.whenStable();
-  const host = fixture.nativeElement as HTMLElement;
 
   return {
-    host,
-    labels: Array.from(host.querySelectorAll('.primary a')).map((a) => a.textContent?.trim()),
-    hasSearch: host.querySelector('.search') !== null,
+    fixture,
+    host: fixture.nativeElement as HTMLElement,
+    router: TestBed.inject(Router),
   };
+}
+
+function tabLabels(host: HTMLElement): (string | undefined)[] {
+  return Array.from(host.querySelectorAll('.tabs a')).map((a) => a.textContent?.trim());
+}
+
+function activeTab(host: HTMLElement): string | undefined {
+  return host.querySelector('.tabs a.active')?.textContent?.trim();
 }
 
 describe('Header navigation', () => {
   it('offers the storefront to a signed-out visitor', async () => {
-    const { labels, hasSearch, host } = await navFor(null);
+    const { host } = await navFor(null);
 
-    expect(labels).toEqual(['Events', 'Tickets']);
-    expect(hasSearch).toBe(true);
+    const labels = Array.from(host.querySelectorAll('.primary a')).map((a) => a.textContent?.trim());
+    expect(labels).toEqual(['Events']);
+    expect(host.querySelector('.search')).not.toBeNull();
     expect(host.textContent).toContain('Login');
     expect(host.textContent).toContain('Register');
   });
 
-  it('offers the same storefront to a customer, with their account actions', async () => {
-    const { labels, hasSearch, host } = await navFor(user(['customer']));
+  it('offers every signed-in account all three workspaces', async () => {
+    const { host } = await navFor(user(['customer']));
 
-    expect(labels).toEqual(['Events', 'Tickets']);
-    expect(hasSearch).toBe(true);
+    expect(tabLabels(host)).toEqual(['Customer', 'Organiser', 'Event helper']);
     expect(host.textContent).toContain('Sign out');
     expect(host.textContent).not.toContain('Login');
   });
 
-  it('gives an organiser only their dashboard, and no search box', async () => {
-    const { labels, hasSearch } = await navFor(user(['organiser']));
+  it('highlights Customer and shows search on the storefront', async () => {
+    const { host } = await navFor(user(['customer']));
 
-    expect(labels).toEqual(['Dashboard']);
-    expect(labels).not.toContain('Tickets');
-    expect(labels).not.toContain('Events');
-    expect(hasSearch).toBe(false);
+    expect(activeTab(host)).toBe('Customer');
+    expect(host.querySelector('.search')).not.toBeNull();
   });
 
-  it('gives an event helper only their two screens', async () => {
-    const { labels, hasSearch } = await navFor(user(['event-helper']));
+  it('highlights Organiser and hides search once there', async () => {
+    const { host, router, fixture } = await navFor(user(['customer']));
 
-    expect(labels).toEqual(['My shifts', 'Check-in']);
-    expect(labels).not.toContain('Dashboard');
-    expect(hasSearch).toBe(false);
+    await router.navigateByUrl('/organiser');
+    await fixture.whenStable();
+
+    expect(activeTab(host)).toBe('Organiser');
+    expect(host.querySelector('.search')).toBeNull();
   });
 
-  it('shows the role badge next to the signed-in email', async () => {
-    const { host } = await navFor(user(['event-helper']));
+  it('highlights Event helper on both of its pages', async () => {
+    const { host, router, fixture } = await navFor(user(['customer']));
 
-    expect(host.querySelector('.role')?.textContent?.trim()).toBe('Event helper');
+    await router.navigateByUrl('/helper');
+    await fixture.whenStable();
+    expect(activeTab(host)).toBe('Event helper');
+
+    await router.navigateByUrl('/checkin');
+    await fixture.whenStable();
+    expect(activeTab(host)).toBe('Event helper');
+    expect(host.querySelector('.search')).toBeNull();
   });
 });

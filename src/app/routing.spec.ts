@@ -15,9 +15,8 @@ describe('site navigation', () => {
 
   for (const [label, path, destination = path] of [
     ['Login', '/login'],
-    ['Register', '/register', '/login'],
+    ['Register', '/register'],
     ['Events', '/events'],
-    ['Tickets', '/tickets'],
   ] as const) {
     it(`navigates to ${path} when the ${label} link is clicked`, async () => {
       const fixture = TestBed.createComponent(App);
