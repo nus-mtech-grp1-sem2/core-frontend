@@ -1,16 +1,32 @@
-import { ChangeDetectionStrategy, Component, ElementRef, inject, OnDestroy, signal, ViewChild } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  OnDestroy,
+  signal,
+  ViewChild,
+} from '@angular/core';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { BrowserQRCodeReader, IScannerControls } from '@zxing/browser';
-import { firstValueFrom } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  firstValueFrom,
+  map,
+  of,
+  switchMap,
+} from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
 
 import { AuthService } from '../core/auth';
 import { ApiService } from '../core/api';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
-type ScanOutcome = 'SUCCESS' | 'DUPLICATE' | 'INVALID' | 'WRONG_EVENT';
+type ScanOutcome = 'VALID' | 'ALREADY_USED' | 'INVALID' | 'WRONG_EVENT';
 
 interface ScanResult {
-  readonly code: string;
   readonly outcome: ScanOutcome;
   readonly at: string;
 }
@@ -32,7 +48,7 @@ interface CheckinStats {
 interface SearchResult {
   readonly ticket_id: number;
   readonly customer_email: string;
-  readonly seat_label: string | null;
+  readonly seat_id: number | null;
   readonly status: string;
 }
 
@@ -41,9 +57,9 @@ interface SearchResponse {
 }
 
 /**
- * Door workspace for event helpers: pick the event on the door, then scan or
- * search for a ticket. Validation and duplicate detection are the ticket
- * service's job — this page just calls it and shows the verdict.
+ * Door workspace for event helpers. The ticket service owns validity and the
+ * single-use transition; this component only submits opaque identifiers and
+ * renders stable outcomes.
  */
 @Component({
   selector: 'app-checkin',
@@ -61,14 +77,19 @@ interface SearchResponse {
 
       <section class="shell body">
         <div class="field">
-          <label for="event">Event</label>
-          <select id="event" [value]="eventId()" (change)="selectEvent(+$any($event.target).value)">
+          <label for="event">Assigned event</label>
+          <select
+            id="event"
+            [value]="eventId()"
+            (change)="selectEvent(+$any($event.target).value)"
+            [disabled]="!events().length"
+          >
             @for (event of events(); track event.event_id) {
               <option [value]="event.event_id">{{ event.title }}</option>
             }
           </select>
           @if (stats(); as stats) {
-            <p class="stats">{{ stats.checkedIn }} of {{ stats.total }} checked in</p>
+            <p class="stats" role="status">{{ stats.checkedIn }} of {{ stats.total }} checked in</p>
           }
         </div>
 
@@ -79,14 +100,32 @@ interface SearchResponse {
               <p>Point the camera at the ticket QR code.</p>
             </div>
             <div class="camera-actions">
-              <label class="btn btn-ghost upload" [class.disabled]="eventId() === null || decodingImage()">
+              <label
+                class="btn btn-ghost upload"
+                [class.disabled]="eventId() === null || decodingImage() || checkingIn()"
+              >
                 {{ decodingImage() ? 'Reading…' : 'Upload QR image' }}
-                <input type="file" accept="image/*" capture="environment" [disabled]="eventId() === null || decodingImage()" (change)="scanImage($event)" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  [disabled]="eventId() === null || decodingImage()"
+                  (change)="scanImage($event)"
+                />
               </label>
               @if (cameraActive()) {
-                <button class="btn btn-ghost" type="button" (click)="stopCamera()">Stop camera</button>
+                <button class="btn btn-ghost" type="button" (click)="stopCamera()">
+                  Stop camera
+                </button>
               } @else {
-                <button class="btn btn-primary" type="button" [disabled]="eventId() === null || checkingIn()" (click)="startCamera()">Open camera</button>
+                <button
+                  class="btn btn-primary"
+                  type="button"
+                  [disabled]="eventId() === null || checkingIn()"
+                  (click)="startCamera()"
+                >
+                  Open camera
+                </button>
               }
             </div>
           </div>
@@ -96,29 +135,50 @@ interface SearchResponse {
           </div>
           @if (cameraError()) {
             <p class="camera-error" role="alert">{{ cameraError() }}</p>
+            <button class="btn btn-ghost" type="button" (click)="startCamera()">
+              Try camera again
+            </button>
           }
-          <p class="camera-note">Camera access requires HTTPS or localhost. You can upload a QR screenshot if camera access is unavailable.</p>
+          @if (checkingIn()) {
+            <p class="camera-note" role="status">Checking ticket…</p>
+          }
+          <p class="camera-note">
+            Camera access requires HTTPS or localhost. You can upload a QR screenshot if camera
+            access is unavailable.
+          </p>
         </section>
+
+        <div class="feedback-tools">
+          <p class="audio-state" role="status">{{ muted() ? 'Sound muted' : 'Sound on' }}</p>
+          <button class="btn btn-ghost" type="button" (click)="toggleMute()">
+            {{ muted() ? 'Unmute sounds' : 'Mute sounds' }}
+          </button>
+        </div>
 
         @if (last(); as result) {
           <p
             class="verdict"
             role="status"
-            [class.ok]="result.outcome === 'SUCCESS'"
-            [class.warn]="result.outcome === 'DUPLICATE' || result.outcome === 'WRONG_EVENT'"
+            [class.ok]="result.outcome === 'VALID'"
+            [class.warn]="result.outcome === 'ALREADY_USED' || result.outcome === 'WRONG_EVENT'"
             [class.bad]="result.outcome === 'INVALID'"
           >
-            {{ describe(result) }}
+            <span aria-hidden="true">{{ outcomeIcon(result.outcome) }}</span>
+            {{ describe(result.outcome) }}
           </p>
+        }
+        @if (requestError()) {
+          <p class="request-error" role="alert">{{ requestError() }}</p>
+          <button class="btn btn-ghost" type="button" (click)="retryLast()">Try again</button>
         }
 
         <h2>This session</h2>
         @if (scans().length) {
           <ul class="log">
-            @for (scan of scans(); track scan.code + scan.at) {
+            @for (scan of scans(); track scan.outcome + scan.at) {
               <li>
-                <span class="code">{{ scan.code }}</span>
-                <span class="outcome">{{ describe(scan) }}</span>
+                <span class="code" aria-hidden="true">{{ outcomeIcon(scan.outcome) }}</span>
+                <span class="outcome">{{ describe(scan.outcome) }}</span>
                 <span class="at">{{ scan.at }}</span>
               </li>
             }
@@ -128,19 +188,30 @@ interface SearchResponse {
         }
 
         <h2>Manual lookup</h2>
-        <form [formGroup]="searchForm" (ngSubmit)="search()" novalidate class="scan">
+        <form [formGroup]="searchForm" novalidate class="scan">
           <div class="field">
             <label for="query">Name, email or order ID</label>
             <input id="query" type="text" formControlName="query" autocomplete="off" />
           </div>
-          <button class="btn btn-ghost" type="submit" [disabled]="eventId() === null">Search</button>
+          <span class="search-status" role="status">{{ searchStatus() }}</span>
         </form>
         @if (searchResults().length) {
           <ul class="log">
             @for (result of searchResults(); track result.ticket_id) {
               <li>
                 <span class="code">{{ result.customer_email }}</span>
-                <span class="outcome">{{ result.seat_label ?? 'General admission' }} · {{ result.status }}</span>
+                <span class="outcome"
+                  >{{ result.seat_id ? 'Reserved seat' : 'General admission' }} ·
+                  {{ result.status }}</span
+                >
+                <button
+                  class="btn btn-ghost"
+                  type="button"
+                  (click)="checkInSearchResult(result)"
+                  [disabled]="checkingIn()"
+                >
+                  Check in
+                </button>
               </li>
             }
           </ul>
@@ -359,7 +430,8 @@ interface SearchResponse {
   `,
 })
 export class Checkin implements OnDestroy {
-  @ViewChild('cameraPreview', { static: true }) private readonly cameraPreview!: ElementRef<HTMLVideoElement>;
+  @ViewChild('cameraPreview', { static: true })
+  private readonly cameraPreview!: ElementRef<HTMLVideoElement>;
 
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(ApiService);
@@ -369,6 +441,8 @@ export class Checkin implements OnDestroy {
   });
   private scannerControls: IScannerControls | null = null;
   private acceptingCameraResult = false;
+  private statsTimer: number | null = null;
+  private lastSubmission: { readonly qrToken?: string; readonly ticketId?: number } | null = null;
   protected readonly auth = inject(AuthService);
 
   protected readonly events = signal<readonly EventOption[]>([]);
@@ -381,10 +455,9 @@ export class Checkin implements OnDestroy {
   protected readonly cameraError = signal('');
   protected readonly checkingIn = signal(false);
   protected readonly decodingImage = signal(false);
-
-  protected readonly form = this.fb.nonNullable.group({
-    code: ['', [Validators.required]],
-  });
+  protected readonly requestError = signal('');
+  protected readonly searchStatus = signal('');
+  protected readonly muted = signal(false);
 
   protected readonly searchForm = this.fb.nonNullable.group({
     query: [''],
@@ -392,22 +465,36 @@ export class Checkin implements OnDestroy {
 
   constructor() {
     void this.loadEvents();
+    this.searchForm.controls.query.valueChanges
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        switchMap((query) => this.searchTickets(query.trim())),
+      )
+      .subscribe(({ tickets, status }) => {
+        this.searchResults.set(tickets);
+        this.searchStatus.set(status);
+      });
   }
 
   ngOnDestroy(): void {
     this.stopCamera();
+    if (this.statsTimer !== null) window.clearInterval(this.statsTimer);
   }
 
   protected selectEvent(eventId: number): void {
     this.stopCamera();
     this.eventId.set(eventId);
     void this.loadStats(eventId);
+    this.startStatsPolling();
   }
 
   protected async startCamera(): Promise<void> {
     if (this.eventId() === null) return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      this.cameraError.set('Camera scanning is not supported by this browser. Enter the QR token manually.');
+      this.cameraError.set(
+        'Camera scanning is not supported by this browser. Enter the QR token manually.',
+      );
       return;
     }
 
@@ -441,61 +528,30 @@ export class Checkin implements OnDestroy {
     if (image) void this.decodeImage(image);
   }
 
-  protected async scan(): Promise<void> {
-    const eventId = this.eventId();
-    const code = this.form.controls.code.value.trim();
-    if (!code || eventId === null) {
-      return;
-    }
-
-    this.checkingIn.set(true);
-    try {
-      const response = await firstValueFrom(
-        this.api.post<{ result: ScanOutcome }>('ticket', '/tickets/validate', { eventId, qrToken: code }),
-      );
-      this.record({ code, outcome: response.result, at: timestamp() });
-    } catch {
-      this.record({ code, outcome: 'INVALID', at: timestamp() });
-    } finally {
-      this.checkingIn.set(false);
-    }
-    void this.loadStats(eventId);
+  protected async checkInSearchResult(result: SearchResult): Promise<void> {
+    if (this.checkingIn() || !window.confirm('Check in this ticket?')) return;
+    await this.submit({ ticketId: result.ticket_id });
   }
 
-  protected async search(): Promise<void> {
-    const eventId = this.eventId();
-    const query = this.searchForm.controls.query.value.trim();
-    if (!query || eventId === null) {
-      this.searchResults.set([]);
-      return;
-    }
-
-    try {
-      const result = await firstValueFrom(
-        this.api.get<SearchResponse>('ticket', `/tickets/search?eventId=${eventId}&query=${encodeURIComponent(query)}`),
-      );
-      this.searchResults.set(result.tickets);
-    } catch {
-      this.searchResults.set([]);
-    }
+  protected describe(outcome: ScanOutcome): string {
+    return outcomeDescription(outcome);
   }
 
-  protected describe(result: ScanResult): string {
-    switch (result.outcome) {
-      case 'SUCCESS':
-        return `${result.code} admitted`;
-      case 'DUPLICATE':
-        return `${result.code} was already scanned`;
-      case 'WRONG_EVENT':
-        return `${result.code} is for a different event`;
-      default:
-        return `${result.code} is not a valid ticket`;
-    }
+  protected outcomeIcon(outcome: ScanOutcome): string {
+    return outcomeIcon(outcome);
+  }
+
+  protected toggleMute(): void {
+    this.muted.update((muted) => !muted);
+  }
+
+  protected retryLast(): void {
+    if (this.lastSubmission) void this.submit(this.lastSubmission);
   }
 
   private async loadEvents(): Promise<void> {
     try {
-      const result = await firstValueFrom(this.api.get<EventsResponse>('event', '/events'));
+      const result = await firstValueFrom(this.api.get<EventsResponse>('event', '/helper/shifts'));
       this.events.set(result.events);
       if (result.events.length > 0) {
         this.selectEvent(result.events[0].event_id);
@@ -506,11 +562,11 @@ export class Checkin implements OnDestroy {
   }
 
   private async acceptCameraResult(code: string): Promise<void> {
+    if (this.checkingIn()) return;
     this.acceptingCameraResult = true;
     this.stopCamera();
-    this.form.controls.code.setValue(code);
     try {
-      await this.scan();
+      await this.submit({ qrToken: code });
     } finally {
       this.acceptingCameraResult = false;
     }
@@ -526,7 +582,9 @@ export class Checkin implements OnDestroy {
       const result = await this.qrReader.decodeFromImageUrl(imageUrl);
       await this.acceptCameraResult(result.getText());
     } catch {
-      this.cameraError.set('No readable QR code was found in that image. Try a sharper image or paste the token text.');
+      this.cameraError.set(
+        'No readable QR code was found in that image. Try a sharper image or paste the token text.',
+      );
     } finally {
       URL.revokeObjectURL(imageUrl);
       this.decodingImage.set(false);
@@ -535,16 +593,93 @@ export class Checkin implements OnDestroy {
 
   private async loadStats(eventId: number): Promise<void> {
     try {
-      this.stats.set(await firstValueFrom(this.api.get<CheckinStats>('ticket', `/events/${eventId}/checkin-stats`)));
+      this.stats.set(
+        await firstValueFrom(
+          this.api.get<CheckinStats>('ticket', `/events/${eventId}/checkin-stats`),
+        ),
+      );
     } catch {
       this.stats.set(null);
     }
   }
 
+  private searchTickets(query: string) {
+    const eventId = this.eventId();
+    if (eventId === null || query.length < 2)
+      return of({ tickets: [] as readonly SearchResult[], status: '' });
+    this.searchStatus.set('Searching…');
+    return this.api
+      .get<SearchResponse>(
+        'ticket',
+        `/tickets/search?eventId=${eventId}&query=${encodeURIComponent(query)}`,
+      )
+      .pipe(
+        map((result) => ({
+          tickets: result.tickets,
+          status: `${result.tickets.length} result${result.tickets.length === 1 ? '' : 's'}`,
+        })),
+        catchError(() =>
+          of({ tickets: [] as readonly SearchResult[], status: 'Search unavailable. Try again.' }),
+        ),
+      );
+  }
+
+  private async submit(input: {
+    readonly qrToken?: string;
+    readonly ticketId?: number;
+  }): Promise<void> {
+    const eventId = this.eventId();
+    if (this.checkingIn() || eventId === null) return;
+    this.lastSubmission = input;
+    this.checkingIn.set(true);
+    this.requestError.set('');
+    try {
+      const response = await firstValueFrom(
+        this.api.post<{ result: ScanOutcome }>('ticket', '/tickets/validate', {
+          eventId,
+          ...input,
+        }),
+      );
+      this.record({ outcome: response.result, at: timestamp() });
+      this.playTone(response.result);
+    } catch (error) {
+      this.requestError.set(
+        error instanceof HttpErrorResponse && error.status === 403
+          ? 'This event is not assigned to your helper account.'
+          : 'The check-in service is unavailable. Try again.',
+      );
+    } finally {
+      this.checkingIn.set(false);
+      void this.loadStats(eventId);
+    }
+  }
+
+  private startStatsPolling(): void {
+    if (this.statsTimer !== null) window.clearInterval(this.statsTimer);
+    this.statsTimer = window.setInterval(() => {
+      const eventId = this.eventId();
+      if (eventId !== null && document.visibilityState === 'visible') void this.loadStats(eventId);
+    }, 30000);
+  }
+
+  private playTone(outcome: ScanOutcome): void {
+    if (this.muted()) return;
+    const context = new AudioContext();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.frequency.value = outcome === 'VALID' ? 880 : 220;
+    oscillator.type = outcome === 'VALID' ? 'sine' : 'square';
+    gain.gain.setValueAtTime(0.06, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.16);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.16);
+    void context.close();
+  }
+
   private record(result: ScanResult): void {
     this.scans.update((scans) => [result, ...scans]);
     this.last.set(result);
-    this.form.reset();
   }
 }
 
@@ -561,4 +696,27 @@ function cameraErrorMessage(error: unknown): string {
     return 'No usable camera was found on this device.';
   }
   return 'The camera could not be started. Close other camera apps or enter the QR token manually.';
+}
+
+export function outcomeDescription(outcome: ScanOutcome): string {
+  switch (outcome) {
+    case 'VALID':
+      return 'Valid ticket. Check-in accepted.';
+    case 'ALREADY_USED':
+      return 'Already used. This ticket was checked in earlier.';
+    case 'WRONG_EVENT':
+      return 'Wrong event. This ticket is not assigned to this event.';
+    default:
+      return 'Invalid ticket. It could not be checked in.';
+  }
+}
+
+export function outcomeIcon(outcome: ScanOutcome): string {
+  return outcome === 'VALID'
+    ? '✓'
+    : outcome === 'ALREADY_USED'
+      ? '↺'
+      : outcome === 'WRONG_EVENT'
+        ? '!'
+        : '×';
 }
