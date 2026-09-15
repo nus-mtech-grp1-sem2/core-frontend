@@ -250,6 +250,7 @@ export class EventDetail {
           eventId: event.event_id,
           quantity: this.quantity(),
           seatIds: event.tier === 'TIER2_SEATED' ? this.selectedSeatIds() : undefined,
+          admissionToken: event.tier === 'TIER2_SEATED' ? this.queue.admissionToken() : undefined,
           customerEmail: this.auth.user()?.email ?? '',
         }),
       );
