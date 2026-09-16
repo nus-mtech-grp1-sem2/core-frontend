@@ -32,9 +32,45 @@
     <section class="shell body purchase" aria-label="Buy tickets">
       @if (purchaseError()) { <p class="error" role="alert">{{ purchaseError() }}</p> }
       @if (needsQueue()) {
-        <p>Tickets for this event are released through the waiting room.</p>
-        <button type="button" class="btn btn-primary" (click)="goToQueue()">Join the queue</button>
+        @switch (queueAccess()) {
+          @case ('checking') {
+            <p role="status">Checking your waiting-room status...</p>
+          }
+          @case ('waiting') {
+            <p>You are in the waiting room at position <strong>{{ queuePosition() ?? '—' }}</strong>.</p>
+            <div class="queue-actions">
+              <button type="button" class="btn btn-primary" (click)="goToQueue()">Return to waiting room</button>
+              <button type="button" class="btn btn-ghost" [disabled]="leavingQueue()" (click)="leaveQueue()">
+                {{ leavingQueue() ? 'Leaving...' : 'Leave queue' }}
+              </button>
+            </div>
+          }
+          @case ('expired') {
+            <p>Your previous queue place or admission has expired.</p>
+            <button type="button" class="btn btn-primary" (click)="goToQueue()">Rejoin the queue</button>
+          }
+          @case ('checkout') {
+            <p>Your admission has already been used for a purchase.</p>
+            <a class="btn btn-primary" routerLink="/my-events">View My Events</a>
+          }
+          @case ('unavailable') {
+            <p role="alert">The waiting room cannot be reached right now. Please try again shortly.</p>
+            <button type="button" class="btn btn-primary" (click)="goToQueue()">Try waiting room</button>
+          }
+          @default {
+            <p>Tickets for this event are released through the waiting room.</p>
+            <button type="button" class="btn btn-primary" (click)="goToQueue()">Join waiting room</button>
+          }
+        }
       } @else {
+        @if (event.tier === 'TIER2_SEATED') {
+          <div class="admission-window" role="status">
+            <p><strong>It is your turn.</strong> Complete checkout within {{ admissionTimeLabel() }}.</p>
+            <button type="button" class="btn btn-ghost" [disabled]="leavingQueue()" (click)="leaveQueue()">
+              {{ leavingQueue() ? 'Releasing...' : 'Release my place' }}
+            </button>
+          </div>
+        }
         <div class="field">
           <label for="quantity">Quantity</label>
           <input

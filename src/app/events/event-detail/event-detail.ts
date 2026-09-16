@@ -1,17 +1,19 @@
 import { DatePipe, LowerCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timer } from 'rxjs';
 
 import { ApiService } from '../../core/api';
 import { AuthService } from '../../core/auth';
-import { QueueService } from '../../core/queue';
+import { QueueService, QueueStatus } from '../../core/queue';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+type QueueAccess = 'checking' | 'not-joined' | 'waiting' | 'admitted' | 'expired' | 'checkout' | 'unavailable';
 
 interface EventDetailData {
   readonly event_id: number;
@@ -67,6 +69,7 @@ export class EventDetail {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly queue = inject(QueueService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -86,7 +89,17 @@ export class EventDetail {
   protected readonly selectedSeatIds = signal<readonly number[]>([]);
   protected readonly purchasing = signal(false);
   protected readonly purchaseError = signal('');
-  protected readonly needsQueue = () => this.event()?.tier === 'TIER2_SEATED' && !this.queue.admissionToken();
+  protected readonly queueAccess = signal<QueueAccess>('checking');
+  protected readonly queuePosition = signal<number | null>(null);
+  protected readonly admissionExpiresAt = signal<number | null>(null);
+  protected readonly admissionSecondsRemaining = signal<number | null>(null);
+  protected readonly leavingQueue = signal(false);
+  protected readonly admissionTimeLabel = computed(() => {
+    const seconds = this.admissionSecondsRemaining();
+    if (seconds === null) return '';
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  });
+  protected readonly needsQueue = () => this.event()?.tier === 'TIER2_SEATED' && this.queueAccess() !== 'admitted';
   /**
    * Organiser access is per-event, owned by the backend's event_team_memberships
    * table — not a global Cognito group. This reflects whether loading this
@@ -116,6 +129,9 @@ export class EventDetail {
       const eventId = Number(this.id());
       if (Number.isSafeInteger(eventId) && eventId > 0) void this.load(eventId);
     });
+    timer(0, 1_000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.updateAdmissionCountdown());
   }
 
   protected async save(): Promise<void> {
@@ -228,6 +244,24 @@ export class EventDetail {
     void this.router.navigate(['/events', this.id(), 'queue']);
   }
 
+  protected async leaveQueue(): Promise<void> {
+    const event = this.event();
+    if (!event || this.leavingQueue() || !['waiting', 'admitted'].includes(this.queueAccess())) return;
+
+    this.leavingQueue.set(true);
+    this.purchaseError.set('');
+    try {
+      await this.queue.leave(event.event_id);
+      this.clearAdmissionWindow();
+      this.selectedSeatIds.set([]);
+      this.queueAccess.set('not-joined');
+    } catch {
+      this.purchaseError.set('Unable to leave the waiting room. Please try again.');
+    } finally {
+      this.leavingQueue.set(false);
+    }
+  }
+
   protected async buy(): Promise<void> {
     const event = this.event();
     if (!event || this.purchasing()) return;
@@ -250,16 +284,21 @@ export class EventDetail {
           eventId: event.event_id,
           quantity: this.quantity(),
           seatIds: event.tier === 'TIER2_SEATED' ? this.selectedSeatIds() : undefined,
-          admissionToken: event.tier === 'TIER2_SEATED' ? this.queue.admissionToken() : undefined,
+          admissionToken: event.tier === 'TIER2_SEATED' ? this.queue.admissionTokenFor(event.event_id) : undefined,
           customerEmail: this.auth.user()?.email ?? '',
         }),
       );
       await firstValueFrom(
         this.api.post('order', `/orders/${created.order.order_id}/payment`, { paymentToken: 'simulated' }),
       );
-      this.queue.clear();
-      await this.router.navigateByUrl('/my-events');
+      this.queue.clear(event.event_id);
+      await this.router.navigate(['/my-events'], { queryParams: { orderId: created.order.order_id } });
     } catch (error) {
+      if (queueAdmissionRequired(error)) {
+        this.queue.clear(event.event_id);
+        this.clearAdmissionWindow();
+        this.queueAccess.set('not-joined');
+      }
       this.purchaseError.set(describeError(error, 'complete your purchase'));
     } finally {
       this.purchasing.set(false);
@@ -282,6 +321,7 @@ export class EventDetail {
   private async load(eventId: number): Promise<void> {
     this.loading.set(true);
     this.error.set('');
+    this.clearAdmissionWindow();
     try {
       const result = await firstValueFrom(this.api.get<EventDetailResponse>('event', `/events/${eventId}`));
       this.event.set(result.event);
@@ -296,6 +336,10 @@ export class EventDetail {
       });
       if (this.organiserMode) await this.loadMembers(eventId);
       if (result.event.tier === 'TIER2_SEATED') await this.loadSeats(eventId);
+      if (!this.organiserMode && result.event.tier === 'TIER2_SEATED') {
+        if (this.auth.isAuthenticated()) await this.loadQueueAccess(eventId);
+        else this.queueAccess.set('not-joined');
+      }
     } catch (error) {
       this.event.set(null);
       this.error.set(describeError(error, 'load this event'));
@@ -323,10 +367,86 @@ export class EventDetail {
       this.seats.set([]);
     }
   }
+
+  private async loadQueueAccess(eventId: number): Promise<void> {
+    this.queueAccess.set('checking');
+    try {
+      this.applyQueueStatus(await this.queue.status(eventId));
+    } catch (error) {
+      if (error instanceof HttpErrorResponse && error.status === 404) {
+        this.queueAccess.set('not-joined');
+      } else {
+        this.queueAccess.set('unavailable');
+      }
+    }
+  }
+
+  private applyQueueStatus(status: QueueStatus): void {
+    this.queuePosition.set(status.position ?? null);
+    switch (status.status) {
+      case 'WAITING':
+        this.clearAdmissionWindow();
+        this.queueAccess.set('waiting');
+        break;
+      case 'ADMITTED': {
+        const expiresAt = status.tokenExpiresAt ? Date.parse(status.tokenExpiresAt) : Number.NaN;
+        if (status.admissionToken && Number.isFinite(expiresAt) && expiresAt > Date.now()) {
+          this.admissionExpiresAt.set(expiresAt);
+          this.queueAccess.set('admitted');
+          this.updateAdmissionCountdown();
+        } else {
+          const eventId = this.event()?.event_id;
+          if (eventId) this.queue.clear(eventId);
+          this.clearAdmissionWindow();
+          this.queueAccess.set('expired');
+        }
+        break;
+      }
+      case 'IN_CHECKOUT':
+        this.clearAdmissionWindow();
+        this.queueAccess.set('checkout');
+        break;
+      case 'EXPIRED':
+      case 'LEFT':
+        this.clearAdmissionWindow();
+        this.queueAccess.set('expired');
+        break;
+    }
+  }
+
+  private clearAdmissionWindow(): void {
+    this.admissionExpiresAt.set(null);
+    this.admissionSecondsRemaining.set(null);
+  }
+
+  private updateAdmissionCountdown(): void {
+    const expiresAt = this.admissionExpiresAt();
+    if (this.queueAccess() !== 'admitted' || expiresAt === null) {
+      this.admissionSecondsRemaining.set(null);
+      return;
+    }
+
+    const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1_000));
+    this.admissionSecondsRemaining.set(remaining);
+    if (remaining === 0) {
+      const eventId = this.event()?.event_id;
+      if (eventId) this.queue.clear(eventId);
+      this.admissionExpiresAt.set(null);
+      this.queueAccess.set('expired');
+    }
+  }
+}
+
+function queueAdmissionRequired(error: unknown): boolean {
+  return error instanceof HttpErrorResponse &&
+    (error.error as { error?: string } | null)?.error === 'queue_admission_required';
 }
 
 function describeError(error: unknown, action: string): string {
   if (error instanceof HttpErrorResponse) {
+    if ((error.error as { error?: string } | null)?.error === 'queue_admission_required') {
+      return 'Your waiting-room admission has expired. Rejoin the queue to continue.';
+    }
     if (error.status === 401) return 'Please sign in again before managing this event.';
     if (error.status === 403) return 'You do not have permission to manage this event.';
     if (error.status === 404) return 'This event was not found.';

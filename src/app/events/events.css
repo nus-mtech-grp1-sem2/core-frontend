@@ -67,6 +67,15 @@
   margin-top: 0.75rem;
 }
 
+.customer-action {
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+.customer-action .btn {
+  width: 100%;
+}
+
 .error {
   margin-bottom: 1rem;
   color: var(--danger, #b42318);

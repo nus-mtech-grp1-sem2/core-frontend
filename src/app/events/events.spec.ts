@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 
 import { AuthService } from '../core/auth';
 import { AuthenticatedUser, CognitoGateway } from '../core/cognito-gateway';
@@ -28,12 +28,21 @@ async function renderFor(current: AuthenticatedUser | null) {
         provide: CognitoGateway,
         useValue: { currentUser: async () => current, signOut: async () => undefined },
       },
+      {
+        provide: ActivatedRoute,
+        useValue: {
+          snapshot: {
+            data: current?.groups.includes('organiser') ? { workspace: 'organiser' } : { workspace: 'customer' },
+          },
+        },
+      },
     ],
   }).compileComponents();
 
   await TestBed.inject(AuthService).restore();
   const httpMock = TestBed.inject(HttpTestingController);
   const fixture = TestBed.createComponent(Events);
+  fixture.detectChanges();
 
   return { fixture, httpMock, host: fixture.nativeElement as HTMLElement };
 }
@@ -47,10 +56,15 @@ describe('Events', () => {
     for (const event of MOCK_EVENTS) {
       httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
     }
+    await Promise.resolve();
+    await Promise.resolve();
     await fixture.whenStable();
+    fixture.detectChanges();
 
     expect(host.querySelectorAll('.event-card').length).toBe(2);
-    expect(host.querySelector('button')?.textContent).not.toContain('New event');
+    expect(host.textContent).toContain('Join waiting room');
+    expect(host.textContent).toContain('View tickets');
+    expect(host.textContent).not.toContain('New event');
     httpMock.verify();
   });
 
@@ -60,6 +74,7 @@ describe('Events', () => {
     httpMock.expectOne('/api/event/events/manage').flush({ events: MOCK_EVENTS });
     httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
     await fixture.whenStable();
+    fixture.detectChanges();
 
     expect(host.querySelectorAll('.event-card').length).toBe(2);
     const toggle = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
