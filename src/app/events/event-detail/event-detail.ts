@@ -251,6 +251,7 @@ export class EventDetail {
           quantity: this.quantity(),
           seatIds: event.tier === 'TIER2_SEATED' ? this.selectedSeatIds() : undefined,
           customerEmail: this.auth.user()?.email ?? '',
+          customerName: this.auth.user()?.name ?? '',
         }),
       );
       await firstValueFrom(

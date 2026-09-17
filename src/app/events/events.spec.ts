@@ -9,7 +9,7 @@ import { AuthenticatedUser, CognitoGateway } from '../core/cognito-gateway';
 import { Events } from './events';
 
 function user(groups: readonly string[]): AuthenticatedUser {
-  return { sub: 's', email: 'someone@example.com', groups };
+  return { sub: 's', email: 'someone@example.com', name: 'Someone Example', groups };
 }
 
 const MOCK_EVENTS = [

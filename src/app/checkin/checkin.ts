@@ -53,6 +53,7 @@ interface ScannerSessionResponse {
 
 interface SearchResult {
   readonly ticket_id: number;
+  readonly customer_name: string;
   readonly customer_email: string;
   readonly seat_id: number | null;
   readonly status: string;
@@ -205,7 +206,7 @@ interface SearchResponse {
           <ul class="log">
             @for (result of searchResults(); track result.ticket_id) {
               <li>
-                <span class="code">{{ result.customer_email }}</span>
+                <span class="code">{{ result.customer_name || result.customer_email }}</span>
                 <span class="outcome"
                   >{{ result.seat_id ? 'Reserved seat' : 'General admission' }} ·
                   {{ result.status }}</span
