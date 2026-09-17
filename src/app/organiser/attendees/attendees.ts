@@ -90,8 +90,14 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                     <tbody>
                       @for (row of attendees(); track row.email) {
                         <tr>
-                          <th scope="row">{{ row.buyer }}</th>
-                          <td><a [href]="'mailto:' + row.email">{{ row.email }}</a></td>
+                          <th scope="row">{{ row.buyer || row.email || 'Legacy customer' }}</th>
+                          <td>
+                            @if (row.email) {
+                              <a [href]="'mailto:' + row.email">{{ row.email }}</a>
+                            } @else {
+                              <span class="empty">Not recorded</span>
+                            }
+                          </td>
                           <td>{{ row.ticketType }}</td>
                           <td>{{ row.quantity }}</td>
                           <td>{{ row.orderedAt }}</td>
