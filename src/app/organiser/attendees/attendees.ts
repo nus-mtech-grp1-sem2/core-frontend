@@ -88,7 +88,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                       </tr>
                     </thead>
                     <tbody>
-                      @for (row of attendees(); track row.email) {
+                      @for (row of attendees(); track row.email + row.orderedAt + row.ticketType) {
                         <tr>
                           <th scope="row">{{ row.buyer || row.email || 'Legacy customer' }}</th>
                           <td>

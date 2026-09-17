@@ -203,6 +203,30 @@ export class EventDetail {
     }
   }
 
+  protected async openQueue(): Promise<void> {
+    const event = this.event();
+    if (!event) return;
+    this.error.set('');
+    try {
+      await firstValueFrom(this.api.put('queue', `/events/${event.event_id}/queue/config`, {
+        opensAt: new Date().toISOString(), admissionBatchSize: 1, admissionIntervalSec: 60,
+      }));
+    } catch (error) {
+      this.error.set(describeError(error, 'open the waiting room'));
+    }
+  }
+
+  protected async admitNext(): Promise<void> {
+    const event = this.event();
+    if (!event) return;
+    this.error.set('');
+    try {
+      await firstValueFrom(this.api.post('queue', `/events/${event.event_id}/queue/admit-next`, {}));
+    } catch (error) {
+      this.error.set(describeError(error, 'admit the next customer'));
+    }
+  }
+
   protected eventImageUrl(eventId: number): string {
     return this.api.url('event', `/events/${eventId}/image`);
   }
