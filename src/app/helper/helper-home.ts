@@ -89,7 +89,7 @@ interface ShiftView {
                   <dd>{{ shift.expected.toLocaleString('en-SG') }} attendees</dd>
                 </div>
               </dl>
-              <a class="btn btn-primary" routerLink="/checkin">Open door check-in</a>
+              <a class="btn btn-primary" [routerLink]="['/checkin', shift.id]">Open door check-in</a>
             </article>
           }
 

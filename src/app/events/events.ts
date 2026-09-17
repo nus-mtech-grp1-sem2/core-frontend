@@ -58,7 +58,7 @@ export class Events {
     effect(() => {
       if (this.auth.status() === 'unknown') return;
       void this.loadEvents(this.isAdmin());
-      if (this.organiserMode && this.auth.isAuthenticated()) void this.loadInvitations();
+      if (this.auth.isAuthenticated()) void this.loadInvitations();
       else this.invitations.set([]);
     });
   }

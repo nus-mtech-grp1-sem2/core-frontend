@@ -328,7 +328,11 @@ function describeError(error: unknown, action: string): string {
   if (error instanceof HttpErrorResponse) {
     if (error.status === 401) return 'Please sign in again before managing this event.';
     if (error.status === 403) return 'You do not have permission to manage this event.';
-    if (error.status === 404) return 'This event was not found.';
+    if (error.status === 404) {
+      return action === 'complete your purchase'
+        ? 'Ticket purchasing is unavailable right now. Please try again later.'
+        : 'This event was not found.';
+    }
   }
   return `Unable to ${action}. Please try again.`;
 }

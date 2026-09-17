@@ -23,8 +23,10 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../core/auth';
 import { ApiService } from '../core/api';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
+import { ActivatedRoute } from '@angular/router';
 
 type ScanOutcome = 'VALID' | 'ALREADY_USED' | 'INVALID' | 'WRONG_EVENT';
+type TicketOutcome = 'SUCCESS' | 'DUPLICATE' | 'INVALID' | 'WRONG_EVENT';
 
 interface ScanResult {
   readonly outcome: ScanOutcome;
@@ -43,6 +45,10 @@ interface EventsResponse {
 interface CheckinStats {
   readonly checkedIn: number;
   readonly total: number;
+}
+
+interface ScannerSessionResponse {
+  readonly sessionToken: string;
 }
 
 interface SearchResult {
@@ -435,11 +441,13 @@ export class Checkin implements OnDestroy {
 
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(ApiService);
+  private readonly route = inject(ActivatedRoute);
   private readonly qrReader = new BrowserQRCodeReader(undefined, {
     delayBetweenScanAttempts: 200,
     delayBetweenScanSuccess: 1000,
   });
   private scannerControls: IScannerControls | null = null;
+  private scannerSessionToken = '';
   private acceptingCameraResult = false;
   private statsTimer: number | null = null;
   private lastSubmission: { readonly qrToken?: string; readonly ticketId?: number } | null = null;
@@ -485,7 +493,8 @@ export class Checkin implements OnDestroy {
   protected selectEvent(eventId: number): void {
     this.stopCamera();
     this.eventId.set(eventId);
-    void this.loadStats(eventId);
+    this.scannerSessionToken = '';
+    void this.startScannerSession(eventId);
     this.startStatsPolling();
   }
 
@@ -554,10 +563,28 @@ export class Checkin implements OnDestroy {
       const result = await firstValueFrom(this.api.get<EventsResponse>('event', '/helper/shifts'));
       this.events.set(result.events);
       if (result.events.length > 0) {
-        this.selectEvent(result.events[0].event_id);
+        const routeEventId = Number(this.route.snapshot.paramMap.get('eventId'));
+        const selectedEvent = result.events.find((event) => event.event_id === routeEventId);
+        this.selectEvent(selectedEvent?.event_id ?? result.events[0].event_id);
       }
     } catch {
       this.events.set([]);
+    }
+  }
+
+  private async startScannerSession(eventId: number): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.api.post<ScannerSessionResponse>('ticket', '/scanner/sessions', { eventId }),
+      );
+      this.scannerSessionToken = result.sessionToken;
+      await this.loadStats(eventId);
+    } catch (error) {
+      this.requestError.set(
+        error instanceof HttpErrorResponse && error.status === 403
+          ? 'This event is not assigned to your helper account.'
+          : 'The check-in service is unavailable. Try again.',
+      );
     }
   }
 
@@ -592,12 +619,16 @@ export class Checkin implements OnDestroy {
   }
 
   private async loadStats(eventId: number): Promise<void> {
+    if (!this.scannerSessionToken) return;
     try {
-      this.stats.set(
-        await firstValueFrom(
-          this.api.get<CheckinStats>('ticket', `/events/${eventId}/checkin-stats`),
+      const result = await firstValueFrom(
+        this.api.get<{ checkedIn: number; issued: number }>(
+          'ticket',
+          `/events/${eventId}/checkin-stats`,
+          { headers: { Authorization: `Bearer ${this.scannerSessionToken}` } },
         ),
       );
+      this.stats.set({ checkedIn: result.checkedIn, total: result.issued });
     } catch {
       this.stats.set(null);
     }
@@ -611,7 +642,8 @@ export class Checkin implements OnDestroy {
     return this.api
       .get<SearchResponse>(
         'ticket',
-        `/tickets/search?eventId=${eventId}&query=${encodeURIComponent(query)}`,
+        `/tickets/search?q=${encodeURIComponent(query)}`,
+        { headers: { Authorization: `Bearer ${this.scannerSessionToken}` } },
       )
       .pipe(
         map((result) => ({
@@ -635,13 +667,16 @@ export class Checkin implements OnDestroy {
     this.requestError.set('');
     try {
       const response = await firstValueFrom(
-        this.api.post<{ result: ScanOutcome }>('ticket', '/tickets/validate', {
-          eventId,
-          ...input,
-        }),
+        this.api.post<{ outcome: TicketOutcome }>(
+          'ticket',
+          '/tickets/validate',
+          input,
+          { headers: { Authorization: `Bearer ${this.scannerSessionToken}` } },
+        ),
       );
-      this.record({ outcome: response.result, at: timestamp() });
-      this.playTone(response.result);
+      const outcome = mapTicketOutcome(response.outcome);
+      this.record({ outcome, at: timestamp() });
+      this.playTone(outcome);
     } catch (error) {
       this.requestError.set(
         error instanceof HttpErrorResponse && error.status === 403
@@ -659,7 +694,7 @@ export class Checkin implements OnDestroy {
     this.statsTimer = window.setInterval(() => {
       const eventId = this.eventId();
       if (eventId !== null && document.visibilityState === 'visible') void this.loadStats(eventId);
-    }, 30000);
+    }, 10000);
   }
 
   private playTone(outcome: ScanOutcome): void {
@@ -719,4 +754,17 @@ export function outcomeIcon(outcome: ScanOutcome): string {
       : outcome === 'WRONG_EVENT'
         ? '!'
         : '×';
+}
+
+function mapTicketOutcome(outcome: TicketOutcome): ScanOutcome {
+  switch (outcome) {
+    case 'SUCCESS':
+      return 'VALID';
+    case 'DUPLICATE':
+      return 'ALREADY_USED';
+    case 'WRONG_EVENT':
+      return 'WRONG_EVENT';
+    default:
+      return 'INVALID';
+  }
 }
