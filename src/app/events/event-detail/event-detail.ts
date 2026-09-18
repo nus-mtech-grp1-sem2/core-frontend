@@ -655,6 +655,10 @@ function queueAdmissionRequired(error: unknown): boolean {
 
 function describeError(error: unknown, action: string): string {
   if (error instanceof HttpErrorResponse) {
+    if (action === 'complete your purchase') {
+      const purchaseMessage = purchaseErrorMessage(error);
+      if (purchaseMessage) return purchaseMessage;
+    }
     if ((error.error as { error?: string } | null)?.error === 'queue_admission_required') {
       return 'Your waiting-room admission has expired. Rejoin the queue to continue.';
     }
@@ -667,4 +671,20 @@ function describeError(error: unknown, action: string): string {
     }
   }
   return `Unable to ${action}. Please try again.`;
+}
+
+export function purchaseErrorMessage(error: HttpErrorResponse): string | null {
+  const code = (error.error as { error?: string } | null)?.error;
+  if (code === 'inventory_unavailable') {
+    return 'Tickets are currently unavailable or sold out. Refresh the event before trying again.';
+  }
+  if (code === 'hold_not_active') {
+    return 'Your ticket hold has expired. Select your tickets again.';
+  }
+  if (code === 'hold_has_no_inventory') {
+    return 'Ticket inventory has not been configured for this event.';
+  }
+  if (code === 'event_not_on_sale') return 'This event is no longer on sale.';
+  if (code === 'order_not_payable') return 'This order can no longer be paid.';
+  return null;
 }
