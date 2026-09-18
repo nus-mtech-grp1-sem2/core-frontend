@@ -7,14 +7,49 @@
   @if (invitations().length) { <section class="invitations" aria-labelledby="invitation-heading"><h2 id="invitation-heading">Event invitations</h2>@for (invitation of invitations(); track invitation.membership_id) { <div class="invitation"><span><strong>{{ invitation.title }}</strong> at {{ invitation.venue }} as {{ invitation.role | lowercase }}</span><div class="actions"><button type="button" class="btn btn-primary btn-sm" (click)="decideInvitation(invitation, 'accept')">Accept</button><button type="button" class="btn btn-ghost btn-sm" (click)="decideInvitation(invitation, 'reject')">Reject</button></div></div> }</section> }
   @if (isAdmin() && showEventForm()) {
     <form class="new-event-form" [formGroup]="eventForm" (ngSubmit)="saveEvent()">
-      <div class="field"><label for="event-title">Title</label><input id="event-title" type="text" formControlName="title" required /></div>
-      <div class="field"><label for="event-description">Description</label><input id="event-description" type="text" formControlName="description" /></div>
-      <div class="field"><label for="event-venue">Venue</label><input id="event-venue" type="text" formControlName="venue" required /></div>
-      <div class="field"><label for="event-start">Starts at</label><input id="event-start" type="datetime-local" formControlName="startsAt" required /></div>
-      <div class="field"><label for="event-total-seats">Total seats</label><input id="event-total-seats" type="number" formControlName="totalSeats" min="1" max="1000000" step="1" required /></div>
-      <div class="field"><label for="event-price">Price</label><input id="event-price" type="number" formControlName="price" min="0" step="0.01" required /></div>
-      <div class="field"><label for="event-tier">Ticketing</label><select id="event-tier" formControlName="tier"><option value="TIER1_GA">General admission</option><option value="TIER2_SEATED">Reserved seating</option></select></div>
-      <button type="submit" class="btn btn-primary btn-sm" [disabled]="submitting()">{{ editingEventId() === null ? 'Create event' : 'Save changes' }}</button>
+      <h2 class="form-title">{{ editingEventId() === null ? 'Create a new event' : 'Edit event' }}</h2>
+
+      <section class="form-step">
+        <p class="step-label"><span class="step-num">1</span> Photo</p>
+        <div class="field field-wide">
+          <label for="event-image">Event photo</label>
+          <input id="event-image" type="file" accept="image/jpeg,image/png,image/webp" (change)="onImageSelected($event)" />
+          @if (imagePreviewUrl()) { <img class="image-preview" [src]="imagePreviewUrl()" alt="Selected event photo preview" /> }
+        </div>
+      </section>
+
+      <section class="form-step">
+        <p class="step-label"><span class="step-num">2</span> Details</p>
+        <div class="step-grid">
+          <div class="field"><label for="event-title">Title</label><input id="event-title" type="text" formControlName="title" required /></div>
+          <div class="field">
+            <label for="event-venue">Venue</label>
+            <input id="event-venue" type="text" formControlName="venue" list="venue-options" placeholder="Type or pick a venue" required />
+            <datalist id="venue-options">@for (venue of savedVenues(); track venue) { <option [value]="venue"></option> }</datalist>
+          </div>
+          <div class="field field-wide"><label for="event-description">Description</label><input id="event-description" type="text" formControlName="description" /></div>
+          <div class="field"><label for="event-start">Date and time</label><input id="event-start" type="datetime-local" formControlName="startsAt" required /></div>
+          <div class="field"><label for="event-total-seats">Total seats</label><input id="event-total-seats" type="number" formControlName="totalSeats" min="1" max="1000000" step="1" required /></div>
+        </div>
+      </section>
+
+      <section class="form-step">
+        <p class="step-label"><span class="step-num">3</span> Event type</p>
+        <div class="tier-toggle" role="group" aria-label="Event type">
+          <button type="button" class="tier-option" [class.active]="eventForm.controls.tier.value === 'TIER1_GA'" (click)="setTier('TIER1_GA')">
+            <span class="tier-name">General admission</span>
+            <span class="tier-hint">Zones with shared capacity</span>
+          </button>
+          <button type="button" class="tier-option" [class.active]="eventForm.controls.tier.value === 'TIER2_SEATED'" (click)="setTier('TIER2_SEATED')">
+            <span class="tier-name">Reserved seating</span>
+            <span class="tier-hint">Zones with individual seats</span>
+          </button>
+        </div>
+      </section>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary btn-sm" [disabled]="submitting()">{{ editingEventId() === null ? 'Create event' : 'Save changes' }}</button>
+      </div>
     </form>
   }
   @if (loading()) { <p class="empty">Loading events...</p> } @else { <ul class="event-grid">

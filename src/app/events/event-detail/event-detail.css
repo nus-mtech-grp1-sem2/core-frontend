@@ -130,19 +130,26 @@
 
 .seat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(3rem, 1fr));
   gap: 0.5rem;
 }
 
 .seat {
-  padding: 0.5rem 0;
-  border: 1px solid var(--border-strong);
+  aspect-ratio: 4 / 3;
+  border: 2px solid transparent;
   border-radius: var(--radius);
-  background: var(--bg);
-  color: inherit;
+  color: #fff;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s ease, transform 0.1s ease, border-color 0.1s ease;
+}
+
+.seat:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -8px rgb(0 0 0 / 0.45);
 }
 
 .seat:disabled {
@@ -151,9 +158,12 @@
 }
 
 .seat.selected {
-  background: var(--brand-500);
-  border-color: var(--brand-500);
-  color: var(--text-inverse);
+  border-color: var(--brand-600);
+  box-shadow: 0 0 0 2px var(--brand-600);
+}
+
+.seat-gap {
+  aspect-ratio: 4 / 3;
 }
 
 .edit-form,
@@ -222,11 +232,33 @@
   font: inherit;
 }
 
+.image-preview {
+  width: 100%;
+  max-width: 10rem;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  margin-top: 0.5rem;
+}
+
 .invite-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 10rem auto;
   align-items: center;
   gap: 0.5rem;
+}
+
+.inventory-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.inventory-summary .status {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
 }
 
 .member-list {
@@ -248,6 +280,14 @@
   display: block;
   margin-top: 0.125rem;
   color: var(--text-muted);
+}
+
+.member-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
 }
 
 .owner-note,

@@ -47,21 +47,41 @@
           />
         </div>
         @if (event.tier === 'TIER2_SEATED') {
-          <div class="seat-grid" role="group" aria-label="Choose your seats">
-            @for (seat of seats(); track seat.seat_id) {
-              <button
-                type="button"
-                class="seat"
-                [class.selected]="selectedSeatIds().includes(seat.seat_id)"
-                [disabled]="seat.status !== 'AVAILABLE'"
-                (click)="toggleSeat(seat)"
-              >
-                {{ seat.seat_label }}
-              </button>
-            } @empty {
-              <p class="empty">No seats available.</p>
-            }
-          </div>
+          @if (seats().length > 0) {
+            <div
+              class="seat-grid"
+              role="group"
+              aria-label="Choose your seats"
+              [style.grid-template-rows]="'repeat(' + gridRows().length + ', minmax(2.5rem, 1fr))'"
+              [style.grid-template-columns]="'repeat(' + gridCols().length + ', minmax(2.5rem, 1fr))'"
+            >
+              @for (row of gridRows(); track row) {
+                @for (col of gridCols(); track col) {
+                  @let seat = seatAt(row, col);
+                  @if (seat) {
+                    <button
+                      type="button"
+                      class="seat"
+                      [class.selected]="isSeatSelected(seat)"
+                      [style.grid-row]="row + 1"
+                      [style.grid-column]="col + 1"
+                      [style.background]="seat.color"
+                      [disabled]="seat.status !== 'AVAILABLE'"
+                      [attr.aria-label]="seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)"
+                      [title]="seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)"
+                      (click)="toggleSeat(seat)"
+                    >
+                      {{ seat.seatLabel }}
+                    </button>
+                  } @else {
+                    <span class="seat-gap" [style.grid-row]="row + 1" [style.grid-column]="col + 1"></span>
+                  }
+                }
+              }
+            </div>
+          } @else {
+            <p class="empty">No seats available.</p>
+          }
         }
         <button type="button" class="btn btn-primary" [disabled]="purchasing()" (click)="buy()">
           {{ purchasing() ? 'Processing…' : 'Buy tickets' }}
@@ -80,8 +100,8 @@
         <div class="field"><label for="venue">Venue</label><input id="venue" type="text" formControlName="venue" /></div>
         <div class="field"><label for="starts-at">Date and time</label><input id="starts-at" type="datetime-local" formControlName="startsAt" /></div>
         <div class="field"><label for="seats">Total seats</label><input id="seats" type="number" min="1" step="1" formControlName="totalSeats" /></div>
-        <div class="field"><label for="price">Price</label><input id="price" type="number" min="0" step="0.01" formControlName="price" /></div>
         <div class="field"><label for="tier">Ticketing</label><select id="tier" formControlName="tier"><option value="TIER1_GA">General admission</option><option value="TIER2_SEATED">Reserved seating</option></select></div>
+        <div class="field"><label for="event-image">Event photo</label><input id="event-image" type="file" accept="image/jpeg,image/png,image/webp" (change)="onImageSelected($event)" />@if (imagePreviewUrl()) { <img class="image-preview" [src]="imagePreviewUrl()" alt="Selected event photo preview" /> }</div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" [disabled]="saving()">{{ saving() ? 'Saving...' : 'Save changes' }}</button>
           @if (event.status === 'DRAFT') {
@@ -94,6 +114,14 @@
         </div>
       </form>
 
+      <section class="team" aria-labelledby="inventory-heading">
+        <h2 id="inventory-heading">Inventory</h2>
+        <div class="inventory-summary">
+          <span class="pill status">{{ inventorySummaryLabel() }}</span>
+          <a class="btn btn-primary btn-sm" [routerLink]="['/organiser/events', event.event_id, 'inventory']">Configure inventory</a>
+        </div>
+      </section>
+
       <section class="team" aria-labelledby="team-heading">
         <h2 id="team-heading">Team</h2>
         <form class="invite-form" [formGroup]="inviteForm" (ngSubmit)="invite()">
@@ -105,7 +133,17 @@
           @for (member of members(); track member.membership_id) {
             <li>
               <span><strong>{{ member.user_email }}</strong><small>{{ member.role === 'ORGANISER' ? 'Organizer' : 'Helper' }} · {{ member.invite_status | lowercase }}</small></span>
-              @if (canRemove(member)) { <button type="button" class="btn btn-ghost btn-sm delete" (click)="remove(member)">Remove</button> }
+              <div class="member-actions">
+                @if (canChangeRole(member)) {
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    [disabled]="changingRoleFor() === member.user_sub"
+                    (click)="changeRole(member, member.role === 'ORGANISER' ? 'HELPER' : 'ORGANISER')"
+                  >{{ member.role === 'ORGANISER' ? 'Demote to helper' : 'Promote to organizer' }}</button>
+                }
+                @if (canRemove(member)) { <button type="button" class="btn btn-ghost btn-sm delete" (click)="remove(member)">Remove</button> }
+              </div>
             </li>
           } @empty { <li class="empty">No team members yet.</li> }
         </ul>

@@ -1,6 +1,6 @@
 import { DatePipe, LowerCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -9,6 +9,18 @@ import { ApiService } from '../../core/api';
 import { AuthService } from '../../core/auth';
 import { QueueService } from '../../core/queue';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
+
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
@@ -43,17 +55,46 @@ interface TeamResponse {
 }
 
 interface SeatOption {
-  readonly seat_id: number;
-  readonly seat_label: string;
-  readonly status: 'AVAILABLE' | 'HELD' | 'SOLD';
+  readonly seatId: number;
+  readonly seatLabel: string;
+  readonly gridRow: number;
+  readonly gridCol: number;
+  readonly inventoryItemId: number;
+  readonly sectionName: string;
+  readonly priceCents: number;
+  readonly color: string;
+  readonly status: 'AVAILABLE' | 'HELD' | 'SOLD' | 'BLOCKED';
+  readonly tag: 'NONE' | 'ACCESSIBLE' | 'MAINTENANCE';
 }
 
 interface SeatResponse {
+  readonly gridRows: number;
+  readonly gridCols: number;
   readonly seats: readonly SeatOption[];
 }
 
 interface OrderResponse {
   readonly order: { readonly order_id: number };
+}
+
+interface ZoneSummary {
+  readonly seatCount: number;
+  readonly soldCount: number;
+}
+
+interface InventoryResponse {
+  readonly zones: readonly ZoneSummary[];
+  readonly seats: readonly unknown[];
+}
+
+interface InventorySummary {
+  readonly zoneCount: number;
+  readonly totalSeats: number;
+  readonly soldCount: number;
+}
+
+function seatKey(row: number, col: number): string {
+  return `${row},${col}`;
 }
 
 @Component({
@@ -80,8 +121,18 @@ export class EventDetail {
   protected readonly deleting = signal(false);
   protected readonly updatingStatus = signal(false);
   protected readonly inviting = signal(false);
+  protected readonly changingRoleFor = signal<string | null>(null);
   protected readonly error = signal('');
   protected readonly seats = signal<readonly SeatOption[]>([]);
+  protected readonly gridRowCount = signal(0);
+  protected readonly gridColCount = signal(0);
+  protected readonly gridRows = computed(() => Array.from({ length: this.gridRowCount() }, (_, i) => i));
+  protected readonly gridCols = computed(() => Array.from({ length: this.gridColCount() }, (_, i) => i));
+  protected readonly seatsByKey = computed(() => {
+    const map = new Map<string, SeatOption>();
+    for (const seat of this.seats()) map.set(seatKey(seat.gridRow, seat.gridCol), seat);
+    return map;
+  });
   protected readonly quantity = signal(1);
   protected readonly selectedSeatIds = signal<readonly number[]>([]);
   protected readonly purchasing = signal(false);
@@ -94,6 +145,10 @@ export class EventDetail {
    * event's organisers.
    */
   protected readonly isOrganiser = signal(false);
+  protected readonly inventorySummary = signal<InventorySummary | null>(null);
+  protected readonly imagePreviewUrl = signal<string | null>(null);
+  private selectedImageBase64: string | null = null;
+  private selectedImageMimeType: string | null = null;
   protected readonly shellWorkspace = () => this.organiserMode ? 'organiser' as const : 'customer' as const;
   protected readonly backLink = this.organiserMode ? '/organiser/events' : '/events';
   protected readonly isOwner = () => this.event()?.organiser_sub === this.auth.user()?.sub;
@@ -103,7 +158,6 @@ export class EventDetail {
     venue: this.fb.control('', Validators.required),
     startsAt: this.fb.control('', Validators.required),
     totalSeats: this.fb.control(1, [Validators.required, Validators.min(1), Validators.max(1_000_000)]),
-    price: this.fb.control(0, [Validators.required, Validators.min(0)]),
     tier: this.fb.control<EventTier>('TIER1_GA', Validators.required),
   });
   protected readonly inviteForm = this.fb.group({
@@ -118,6 +172,18 @@ export class EventDetail {
     });
   }
 
+  protected async onImageSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) { this.error.set('Please choose a JPEG, PNG or WebP image.'); input.value = ''; return; }
+    if (file.size > MAX_IMAGE_BYTES) { this.error.set('Image must be 5MB or smaller.'); input.value = ''; return; }
+    const dataUrl = await readFileAsDataUrl(file);
+    this.selectedImageMimeType = file.type;
+    this.selectedImageBase64 = dataUrl;
+    this.imagePreviewUrl.set(dataUrl);
+  }
+
   protected async save(): Promise<void> {
     const event = this.event();
     if (!event || this.form.invalid || this.saving()) {
@@ -128,6 +194,15 @@ export class EventDetail {
     this.error.set('');
     try {
       await firstValueFrom(this.api.put('event', `/events/${event.event_id}`, this.form.getRawValue()));
+      if (this.selectedImageBase64 && this.selectedImageMimeType) {
+        await firstValueFrom(this.api.put('event', `/events/${event.event_id}/image`, {
+          imageBase64: this.selectedImageBase64,
+          mimeType: this.selectedImageMimeType,
+        }));
+        this.selectedImageBase64 = null;
+        this.selectedImageMimeType = null;
+        this.imagePreviewUrl.set(null);
+      }
       await this.load(event.event_id);
     } catch (error) {
       this.error.set(describeError(error, 'save changes'));
@@ -203,6 +278,27 @@ export class EventDetail {
     }
   }
 
+  protected async changeRole(member: TeamMember, role: 'ORGANISER' | 'HELPER'): Promise<void> {
+    const event = this.event();
+    if (!event || role === member.role || this.changingRoleFor()) return;
+    const action = role === 'ORGANISER' ? 'promote' : 'demote';
+    if (!window.confirm(`${action === 'promote' ? 'Promote' : 'Demote'} ${member.user_email} to ${role === 'ORGANISER' ? 'Organizer' : 'Helper'}?`)) return;
+    this.changingRoleFor.set(member.user_sub);
+    this.error.set('');
+    try {
+      await firstValueFrom(this.api.patch('event', `/events/${event.event_id}/team-members/${encodeURIComponent(member.user_sub)}`, { role }));
+      await this.loadMembers(event.event_id);
+    } catch (error) {
+      this.error.set(describeError(error, `${action} this team member`));
+    } finally {
+      this.changingRoleFor.set(null);
+    }
+  }
+
+  protected canChangeRole(member: TeamMember): boolean {
+    return this.isOwner() && member.user_sub !== this.auth.user()?.sub;
+  }
+
   protected eventImageUrl(eventId: number): string {
     return this.api.url('event', `/events/${eventId}/image`);
   }
@@ -215,12 +311,20 @@ export class EventDetail {
     return !this.organiserMode && this.event()?.status === 'PUBLISHED';
   }
 
+  protected seatAt(row: number, col: number): SeatOption | undefined {
+    return this.seatsByKey().get(seatKey(row, col));
+  }
+
+  protected isSeatSelected(seat: SeatOption): boolean {
+    return this.selectedSeatIds().includes(seat.seatId);
+  }
+
   protected toggleSeat(seat: SeatOption): void {
     if (seat.status !== 'AVAILABLE') return;
     this.selectedSeatIds.update((ids) => {
-      if (ids.includes(seat.seat_id)) return ids.filter((id) => id !== seat.seat_id);
+      if (ids.includes(seat.seatId)) return ids.filter((id) => id !== seat.seatId);
       if (ids.length >= this.quantity()) return ids;
-      return [...ids, seat.seat_id];
+      return [...ids, seat.seatId];
     });
   }
 
@@ -290,10 +394,12 @@ export class EventDetail {
         venue: result.event.venue,
         startsAt: result.event.starts_at.replace(' ', 'T').slice(0, 16),
         totalSeats: result.event.total_seats,
-        price: (result.event.price_cents ?? 0) / 100,
         tier: result.event.tier,
       });
-      if (this.organiserMode) await this.loadMembers(eventId);
+      if (this.organiserMode) {
+        await this.loadMembers(eventId);
+        await this.loadInventorySummary(eventId);
+      }
       if (result.event.tier === 'TIER2_SEATED') await this.loadSeats(eventId);
     } catch (error) {
       this.event.set(null);
@@ -314,11 +420,35 @@ export class EventDetail {
     }
   }
 
+  private async loadInventorySummary(eventId: number): Promise<void> {
+    try {
+      const result = await firstValueFrom(this.api.get<InventoryResponse>('inventory', `/events/${eventId}/inventory`));
+      this.inventorySummary.set({
+        zoneCount: result.zones.length,
+        totalSeats: result.seats.length,
+        soldCount: result.zones.reduce((sum, zone) => sum + zone.soldCount, 0),
+      });
+    } catch {
+      this.inventorySummary.set(null);
+    }
+  }
+
+  protected inventorySummaryLabel(): string {
+    const summary = this.inventorySummary();
+    if (!summary) return 'Not configured yet';
+    const label = `${summary.zoneCount} zone${summary.zoneCount === 1 ? '' : 's'} · ${summary.totalSeats} seats`;
+    return summary.soldCount > 0 ? `${label}, ${summary.soldCount} sold` : label;
+  }
+
   private async loadSeats(eventId: number): Promise<void> {
     try {
-      const result = await firstValueFrom(this.api.get<SeatResponse>('event', `/events/${eventId}/seats`));
+      const result = await firstValueFrom(this.api.get<SeatResponse>('inventory', `/events/${eventId}/seats`));
+      this.gridRowCount.set(result.gridRows || 0);
+      this.gridColCount.set(result.gridCols || 0);
       this.seats.set(result.seats);
     } catch {
+      this.gridRowCount.set(0);
+      this.gridColCount.set(0);
       this.seats.set([]);
     }
   }

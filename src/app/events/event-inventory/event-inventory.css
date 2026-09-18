@@ -1,0 +1,570 @@
+:host {
+  display: block;
+}
+
+.head-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.back {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand-600);
+  text-decoration: none;
+}
+
+.back:hover {
+  text-decoration: underline;
+}
+
+.head-copy h1 {
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
+}
+
+.lead {
+  color: var(--text-muted);
+  max-width: 52ch;
+}
+
+.lock-note {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.body {
+  padding-block: clamp(1.25rem, 3vw, 2rem);
+  display: grid;
+  gap: 1.25rem;
+}
+
+.error {
+  margin: 0;
+  color: #8c1d18;
+  font-size: 0.875rem;
+}
+
+.builder {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.grid-map {
+  display: grid;
+  justify-items: center;
+  gap: 0.625rem;
+  padding: 1.25rem 1rem 1rem;
+  border-radius: var(--radius-lg);
+  background: radial-gradient(120% 100% at 50% 0%, var(--bg-sunken) 0%, var(--bg) 70%);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.grid-map-title {
+  margin: 0;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* Placed in the canvas grid's first column/row so it centres over exactly
+ * the cell grid below it — not over the cell grid plus the +/- sidebar,
+ * which would pull it visibly off-centre whenever that sidebar is present. */
+.stage-bar {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  padding: 0.3125rem 2.5rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1f2937, #111827);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  box-shadow: 0 10px 24px -10px rgb(0 0 0 / 0.55);
+}
+
+/* `align-items: center` (rather than `start`) is what keeps the +/- column
+ * control (grid-add-col-bar, row 2) vertically centred against the full
+ * height of the cell grid beside it, instead of pinned to its top edge. */
+.grid-map-canvas {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto auto;
+  gap: 0.375rem;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Cinema-style seat map: small fixed-size cells that stay compact and
+ * centred no matter how wide the page is, instead of stretching to fill
+ * the container (which is what made every seat balloon into a big tile). */
+.grid-body {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  gap: 0.25rem;
+  user-select: none;
+}
+
+.grid-add-col-bar {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+}
+
+.grid-add-row-bar {
+  grid-column: 1;
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+}
+
+.grid-add-btn,
+.grid-remove-btn {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.grid-add-btn:hover,
+.grid-remove-btn:hover {
+  border-color: var(--brand-600);
+  color: var(--brand-600);
+  transform: scale(1.08);
+}
+
+.grid-add-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.grid-dim-input {
+  width: 2.75rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 0;
+}
+
+.grid-dim-input:focus {
+  outline: none;
+  border-color: var(--brand-600);
+}
+
+.grid-cell {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 6px 6px 2px 2px;
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0;
+  cursor: crosshair;
+  transition: border-color 0.1s ease, background 0.1s ease, color 0.1s ease;
+}
+
+.grid-cell:hover {
+  border-color: var(--brand-600);
+  background: var(--brand-soft, var(--bg-sunken));
+  color: var(--brand-600);
+}
+
+.grid-cell.drawing {
+  border-style: solid;
+  border-color: var(--brand-600);
+  background: var(--brand-soft, var(--bg-sunken));
+  color: var(--brand-600);
+  box-shadow: inset 0 0 0 2px var(--brand-600);
+}
+
+.grid-cell.drawing.blocked {
+  border-color: #b42318;
+  background: #fee4e2;
+  color: #b42318;
+  box-shadow: inset 0 0 0 2px #b42318;
+}
+
+.zone-block-cell {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 6px 6px 2px 2px;
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: default;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-inline: 0.125rem;
+  user-select: none;
+}
+
+.seat-cell {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 6px 6px 2px 2px;
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.1s ease, border-color 0.1s ease;
+  user-select: none;
+}
+
+.seat-cell:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px -4px rgb(0 0 0 / 0.45);
+}
+
+.seat-cell.selected {
+  border-color: var(--brand-600);
+  box-shadow: 0 0 0 2px var(--brand-600);
+}
+
+.seat-cell.tag-accessible {
+  border-color: #0891b2;
+}
+
+.seat-cell.tag-maintenance {
+  border-color: #1f2937;
+  opacity: 0.6;
+}
+
+.seat-cell.sold,
+.seat-cell.held,
+.seat-cell.blocked {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.zone-block-cell.zone-movable,
+.seat-cell.zone-movable {
+  cursor: grab;
+}
+
+.zone-block-cell.zone-movable:active,
+.seat-cell.zone-movable:active {
+  cursor: grabbing;
+}
+
+.zone-block-cell[class*='handle-'],
+.seat-cell[class*='handle-'] {
+  position: relative;
+}
+
+.handle-nw,
+.handle-se {
+  cursor: nwse-resize;
+}
+
+.handle-ne,
+.handle-sw {
+  cursor: nesw-resize;
+}
+
+.handle-n,
+.handle-s {
+  cursor: ns-resize;
+}
+
+.handle-e,
+.handle-w {
+  cursor: ew-resize;
+}
+
+/* A small corner triangle on the four corner handles, and a thin bar along
+ * the middle of each edge handle, so the draggable affordance is visible
+ * without relying on cursor shape alone. */
+.handle-nw::after,
+.handle-ne::after,
+.handle-se::after,
+.handle-sw::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-color: transparent transparent rgb(255 255 255 / 0.85) transparent;
+}
+
+.handle-se::after {
+  right: 1px;
+  bottom: 1px;
+  border-width: 0 0 6px 6px;
+}
+
+.handle-nw::after {
+  left: 1px;
+  top: 1px;
+  border-width: 6px 6px 0 0;
+  border-color: rgb(255 255 255 / 0.85) transparent transparent transparent;
+}
+
+.handle-ne::after {
+  right: 1px;
+  top: 1px;
+  border-width: 0 6px 6px 0;
+  border-color: transparent transparent transparent rgb(255 255 255 / 0.85);
+}
+
+.handle-sw::after {
+  left: 1px;
+  bottom: 1px;
+  border-width: 6px 0 0 6px;
+  border-color: rgb(255 255 255 / 0.85) transparent transparent transparent;
+}
+
+.handle-n::after,
+.handle-s::after,
+.handle-e::after,
+.handle-w::after {
+  content: '';
+  position: absolute;
+  background: rgb(255 255 255 / 0.85);
+  border-radius: 999px;
+}
+
+.handle-n::after,
+.handle-s::after {
+  left: 50%;
+  width: 8px;
+  height: 2px;
+  transform: translateX(-50%);
+}
+
+.handle-n::after {
+  top: 1px;
+}
+
+.handle-s::after {
+  bottom: 1px;
+}
+
+.handle-e::after,
+.handle-w::after {
+  top: 50%;
+  width: 2px;
+  height: 8px;
+  transform: translateY(-50%);
+}
+
+.handle-e::after {
+  right: 1px;
+}
+
+.handle-w::after {
+  left: 1px;
+}
+
+.seat-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.25rem;
+}
+
+.toolbar-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.zone-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.zone-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: box-shadow 0.15s ease;
+}
+
+.zone-card:hover {
+  box-shadow: var(--shadow-md, 0 10px 24px -12px rgb(0 0 0 / 0.35));
+}
+
+.zone-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  background: linear-gradient(180deg, var(--bg-sunken), var(--bg));
+  border-bottom: 1px solid var(--border);
+}
+
+.zone-swatch-picker {
+  flex: 0 0 auto;
+  display: inline-flex;
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.zone-swatch-picker input[type='color'] {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  background: none;
+}
+
+.zone-card-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.zone-name-input {
+  border: none;
+  background: none;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  padding: 0.125rem 0;
+  color: inherit;
+  font-family: inherit;
+}
+
+.zone-name-input:focus {
+  outline: none;
+  border-bottom: 1px solid var(--brand-600);
+}
+
+.zone-code-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.zone-price {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.zone-price .currency {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.zone-price input {
+  width: 4.5rem;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+}
+
+.zone-price input:focus {
+  outline: none;
+}
+
+.zone-seat-total {
+  flex: 0 0 auto;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand-600);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.delete {
+  color: var(--danger, #b42318);
+  white-space: nowrap;
+}
+
+.empty {
+  padding-block: 2.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.not-found {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .zone-card-head {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 560px) {
+  .zone-card-head {
+    align-items: flex-start;
+  }
+
+  .zone-seat-total {
+    order: 1;
+  }
+}
