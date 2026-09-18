@@ -48,10 +48,17 @@ interface TeamMember {
   readonly user_email: string;
   readonly role: 'ORGANISER' | 'HELPER';
   readonly invite_status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  /** Cognito display name; blank if the lookup failed or is still loading. */
+  readonly name?: string;
 }
 
 interface TeamResponse {
   readonly members: readonly TeamMember[];
+}
+
+interface CheckinStatsResponse {
+  readonly ticketsSold: number;
+  readonly checkedIn: number;
 }
 
 interface SeatOption {
@@ -146,6 +153,7 @@ export class EventDetail {
    */
   protected readonly isOrganiser = signal(false);
   protected readonly inventorySummary = signal<InventorySummary | null>(null);
+  protected readonly checkinStats = signal<CheckinStatsResponse | null>(null);
   protected readonly imagePreviewUrl = signal<string | null>(null);
   private selectedImageBase64: string | null = null;
   private selectedImageMimeType: string | null = null;
@@ -399,6 +407,7 @@ export class EventDetail {
       if (this.organiserMode) {
         await this.loadMembers(eventId);
         await this.loadInventorySummary(eventId);
+        await this.loadCheckinStats(eventId);
       }
       if (result.event.tier === 'TIER2_SEATED') await this.loadSeats(eventId);
     } catch (error) {
@@ -438,6 +447,27 @@ export class EventDetail {
     if (!summary) return 'Not configured yet';
     const label = `${summary.zoneCount} zone${summary.zoneCount === 1 ? '' : 's'} · ${summary.totalSeats} seats`;
     return summary.soldCount > 0 ? `${label}, ${summary.soldCount} sold` : label;
+  }
+
+  /**
+   * Check-in progress on event day (OR-09) — lets the organiser see this
+   * without asking door staff. Not every organiser account is granted
+   * this route (it's the same event-team-membership check as the roster),
+   * so a failed load just hides the section rather than showing an error.
+   */
+  private async loadCheckinStats(eventId: number): Promise<void> {
+    try {
+      const result = await firstValueFrom(this.api.get<CheckinStatsResponse>('ticket', `/events/${eventId}/checkin-stats`));
+      this.checkinStats.set(result);
+    } catch {
+      this.checkinStats.set(null);
+    }
+  }
+
+  protected checkinStatsLabel(): string {
+    const stats = this.checkinStats();
+    if (!stats) return 'Not available yet';
+    return `${stats.checkedIn} of ${stats.ticketsSold} checked in`;
   }
 
   private async loadSeats(eventId: number): Promise<void> {

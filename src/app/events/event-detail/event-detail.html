@@ -122,6 +122,15 @@
         </div>
       </section>
 
+      @if (checkinStats()) {
+        <section class="team" aria-labelledby="checkin-heading">
+          <h2 id="checkin-heading">Check-in</h2>
+          <div class="inventory-summary">
+            <span class="pill status">{{ checkinStatsLabel() }}</span>
+          </div>
+        </section>
+      }
+
       <section class="team" aria-labelledby="team-heading">
         <h2 id="team-heading">Team</h2>
         <form class="invite-form" [formGroup]="inviteForm" (ngSubmit)="invite()">
@@ -132,7 +141,7 @@
         <ul class="member-list">
           @for (member of members(); track member.membership_id) {
             <li>
-              <span><strong>{{ member.user_email }}</strong><small>{{ member.role === 'ORGANISER' ? 'Organizer' : 'Helper' }} · {{ member.invite_status | lowercase }}</small></span>
+              <span><strong>{{ member.name ? member.name + ' — ' + member.user_email : member.user_email }}</strong><small>{{ member.role === 'ORGANISER' ? 'Organizer' : 'Helper' }} · {{ member.invite_status | lowercase }}</small></span>
               <div class="member-actions">
                 @if (canChangeRole(member)) {
                   <button
