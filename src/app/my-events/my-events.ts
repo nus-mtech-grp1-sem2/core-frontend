@@ -3,10 +3,6 @@ import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signa
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom, timer } from 'rxjs';
-import { CurrencyPipe, DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
 import { toDataURL } from 'qrcode';
 
 import { ApiService } from '../core/api';
@@ -45,18 +41,6 @@ interface PaidOrder {
 
 interface OrdersResponse {
   readonly orders: readonly PaidOrder[];
-interface Order {
-  readonly order_id: number;
-  readonly event_id: number;
-  readonly event_title: string;
-  readonly venue: string;
-  readonly starts_at: string;
-  readonly status: string;
-  readonly total_amount_cents: number;
-}
-
-interface OrdersResponse {
-  readonly orders: readonly Order[];
 }
 
 interface TicketWithQr extends Ticket {
@@ -69,7 +53,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
 @Component({
   selector: 'app-my-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CurrencyPipe, DatePipe, RouterLink, WorkspaceShell],
+  imports: [DatePipe, RouterLink, WorkspaceShell],
   template: `
     <app-workspace-shell workspace="customer">
       <section class="page-head">
@@ -112,23 +96,6 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                 }
               </section>
             }
-            <section class="orders" aria-labelledby="orders-heading">
-              <h2 id="orders-heading">Orders</h2>
-              @for (order of orders(); track order.order_id) {
-                <article class="order-row">
-                  <div>
-                    <strong>{{ order.event_title }}</strong>
-                    <span>{{ order.venue }} · {{ order.starts_at | date: 'EEE d MMM y, h:mm a' }}</span>
-                  </div>
-                  <div>
-                    <span>Order #{{ order.order_id }}</span>
-                    <strong>{{ order.total_amount_cents / 100 | currency: 'SGD' : 'S$' : '1.2-2' }}</strong>
-                  </div>
-                </article>
-              } @empty {
-                <p class="empty">No orders yet.</p>
-              }
-            </section>
             <ul class="ticket-list">
               @for (ticket of tickets(); track ticket.ticket_id) {
                 <li>
@@ -162,11 +129,6 @@ type LoadStatus = 'loading' | 'ready' | 'error';
   styles: `
     .body { padding-block: clamp(2rem, 5vw, 3rem); }
     .issuance { margin-bottom: 1rem; padding: .875rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--success-bg); color: var(--success-fg); }
-    .orders { margin-bottom: 2rem; }
-    .orders h2 { margin-bottom: .75rem; }
-    .order-row { display: flex; justify-content: space-between; gap: 1rem; padding: 1rem 0; border-top: 1px solid var(--border); }
-    .order-row div { display: grid; gap: .25rem; }
-    .order-row span { color: var(--text-muted); font-size: .875rem; }
     .ticket-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
     .pending-list { display: grid; gap: 1rem; margin-bottom: 1rem; }
     .ticket-card { display: grid; grid-template-columns: 6.5rem 1fr; gap: 1.25rem; align-items: center; padding: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); }
@@ -201,7 +163,6 @@ export class MyEvents {
   protected readonly waitingForTicket = computed(() =>
     this.pendingOrderId !== null && !this.tickets().some((ticket) => ticket.order_id === this.pendingOrderId),
   );
-  protected readonly orders = signal<readonly Order[]>([]);
 
   constructor() {
     void this.load();
@@ -224,7 +185,11 @@ export class MyEvents {
       const withQr = await Promise.all(
         result.tickets.map(async (ticket) => ({
           ...ticket,
-          qrDataUrl: await toDataURL(ticket.qr_token, { width: 160, margin: 1 }),
+          qrDataUrl: await toDataURL(ticket.qr_token, {
+            width: 360,
+            margin: 4,
+            errorCorrectionLevel: 'M',
+          }),
         })),
       );
       this.tickets.set(withQr);

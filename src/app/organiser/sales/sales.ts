@@ -1,14 +1,33 @@
 import { CurrencyPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/api';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
+
+interface ManagedEventResponse {
+  readonly events: readonly {
+    readonly event_id: number;
+    readonly title: string;
+    readonly venue: string;
+    readonly total_seats: number;
+    readonly remaining_qty: number;
+    readonly status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+  }[];
+}
+
+interface OrdersSummaryResponse {
+  readonly paidOrders: number;
+  readonly ticketsSold: number;
+  readonly revenueCents: number;
+}
 
 interface SalesRow {
   readonly eventId: number;
   readonly event: string;
   readonly venue: string;
   readonly sold: number;
+  readonly paidOrders: number;
   readonly capacity: number;
   readonly revenue: number;
   readonly status: 'On sale' | 'Few left' | 'Sold out';
@@ -45,7 +64,9 @@ type LoadStatus = 'loading' | 'ready' | 'error';
           @case ('ready') {
             <ul class="stats">
               <li>
-                <span class="stat-value">{{ totalRevenue() | currency: 'SGD' : 'S$' : '1.0-0' }}</span>
+                <span class="stat-value">{{
+                  totalRevenue() | currency: 'SGD' : 'S$' : '1.0-0'
+                }}</span>
                 <span class="stat-label">Total revenue</span>
               </li>
               <li>
@@ -53,7 +74,9 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                 <span class="stat-label">Tickets sold</span>
               </li>
               <li>
-                <span class="stat-value">{{ averageOrder() | currency: 'SGD' : 'S$' : '1.0-0' }}</span>
+                <span class="stat-value">{{
+                  averageOrder() | currency: 'SGD' : 'S$' : '1.0-0'
+                }}</span>
                 <span class="stat-label">Average order value</span>
               </li>
             </ul>
@@ -77,7 +100,10 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                     <tr>
                       <th scope="row">{{ row.event }}</th>
                       <td>{{ row.venue }}</td>
-                      <td>{{ row.sold.toLocaleString('en-SG') }} / {{ row.capacity.toLocaleString('en-SG') }}</td>
+                      <td>
+                        {{ row.sold.toLocaleString('en-SG') }} /
+                        {{ row.capacity.toLocaleString('en-SG') }}
+                      </td>
                       <td>{{ row.revenue | currency: 'SGD' : 'S$' : '1.0-0' }}</td>
                       <td>
                         <span
@@ -94,7 +120,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
               </table>
             </div>
 
-            <p class="note">Figures update once the payments service is connected.</p>
+            <p class="note">Revenue reflects paid orders only.</p>
           }
         }
       </section>
@@ -194,28 +220,55 @@ export class Sales {
     this.rows().reduce((sum, row) => sum + row.sold, 0),
   );
 
+  private readonly totalPaidOrders = computed(() =>
+    this.rows().reduce((sum, row) => sum + row.paidOrders, 0),
+  );
+
   protected readonly averageOrder = computed(() => {
-    const sold = this.totalSold();
-    return sold ? Math.round(this.totalRevenue() / sold) : 0;
+    const paidOrders = this.totalPaidOrders();
+    return paidOrders ? this.totalRevenue() / paidOrders : 0;
   });
 
   constructor() {
-    this.load();
+    void this.load();
   }
 
-  protected load(): void {
+  protected async load(): Promise<void> {
     this.status.set('loading');
-    this.api.get<SalesRow[]>('order', '/sales').subscribe({
-      next: (rows) => {
-        this.rows.set(rows.map((row) => ({
-          ...row,
-          sold: Number(row.sold),
-          capacity: Number(row.capacity),
-          revenue: Number(row.revenue),
-        })));
-        this.status.set('ready');
-      },
-      error: () => this.status.set('error'),
-    });
+    try {
+      const managed = await firstValueFrom(
+        this.api.get<ManagedEventResponse>('event', '/events/manage'),
+      );
+      const rows = await Promise.all(
+        managed.events.map(async (event): Promise<SalesRow> => {
+          const summary = await firstValueFrom(
+            this.api.get<OrdersSummaryResponse>(
+              'order',
+              `/events/${event.event_id}/orders/summary`,
+            ),
+          ).catch(() => ({ paidOrders: 0, ticketsSold: 0, revenueCents: 0 }));
+
+          return {
+            eventId: event.event_id,
+            event: event.title,
+            venue: event.venue,
+            sold: Number(summary.ticketsSold),
+            paidOrders: Number(summary.paidOrders),
+            capacity: Number(event.total_seats),
+            revenue: Number(summary.revenueCents) / 100,
+            status:
+              event.status === 'CANCELLED' || event.remaining_qty <= 0
+                ? 'Sold out'
+                : event.total_seats > 0 && event.remaining_qty / event.total_seats < 0.15
+                  ? 'Few left'
+                  : 'On sale',
+          };
+        }),
+      );
+      this.rows.set(rows);
+      this.status.set('ready');
+    } catch {
+      this.status.set('error');
+    }
   }
 }

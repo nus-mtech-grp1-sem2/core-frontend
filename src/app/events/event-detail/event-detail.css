@@ -101,6 +101,15 @@
   margin-bottom: 0.5rem;
 }
 
+.success {
+  color: var(--success-fg);
+}
+
+.form-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .management {
   display: grid;
   gap: 1rem;
@@ -126,6 +135,15 @@
   background: var(--bg);
   color: inherit;
   font: inherit;
+}
+
+.owned {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.owned p {
+  margin: 0;
 }
 
 .queue-actions {

@@ -104,21 +104,35 @@ const ANONYMOUS_LINKS: readonly NavLink[] = [{ label: 'Events', path: '/events' 
           }
 
           @if (showSearch()) {
-            <search class="search">
-            <label class="visually-hidden" for="site-search"
-              >Search events, venues or artists</label
+            <form
+              class="search"
+              role="search"
+              (submit)="search(searchInput); $event.preventDefault()"
             >
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
-              <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.6" />
-              <path
-                d="m16 16 4 4"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
+              <label class="visually-hidden" for="site-search"
+                >Search events, venues or artists</label
+              >
+              <button type="submit" class="search-submit">
+                <span class="visually-hidden">Search</span>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
+                  <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.6" />
+                  <path
+                    d="m16 16 4 4"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+              <input
+                #searchInput
+                id="site-search"
+                type="search"
+                [value]="searchQuery()"
+                (input)="searchAsYouType($any($event.target).value)"
+                placeholder="Search events, venues, artists"
               />
-            </svg>
-              <input id="site-search" type="search" placeholder="Search events, venues, artists" />
-            </search>
+            </form>
           }
 
           <div class="account">
@@ -287,6 +301,17 @@ const ANONYMOUS_LINKS: readonly NavLink[] = [{ label: 'Events', path: '/events' 
       outline: none;
     }
 
+    .search-submit {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+    }
+
     .account {
       display: flex;
       align-items: center;
@@ -436,9 +461,28 @@ export class Header {
   protected readonly showSearch = computed(
     () => !this.auth.isAuthenticated() || this.activeWorkspace() === 'customer',
   );
+  protected readonly searchQuery = computed(() => {
+    const query = this.currentUrl().split('?')[1] ?? '';
+    return new URLSearchParams(query).get('q') ?? '';
+  });
 
   protected toggleMenu(): void {
     this.menuOpen.update((open) => !open);
+  }
+
+  protected search(input: HTMLInputElement): void {
+    const query = input.value.trim();
+    this.menuOpen.set(false);
+    void this.router.navigate(['/events'], { queryParams: query ? { q: query } : {} });
+  }
+
+  protected searchAsYouType(value: string): void {
+    const query = value.trim();
+    this.menuOpen.set(false);
+    void this.router.navigate(['/events'], {
+      queryParams: query ? { q: query } : {},
+      replaceUrl: true,
+    });
   }
 
   protected async signOut(): Promise<void> {
