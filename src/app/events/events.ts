@@ -51,6 +51,9 @@ interface EventApiRecord {
 interface EventResponse {
   readonly events: readonly EventApiRecord[];
 }
+interface TeamEventsResponse {
+  readonly events: readonly { readonly event_id: number }[];
+}
 interface PublicEventDetailResponse {
   readonly event: EventApiRecord;
 }
@@ -282,10 +285,20 @@ export class Events {
     this.loading.set(true);
     this.error.set('');
     try {
-      const result = await firstValueFrom(
-        this.api.get<EventResponse>('event', isOrganiser ? '/events/manage' : '/events'),
-      );
-      const events = result.events.map(toManagedEvent);
+      const [result, teamResult] = await Promise.all([
+        firstValueFrom(
+          this.api.get<EventResponse>('event', isOrganiser ? '/events/manage' : '/events'),
+        ),
+        !isOrganiser && this.auth.isAuthenticated()
+          ? firstValueFrom(this.api.get<TeamEventsResponse>('event', '/helper/shifts')).catch(
+              () => ({ events: [] }) as TeamEventsResponse,
+            )
+          : Promise.resolve({ events: [] } as TeamEventsResponse),
+      ]);
+      const teamEventIds = new Set(teamResult.events.map((event) => Number(event.event_id)));
+      const events = result.events
+        .map(toManagedEvent)
+        .filter((event) => isOrganiser || !teamEventIds.has(event.event_id));
       this.allEvents.set(
         isOrganiser
           ? events

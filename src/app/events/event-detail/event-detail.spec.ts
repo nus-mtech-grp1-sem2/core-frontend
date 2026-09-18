@@ -18,6 +18,79 @@ describe('EventDetail purchase errors', () => {
 
     expect(purchaseErrorMessage(error)).toContain('unavailable or sold out');
   });
+
+  it('explains that an event-team member cannot purchase', () => {
+    const error = new HttpErrorResponse({
+      status: 403,
+      error: { error: 'event_team_cannot_purchase' },
+    });
+
+    expect(purchaseErrorMessage(error)).toContain('Organisers and event helpers cannot purchase');
+  });
+});
+
+describe('EventDetail event-team purchase restriction', () => {
+  it('does not render purchase controls for an accepted event helper', async () => {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172') {
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner-sub',
+            title: 'Test event',
+            description: 'Description',
+            venue: 'Test Hall',
+            starts_at: '2026-09-20 20:00:00',
+            total_seats: 10,
+            available_buyers: 2,
+            tier: 'TIER1_GA',
+            status: 'PUBLISHED',
+            price_cents: 2_000,
+          },
+        });
+      }
+      if (path === '/helper/shifts') return of({ events: [{ event_id: 172 }] });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { data: { workspace: 'customer' } } },
+        },
+        {
+          provide: AuthService,
+          useValue: {
+            user: signal({
+              sub: 'helper-sub',
+              email: 'helper@example.com',
+              name: 'Helper',
+              groups: [],
+            }),
+            isAuthenticated: () => true,
+          },
+        },
+        { provide: ApiService, useValue: { get, put: vi.fn(), post: vi.fn(), delete: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.textContent).toContain('cannot purchase tickets for events they manage');
+    expect(
+      Array.from(host.querySelectorAll('button')).some(
+        (button) => button.textContent?.trim() === 'Buy tickets',
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('EventDetail waiting-room controls', () => {

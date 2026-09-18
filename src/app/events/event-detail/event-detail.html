@@ -37,7 +37,16 @@
       </div>
     </section>
 
-    @if (canBuy()) {
+    @if (customerMode && purchaseEligibility() === 'event-team') {
+      <section class="shell body purchase" aria-label="Ticket purchase unavailable">
+        <div class="owned" role="status">
+          <p>
+            You are part of this event's team. Organisers and event helpers cannot purchase tickets
+            for events they manage.
+          </p>
+        </div>
+      </section>
+    } @else if (canBuy()) {
       <section class="shell body purchase" aria-label="Buy tickets">
         @if (ownership(); as owned) {
           <div class="owned" role="status">
@@ -72,7 +81,8 @@
               }
               @case ('waiting') {
                 <p>
-                  You are in the waiting room at position <strong>{{ queuePosition() ?? '—' }}</strong
+                  You are in the waiting room at position
+                  <strong>{{ queuePosition() ?? '—' }}</strong
                   >.
                 </p>
                 <div class="queue-actions">

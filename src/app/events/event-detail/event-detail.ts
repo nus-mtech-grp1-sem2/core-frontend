@@ -24,6 +24,7 @@ type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
 type QueueAccess =
   'checking' | 'not-joined' | 'waiting' | 'admitted' | 'expired' | 'checkout' | 'unavailable';
+type PurchaseEligibility = 'checking' | 'allowed' | 'event-team';
 
 interface EventDetailData {
   readonly event_id: number;
@@ -94,6 +95,10 @@ interface OwnedOrdersResponse {
   }[];
 }
 
+interface HelperShiftsResponse {
+  readonly events: readonly { readonly event_id: number }[];
+}
+
 /** What the signed-in customer already holds for this event. */
 interface Ownership {
   readonly tickets: number;
@@ -145,6 +150,7 @@ export class EventDetail {
   protected readonly selectedSeatIds = signal<readonly number[]>([]);
   protected readonly purchasing = signal(false);
   protected readonly purchaseError = signal('');
+  protected readonly purchaseEligibility = signal<PurchaseEligibility>('checking');
   protected readonly queueAccess = signal<QueueAccess>('checking');
   protected readonly queuePosition = signal<number | null>(null);
   protected readonly admissionExpiresAt = signal<number | null>(null);
@@ -180,6 +186,7 @@ export class EventDetail {
    * event's organisers.
    */
   protected readonly isOrganiser = signal(false);
+  protected readonly customerMode = !this.organiserMode;
   protected readonly shellWorkspace = () =>
     this.organiserMode ? ('organiser' as const) : ('customer' as const);
   protected readonly backLink = this.organiserMode ? '/organiser/events' : '/events';
@@ -372,7 +379,11 @@ export class EventDetail {
   }
 
   protected canBuy(): boolean {
-    return !this.organiserMode && this.event()?.status === 'PUBLISHED';
+    return (
+      this.customerMode &&
+      this.event()?.status === 'PUBLISHED' &&
+      this.purchaseEligibility() === 'allowed'
+    );
   }
 
   protected toggleSeat(seat: SeatOption): void {
@@ -410,6 +421,13 @@ export class EventDetail {
   protected async buy(): Promise<void> {
     const event = this.event();
     if (!event || this.purchasing()) return;
+
+    if (this.purchaseEligibility() === 'event-team') {
+      this.purchaseError.set(
+        'Organisers and event helpers cannot purchase tickets for events they manage.',
+      );
+      return;
+    }
 
     if (!this.auth.isAuthenticated()) {
       void this.router.navigate(['/login'], { queryParams: { returnUrl: this.router.url } });
@@ -480,6 +498,7 @@ export class EventDetail {
         this.api.get<EventDetailResponse>('event', `/events/${eventId}`),
       );
       this.event.set(result.event);
+      await this.loadPurchaseEligibility(result.event);
       this.form.reset({
         title: result.event.title,
         description: result.event.description ?? '',
@@ -491,12 +510,27 @@ export class EventDetail {
         tier: result.event.tier,
       });
       if (this.organiserMode) await this.loadMembers(eventId);
-      if (result.event.tier === 'TIER2_SEATED') await this.loadSeats(eventId);
+      if (
+        result.event.tier === 'TIER2_SEATED' &&
+        (this.organiserMode || this.purchaseEligibility() === 'allowed')
+      ) {
+        await this.loadSeats(eventId);
+      }
       if (this.organiserMode && result.event.tier === 'TIER2_SEATED') {
         await this.loadQueueManagement(eventId);
       }
-      if (!this.organiserMode && this.auth.isAuthenticated()) await this.loadOwnership(eventId);
-      if (!this.organiserMode && result.event.tier === 'TIER2_SEATED') {
+      if (
+        this.customerMode &&
+        this.purchaseEligibility() === 'allowed' &&
+        this.auth.isAuthenticated()
+      ) {
+        await this.loadOwnership(eventId);
+      }
+      if (
+        this.customerMode &&
+        this.purchaseEligibility() === 'allowed' &&
+        result.event.tier === 'TIER2_SEATED'
+      ) {
         if (this.auth.isAuthenticated()) await this.loadQueueAccess(eventId);
         else this.queueAccess.set('not-joined');
       }
@@ -505,6 +539,37 @@ export class EventDetail {
       this.error.set(describeError(error, 'load this event'));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  private async loadPurchaseEligibility(event: EventDetailData): Promise<void> {
+    if (this.organiserMode) {
+      this.purchaseEligibility.set('event-team');
+      return;
+    }
+    if (!this.auth.isAuthenticated()) {
+      this.purchaseEligibility.set('allowed');
+      return;
+    }
+
+    this.purchaseEligibility.set('checking');
+    if (event.organiser_sub === this.auth.user()?.sub) {
+      this.purchaseEligibility.set('event-team');
+      return;
+    }
+    try {
+      const result = await firstValueFrom(
+        this.api.get<HelperShiftsResponse>('event', '/helper/shifts'),
+      );
+      this.purchaseEligibility.set(
+        result.events.some((shift) => Number(shift.event_id) === event.event_id)
+          ? 'event-team'
+          : 'allowed',
+      );
+    } catch {
+      // The order API is authoritative. Do not block ordinary customers when
+      // this optional UI eligibility lookup is temporarily unavailable.
+      this.purchaseEligibility.set('allowed');
     }
   }
 
@@ -675,6 +740,9 @@ function describeError(error: unknown, action: string): string {
 
 export function purchaseErrorMessage(error: HttpErrorResponse): string | null {
   const code = (error.error as { error?: string } | null)?.error;
+  if (code === 'event_team_cannot_purchase') {
+    return 'Organisers and event helpers cannot purchase tickets for events they manage.';
+  }
   if (code === 'inventory_unavailable') {
     return 'Tickets are currently unavailable or sold out. Refresh the event before trying again.';
   }

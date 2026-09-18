@@ -79,7 +79,7 @@ describe('Events', () => {
     const { fixture, httpMock, host } = await renderFor(null);
 
     httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
-    await fixture.whenStable();
+    await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
     for (const event of MOCK_EVENTS) {
       httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
@@ -101,7 +101,7 @@ describe('Events', () => {
 
     httpMock.expectOne('/api/event/events/manage').flush({ events: MOCK_EVENTS });
     httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
-    await fixture.whenStable();
+    await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
 
     expect(host.querySelectorAll('.event-card').length).toBe(2);
@@ -132,11 +132,29 @@ describe('Events', () => {
     httpMock.verify();
   });
 
+  it('excludes events where the signed-in customer is an organiser or helper', async () => {
+    const { fixture, httpMock, host } = await renderFor(user([]));
+
+    httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
+    httpMock.expectOne('/api/event/helper/shifts').flush({ events: [{ event_id: 1 }] });
+    httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    httpMock.expectOne('/api/event/events/2').flush({ event: MOCK_EVENTS[1] });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.event-card').length).toBe(1);
+    expect(host.textContent).not.toContain('Neon Skyline Tour');
+    expect(host.textContent).toContain('ASEAN Cup Final');
+    httpMock.verify();
+  });
+
   it('filters the catalogue by title, venue, or description from the search query', async () => {
     const { fixture, httpMock, host } = await renderFor(null, 'kallang');
 
     httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
-    await fixture.whenStable();
+    await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
     for (const event of MOCK_EVENTS) {
       httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
