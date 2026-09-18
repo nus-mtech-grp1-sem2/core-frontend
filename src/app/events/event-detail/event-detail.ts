@@ -1,17 +1,29 @@
-import { DatePipe, LowerCasePipe } from '@angular/common';
+import { DatePipe, LowerCasePipe, NgOptimizedImage } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timer } from 'rxjs';
 
 import { ApiService } from '../../core/api';
 import { AuthService } from '../../core/auth';
-import { QueueService } from '../../core/queue';
+import { QueueService, QueueStatus } from '../../core/queue';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+type QueueAccess =
+  'checking' | 'not-joined' | 'waiting' | 'admitted' | 'expired' | 'checkout' | 'unavailable';
 
 interface EventDetailData {
   readonly event_id: number;
@@ -21,6 +33,7 @@ interface EventDetailData {
   readonly venue: string;
   readonly starts_at: string;
   readonly total_seats: number;
+  readonly available_buyers: number | null;
   readonly tier: EventTier;
   readonly status: EventStatus;
   readonly price_cents: number | null;
@@ -56,10 +69,55 @@ interface OrderResponse {
   readonly order: { readonly order_id: number };
 }
 
+interface QueueManagementResponse {
+  readonly queue: {
+    readonly eventId: number;
+    readonly admissionBatchSize: number;
+    readonly status: 'CLOSED' | 'OPEN' | 'DRAINED';
+    readonly waitingCount: number;
+  };
+}
+
+interface OwnedTicketsResponse {
+  readonly tickets: readonly {
+    readonly event_id: number;
+    readonly order_id: number;
+    readonly status: string;
+  }[];
+}
+
+interface OwnedOrdersResponse {
+  readonly orders: readonly {
+    readonly order_id: number;
+    readonly event_id: number;
+    readonly status: string;
+  }[];
+}
+
+/** What the signed-in customer already holds for this event. */
+interface Ownership {
+  readonly tickets: number;
+  readonly checkedIn: number;
+  readonly pendingOrders: number;
+}
+
+interface AdmissionResponse {
+  readonly admitted: number;
+  readonly remaining: number | null;
+  readonly reason?: 'sold_out' | 'capacity_reached';
+}
+
 @Component({
   selector: 'app-event-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, LowerCasePipe, ReactiveFormsModule, RouterLink, WorkspaceShell],
+  imports: [
+    DatePipe,
+    LowerCasePipe,
+    NgOptimizedImage,
+    ReactiveFormsModule,
+    RouterLink,
+    WorkspaceShell,
+  ],
   templateUrl: './event-detail.html',
   styleUrl: './event-detail.css',
 })
@@ -67,6 +125,7 @@ export class EventDetail {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly queue = inject(QueueService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -86,7 +145,34 @@ export class EventDetail {
   protected readonly selectedSeatIds = signal<readonly number[]>([]);
   protected readonly purchasing = signal(false);
   protected readonly purchaseError = signal('');
-  protected readonly needsQueue = () => this.event()?.tier === 'TIER2_SEATED' && !this.queue.admissionToken();
+  protected readonly queueAccess = signal<QueueAccess>('checking');
+  protected readonly queuePosition = signal<number | null>(null);
+  protected readonly admissionExpiresAt = signal<number | null>(null);
+  protected readonly admissionSecondsRemaining = signal<number | null>(null);
+  protected readonly leavingQueue = signal(false);
+  protected readonly queueManagement = signal<QueueManagementResponse['queue'] | null>(null);
+  protected readonly queueActionBusy = signal(false);
+  protected readonly queueActionMessage = signal('');
+  protected readonly queueActionError = signal('');
+  protected readonly ownership = signal<Ownership | null>(null);
+  protected readonly buyingMore = signal(false);
+  /**
+   * Existing ticket holders see their tickets first, but anyone actively in the
+   * queue for more (waiting, admitted or mid-checkout) goes straight to buying.
+   */
+  protected readonly showPurchaseFlow = computed(
+    () =>
+      !this.ownership() ||
+      this.buyingMore() ||
+      ['waiting', 'admitted', 'checkout'].includes(this.queueAccess()),
+  );
+  protected readonly admissionTimeLabel = computed(() => {
+    const seconds = this.admissionSecondsRemaining();
+    if (seconds === null) return '';
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  });
+  protected readonly needsQueue = () =>
+    this.event()?.tier === 'TIER2_SEATED' && this.queueAccess() !== 'admitted';
   /**
    * Organiser access is per-event, owned by the backend's event_team_memberships
    * table — not a global Cognito group. This reflects whether loading this
@@ -94,7 +180,8 @@ export class EventDetail {
    * event's organisers.
    */
   protected readonly isOrganiser = signal(false);
-  protected readonly shellWorkspace = () => this.organiserMode ? 'organiser' as const : 'customer' as const;
+  protected readonly shellWorkspace = () =>
+    this.organiserMode ? ('organiser' as const) : ('customer' as const);
   protected readonly backLink = this.organiserMode ? '/organiser/events' : '/events';
   protected readonly isOwner = () => this.event()?.organiser_sub === this.auth.user()?.sub;
   protected readonly form = this.fb.group({
@@ -102,7 +189,15 @@ export class EventDetail {
     description: this.fb.control(''),
     venue: this.fb.control('', Validators.required),
     startsAt: this.fb.control('', Validators.required),
-    totalSeats: this.fb.control(1, [Validators.required, Validators.min(1), Validators.max(1_000_000)]),
+    totalSeats: this.fb.control(1, [
+      Validators.required,
+      Validators.min(1),
+      Validators.max(1_000_000),
+    ]),
+    availableBuyers: this.fb.control<number | null>(null, [
+      Validators.min(1),
+      Validators.max(1_000_000),
+    ]),
     price: this.fb.control(0, [Validators.required, Validators.min(0)]),
     tier: this.fb.control<EventTier>('TIER1_GA', Validators.required),
   });
@@ -116,6 +211,9 @@ export class EventDetail {
       const eventId = Number(this.id());
       if (Number.isSafeInteger(eventId) && eventId > 0) void this.load(eventId);
     });
+    timer(0, 1_000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.updateAdmissionCountdown());
   }
 
   protected async save(): Promise<void> {
@@ -127,7 +225,9 @@ export class EventDetail {
     this.saving.set(true);
     this.error.set('');
     try {
-      await firstValueFrom(this.api.put('event', `/events/${event.event_id}`, this.form.getRawValue()));
+      await firstValueFrom(
+        this.api.put('event', `/events/${event.event_id}`, this.form.getRawValue()),
+      );
       await this.load(event.event_id);
     } catch (error) {
       this.error.set(describeError(error, 'save changes'));
@@ -145,7 +245,13 @@ export class EventDetail {
     this.inviting.set(true);
     this.error.set('');
     try {
-      await firstValueFrom(this.api.post('event', `/events/${event.event_id}/invitations`, this.inviteForm.getRawValue()));
+      await firstValueFrom(
+        this.api.post(
+          'event',
+          `/events/${event.event_id}/invitations`,
+          this.inviteForm.getRawValue(),
+        ),
+      );
       this.inviteForm.reset({ email: '', role: 'HELPER' });
       await this.loadMembers(event.event_id);
     } catch (error) {
@@ -157,7 +263,13 @@ export class EventDetail {
 
   protected async deleteEvent(): Promise<void> {
     const event = this.event();
-    if (!event || event.status !== 'DRAFT' || this.deleting() || !window.confirm('Delete this draft event? This cannot be undone.')) return;
+    if (
+      !event ||
+      event.status !== 'DRAFT' ||
+      this.deleting() ||
+      !window.confirm('Delete this draft event? This cannot be undone.')
+    )
+      return;
     this.deleting.set(true);
     this.error.set('');
     try {
@@ -196,7 +308,12 @@ export class EventDetail {
     if (!event || !window.confirm(`Remove ${member.user_email} from this event?`)) return;
     this.error.set('');
     try {
-      await firstValueFrom(this.api.delete('event', `/events/${event.event_id}/team-members/${encodeURIComponent(member.user_sub)}`));
+      await firstValueFrom(
+        this.api.delete(
+          'event',
+          `/events/${event.event_id}/team-members/${encodeURIComponent(member.user_sub)}`,
+        ),
+      );
       await this.loadMembers(event.event_id);
     } catch (error) {
       this.error.set(describeError(error, 'remove this team member'));
@@ -205,34 +322,53 @@ export class EventDetail {
 
   protected async openQueue(): Promise<void> {
     const event = this.event();
-    if (!event) return;
-    this.error.set('');
+    if (!event || this.queueActionBusy()) return;
+    this.queueActionBusy.set(true);
+    this.queueActionMessage.set('');
+    this.queueActionError.set('');
     try {
-      await firstValueFrom(this.api.put('queue', `/events/${event.event_id}/queue/config`, {
-        opensAt: new Date().toISOString(), admissionBatchSize: 1, admissionIntervalSec: 60,
-      }));
+      await firstValueFrom(
+        this.api.put('queue', `/events/${event.event_id}/queue/config`, {
+          opensAt: new Date().toISOString(),
+          admissionBatchSize:
+            event.available_buyers ?? Math.max(1, Math.ceil(event.total_seats * 0.1)),
+          admissionIntervalSec: 60,
+        }),
+      );
+      await this.loadQueueManagement(event.event_id);
+      this.queueActionMessage.set('The waiting room is open. Customers can join now.');
     } catch (error) {
-      this.error.set(describeError(error, 'open the waiting room'));
+      this.queueActionError.set(describeError(error, 'open the waiting room'));
+    } finally {
+      this.queueActionBusy.set(false);
     }
   }
 
   protected async admitNext(): Promise<void> {
     const event = this.event();
-    if (!event) return;
-    this.error.set('');
+    if (!event || this.queueActionBusy()) return;
+    this.queueActionBusy.set(true);
+    this.queueActionMessage.set('');
+    this.queueActionError.set('');
     try {
-      await firstValueFrom(this.api.post('queue', `/events/${event.event_id}/queue/admit-next`, {}));
+      const result = await firstValueFrom(
+        this.api.post<AdmissionResponse>('queue', `/events/${event.event_id}/queue/admit-next`, {}),
+      );
+      await this.loadQueueManagement(event.event_id);
+      this.queueActionMessage.set(
+        result.admitted > 0
+          ? `${result.admitted} customer${result.admitted === 1 ? '' : 's'} admitted.`
+          : result.reason === 'capacity_reached'
+            ? 'No admission slot is available yet.'
+            : result.reason === 'sold_out'
+              ? 'No customers admitted because the event is sold out.'
+              : 'There are no waiting customers to admit.',
+      );
     } catch (error) {
-      this.error.set(describeError(error, 'admit the next customer'));
+      this.queueActionError.set(describeError(error, 'admit the next customer'));
+    } finally {
+      this.queueActionBusy.set(false);
     }
-  }
-
-  protected eventImageUrl(eventId: number): string {
-    return this.api.url('event', `/events/${eventId}/image`);
-  }
-
-  protected useFallbackImage(target: EventTarget | null): void {
-    if (target instanceof HTMLImageElement) target.src = 'images/hero-concert.jpg';
   }
 
   protected canBuy(): boolean {
@@ -250,6 +386,25 @@ export class EventDetail {
 
   protected goToQueue(): void {
     void this.router.navigate(['/events', this.id(), 'queue']);
+  }
+
+  protected async leaveQueue(): Promise<void> {
+    const event = this.event();
+    if (!event || this.leavingQueue() || !['waiting', 'admitted'].includes(this.queueAccess()))
+      return;
+
+    this.leavingQueue.set(true);
+    this.purchaseError.set('');
+    try {
+      await this.queue.leave(event.event_id);
+      this.clearAdmissionWindow();
+      this.selectedSeatIds.set([]);
+      this.queueAccess.set('not-joined');
+    } catch {
+      this.purchaseError.set('Unable to leave the waiting room. Please try again.');
+    } finally {
+      this.leavingQueue.set(false);
+    }
   }
 
   protected async buy(): Promise<void> {
@@ -274,17 +429,29 @@ export class EventDetail {
           eventId: event.event_id,
           quantity: this.quantity(),
           seatIds: event.tier === 'TIER2_SEATED' ? this.selectedSeatIds() : undefined,
-          admissionToken: event.tier === 'TIER2_SEATED' ? this.queue.admissionToken() : undefined,
+          admissionToken:
+            event.tier === 'TIER2_SEATED'
+              ? this.queue.admissionTokenFor(event.event_id)
+              : undefined,
           customerEmail: this.auth.user()?.email ?? '',
           customerName: this.auth.user()?.name ?? '',
         }),
       );
       await firstValueFrom(
-        this.api.post('order', `/orders/${created.order.order_id}/payment`, { paymentToken: 'simulated' }),
+        this.api.post('order', `/orders/${created.order.order_id}/payment`, {
+          paymentToken: 'simulated',
+        }),
       );
-      this.queue.clear();
-      await this.router.navigateByUrl('/my-events');
+      this.queue.clear(event.event_id);
+      await this.router.navigate(['/my-events'], {
+        queryParams: { orderId: created.order.order_id },
+      });
     } catch (error) {
+      if (queueAdmissionRequired(error)) {
+        this.queue.clear(event.event_id);
+        this.clearAdmissionWindow();
+        this.queueAccess.set('not-joined');
+      }
       this.purchaseError.set(describeError(error, 'complete your purchase'));
     } finally {
       this.purchasing.set(false);
@@ -307,8 +474,11 @@ export class EventDetail {
   private async load(eventId: number): Promise<void> {
     this.loading.set(true);
     this.error.set('');
+    this.clearAdmissionWindow();
     try {
-      const result = await firstValueFrom(this.api.get<EventDetailResponse>('event', `/events/${eventId}`));
+      const result = await firstValueFrom(
+        this.api.get<EventDetailResponse>('event', `/events/${eventId}`),
+      );
       this.event.set(result.event);
       this.form.reset({
         title: result.event.title,
@@ -316,11 +486,20 @@ export class EventDetail {
         venue: result.event.venue,
         startsAt: result.event.starts_at.replace(' ', 'T').slice(0, 16),
         totalSeats: result.event.total_seats,
+        availableBuyers: result.event.available_buyers,
         price: (result.event.price_cents ?? 0) / 100,
         tier: result.event.tier,
       });
       if (this.organiserMode) await this.loadMembers(eventId);
       if (result.event.tier === 'TIER2_SEATED') await this.loadSeats(eventId);
+      if (this.organiserMode && result.event.tier === 'TIER2_SEATED') {
+        await this.loadQueueManagement(eventId);
+      }
+      if (!this.organiserMode && this.auth.isAuthenticated()) await this.loadOwnership(eventId);
+      if (!this.organiserMode && result.event.tier === 'TIER2_SEATED') {
+        if (this.auth.isAuthenticated()) await this.loadQueueAccess(eventId);
+        else this.queueAccess.set('not-joined');
+      }
     } catch (error) {
       this.event.set(null);
       this.error.set(describeError(error, 'load this event'));
@@ -331,7 +510,9 @@ export class EventDetail {
 
   private async loadMembers(eventId: number): Promise<void> {
     try {
-      const result = await firstValueFrom(this.api.get<TeamResponse>('event', `/events/${eventId}/team-members`));
+      const result = await firstValueFrom(
+        this.api.get<TeamResponse>('event', `/events/${eventId}/team-members`),
+      );
       this.members.set(result.members);
       this.isOrganiser.set(true);
     } catch {
@@ -342,16 +523,141 @@ export class EventDetail {
 
   private async loadSeats(eventId: number): Promise<void> {
     try {
-      const result = await firstValueFrom(this.api.get<SeatResponse>('event', `/events/${eventId}/seats`));
+      const result = await firstValueFrom(
+        this.api.get<SeatResponse>('event', `/events/${eventId}/seats`),
+      );
       this.seats.set(result.seats);
     } catch {
       this.seats.set([]);
     }
   }
+
+  /**
+   * A customer who already bought (or checked in) should see their tickets, not
+   * a fresh waiting-room prompt. Paid orders still awaiting ticket issuance count
+   * too. Failures leave the normal purchase flow in place.
+   */
+  private async loadOwnership(eventId: number): Promise<void> {
+    this.ownership.set(null);
+    this.buyingMore.set(false);
+    const [tickets, orders] = await Promise.all([
+      firstValueFrom(this.api.get<OwnedTicketsResponse>('ticket', '/customers/me/tickets')).catch(
+        () => ({ tickets: [] }) as OwnedTicketsResponse,
+      ),
+      firstValueFrom(this.api.get<OwnedOrdersResponse>('order', '/customers/me/orders')).catch(
+        () => ({ orders: [] }) as OwnedOrdersResponse,
+      ),
+    ]);
+    const held = tickets.tickets.filter(
+      (ticket) => Number(ticket.event_id) === eventId && ticket.status !== 'VOID',
+    );
+    const issuedOrderIds = new Set(held.map((ticket) => Number(ticket.order_id)));
+    const pendingOrders = orders.orders.filter(
+      (order) =>
+        Number(order.event_id) === eventId &&
+        order.status === 'PAID' &&
+        !issuedOrderIds.has(Number(order.order_id)),
+    ).length;
+    if (!held.length && !pendingOrders) return;
+    this.ownership.set({
+      tickets: held.length,
+      checkedIn: held.filter((ticket) => ticket.status === 'CHECKED_IN').length,
+      pendingOrders,
+    });
+  }
+
+  private async loadQueueManagement(eventId: number): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.api.get<QueueManagementResponse>('queue', `/events/${eventId}/queue`),
+      );
+      this.queueManagement.set(result.queue);
+    } catch {
+      this.queueManagement.set(null);
+    }
+  }
+
+  private async loadQueueAccess(eventId: number): Promise<void> {
+    this.queueAccess.set('checking');
+    try {
+      this.applyQueueStatus(await this.queue.status(eventId));
+    } catch (error) {
+      if (error instanceof HttpErrorResponse && error.status === 404) {
+        this.queueAccess.set('not-joined');
+      } else {
+        this.queueAccess.set('unavailable');
+      }
+    }
+  }
+
+  private applyQueueStatus(status: QueueStatus): void {
+    this.queuePosition.set(status.position ?? null);
+    switch (status.status) {
+      case 'WAITING':
+        this.clearAdmissionWindow();
+        this.queueAccess.set('waiting');
+        break;
+      case 'ADMITTED': {
+        const expiresAt = status.tokenExpiresAt ? Date.parse(status.tokenExpiresAt) : Number.NaN;
+        if (status.admissionToken && Number.isFinite(expiresAt) && expiresAt > Date.now()) {
+          this.admissionExpiresAt.set(expiresAt);
+          this.queueAccess.set('admitted');
+          this.updateAdmissionCountdown();
+        } else {
+          const eventId = this.event()?.event_id;
+          if (eventId) this.queue.clear(eventId);
+          this.clearAdmissionWindow();
+          this.queueAccess.set('expired');
+        }
+        break;
+      }
+      case 'IN_CHECKOUT':
+        this.clearAdmissionWindow();
+        this.queueAccess.set('checkout');
+        break;
+      case 'EXPIRED':
+      case 'LEFT':
+        this.clearAdmissionWindow();
+        this.queueAccess.set('expired');
+        break;
+    }
+  }
+
+  private clearAdmissionWindow(): void {
+    this.admissionExpiresAt.set(null);
+    this.admissionSecondsRemaining.set(null);
+  }
+
+  private updateAdmissionCountdown(): void {
+    const expiresAt = this.admissionExpiresAt();
+    if (this.queueAccess() !== 'admitted' || expiresAt === null) {
+      this.admissionSecondsRemaining.set(null);
+      return;
+    }
+
+    const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1_000));
+    this.admissionSecondsRemaining.set(remaining);
+    if (remaining === 0) {
+      const eventId = this.event()?.event_id;
+      if (eventId) this.queue.clear(eventId);
+      this.admissionExpiresAt.set(null);
+      this.queueAccess.set('expired');
+    }
+  }
+}
+
+function queueAdmissionRequired(error: unknown): boolean {
+  return (
+    error instanceof HttpErrorResponse &&
+    (error.error as { error?: string } | null)?.error === 'queue_admission_required'
+  );
 }
 
 function describeError(error: unknown, action: string): string {
   if (error instanceof HttpErrorResponse) {
+    if ((error.error as { error?: string } | null)?.error === 'queue_admission_required') {
+      return 'Your waiting-room admission has expired. Rejoin the queue to continue.';
+    }
     if (error.status === 401) return 'Please sign in again before managing this event.';
     if (error.status === 403) return 'You do not have permission to manage this event.';
     if (error.status === 404) {

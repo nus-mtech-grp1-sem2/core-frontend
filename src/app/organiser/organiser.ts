@@ -63,7 +63,9 @@ type OrganiserEvent = EventListing;
                 <span class="stat-label">On sale now</span>
               </li>
               <li>
-                <span class="stat-value">{{ lowestPrice() | currency: 'SGD' : 'S$' : '1.0-0' }}</span>
+                <span class="stat-value">{{
+                  lowestPrice() | currency: 'SGD' : 'S$' : '1.0-0'
+                }}</span>
                 <span class="stat-label">Lowest ticket price</span>
               </li>
             </ul>
@@ -98,7 +100,10 @@ type OrganiserEvent = EventListing;
                         >
                       </td>
                       <td class="actions">
-                        <a class="btn btn-primary btn-sm" [routerLink]="['/organiser/events', event.id]">
+                        <a
+                          class="btn btn-primary btn-sm"
+                          [routerLink]="['/organiser/events', event.id]"
+                        >
                           Update
                           <span class="visually-hidden"> {{ event.title }}</span>
                         </a>
@@ -233,15 +238,25 @@ export class Organiser {
           category: event.tier === 'TIER2_SEATED' ? 'Theatre' : 'Concerts',
           venueId: event.event_id,
           venue: event.venue,
-          date: new Date(event.starts_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }),
-          time: new Date(event.starts_at).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }),
+          date: new Date(event.starts_at).toLocaleDateString('en-SG', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          }),
+          time: new Date(event.starts_at).toLocaleTimeString('en-SG', {
+            hour: 'numeric',
+            minute: '2-digit',
+          }),
           featured: false,
           priceFrom: (event.price_cents ?? 0) / 100,
-          image: this.api.url('event', `/events/${event.event_id}/image`),
+          image: 'images/hero-concert.jpg',
           alt: `${event.title} artwork`,
-          status: event.status === 'CANCELLED' || event.remaining_qty <= 0
-            ? 'Sold out'
-            : event.remaining_qty / event.total_seats < 0.15 ? 'Few left' : 'On sale',
+          status:
+            event.status === 'CANCELLED' || event.remaining_qty <= 0
+              ? 'Sold out'
+              : event.remaining_qty / event.total_seats < 0.15
+                ? 'Few left'
+                : 'On sale',
         }));
         this.events.set(events);
         this.status.set('ready');

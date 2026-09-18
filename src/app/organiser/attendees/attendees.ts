@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
 
 import { ApiService } from '../../core/api';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
@@ -8,15 +15,26 @@ interface EventOption {
   readonly title: string;
 }
 
-interface EventResponse {
+interface ManagedEventResponse {
   readonly events: readonly {
     readonly event_id: number;
-    readonly title?: string;
-    readonly event_name?: string;
+    readonly title: string;
+  }[];
+}
+
+interface AttendeesResponse {
+  readonly attendees: readonly {
+    readonly order_id: number;
+    readonly customer_email: string;
+    readonly paid_at: string | null;
+    readonly description: string;
+    readonly quantity: number;
+    readonly seat_id: number | null;
   }[];
 }
 
 interface AttendeeRow {
+  readonly id: string;
   readonly buyer: string;
   readonly email: string;
   readonly ticketType: string;
@@ -76,7 +94,10 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                 <div class="table-card">
                   <table>
                     <caption class="visually-hidden">
-                      Attendees for {{ selectedEvent()?.title }}
+                      Attendees for
+                      {{
+                        selectedEvent()?.title
+                      }}
                     </caption>
                     <thead>
                       <tr>
@@ -88,7 +109,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                       </tr>
                     </thead>
                     <tbody>
-                      @for (row of attendees(); track row.email + row.orderedAt + row.ticketType) {
+                      @for (row of attendees(); track row.id) {
                         <tr>
                           <th scope="row">{{ row.buyer || row.email || 'Legacy customer' }}</th>
                           <td>
@@ -104,7 +125,9 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                         </tr>
                       } @empty {
                         <tr>
-                          <td colspan="5" class="empty">No one has bought a ticket for this event yet.</td>
+                          <td colspan="5" class="empty">
+                            No one has bought a ticket for this event yet.
+                          </td>
                         </tr>
                       }
                     </tbody>
@@ -221,11 +244,11 @@ export class Attendees {
 
   protected loadEvents(): void {
     this.eventsStatus.set('loading');
-    this.api.get<EventResponse>('event', '/events').subscribe({
+    this.api.get<ManagedEventResponse>('event', '/events/manage').subscribe({
       next: (result) => {
         const events = result.events.map((event) => ({
           id: event.event_id,
-          title: event.title ?? event.event_name ?? `Event ${event.event_id}`,
+          title: event.title,
         }));
         this.events.set(events);
         this.eventsStatus.set('ready');
@@ -244,9 +267,22 @@ export class Attendees {
     }
 
     this.attendeesStatus.set('loading');
-    this.api.get<AttendeeRow[]>('order', `/attendees?eventId=${eventId}`).subscribe({
-      next: (rows) => {
-        this.attendees.set(rows);
+    this.api.get<AttendeesResponse>('order', `/events/${eventId}/attendees`).subscribe({
+      next: (result) => {
+        this.attendees.set(
+          result.attendees.map((attendee) => ({
+            id: `${attendee.order_id}:${attendee.seat_id ?? 'ga'}:${attendee.description}`,
+            buyer: attendee.customer_email,
+            email: attendee.customer_email,
+            ticketType:
+              attendee.description ||
+              (attendee.seat_id === null ? 'General admission' : `Seat ${attendee.seat_id}`),
+            quantity: Number(attendee.quantity),
+            orderedAt: attendee.paid_at
+              ? new Date(attendee.paid_at).toLocaleString('en-SG')
+              : 'Not recorded',
+          })),
+        );
         this.attendeesStatus.set('ready');
       },
       error: () => this.attendeesStatus.set('error'),

@@ -1,130 +1,375 @@
 <app-workspace-shell [workspace]="shellWorkspace()">
-@if (loading()) {
-  <section class="shell body"><p class="empty">Loading event...</p></section>
-} @else if (event(); as event) {
-  <section class="page-head">
-    <div class="shell head-grid">
-      <div class="thumb">
-        <img [src]="eventImageUrl(event.event_id)" (error)="useFallbackImage($event.target)" [alt]="event.title + ' artwork'" />
-        <span class="pill category">{{ event.tier === 'TIER1_GA' ? 'General admission' : 'Reserved seating' }}</span>
-      </div>
-      <div class="head-copy">
-        <a class="back" [routerLink]="backLink">{{ isOrganiser() ? 'Back to managed events' : 'Back to all events' }}</a>
-        <h1>{{ event.title }}</h1>
-        <p class="where">{{ event.venue }}</p>
-        <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
-        <p>{{ event.description }}</p>
-        <div class="event-facts">
-          <span
-            class="pill status"
-            [class.on-sale]="event.status === 'PUBLISHED'"
-            [class.cancelled]="event.status === 'CANCELLED'"
-            >{{ statusLabel(event.status) }}</span
-          >
-          <span>{{ event.total_seats }} seats</span>
-          <span>{{ priceLabel(event.price_cents) }} per ticket</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  @if (canBuy()) {
-    <section class="shell body purchase" aria-label="Buy tickets">
-      @if (purchaseError()) { <p class="error" role="alert">{{ purchaseError() }}</p> }
-      @if (needsQueue()) {
-        <p>Tickets for this event are released through the waiting room.</p>
-        <button type="button" class="btn btn-primary" (click)="goToQueue()">Join the queue</button>
-      } @else {
-        <div class="field">
-          <label for="quantity">Quantity</label>
-          <input
-            id="quantity"
-            type="number"
-            min="1"
-            [max]="event.total_seats"
-            [value]="quantity()"
-            (input)="quantity.set(+$any($event.target).value || 1)"
+  @if (loading()) {
+    <section class="shell body"><p class="empty">Loading event...</p></section>
+  } @else if (event(); as event) {
+    <section class="page-head">
+      <div class="shell head-grid">
+        <div class="thumb">
+          <img
+            ngSrc="images/hero-concert.jpg"
+            width="640"
+            height="360"
+            [alt]="event.title + ' artwork'"
           />
+          <span class="pill category">{{
+            event.tier === 'TIER1_GA' ? 'General admission' : 'Reserved seating'
+          }}</span>
         </div>
-        @if (event.tier === 'TIER2_SEATED') {
-          <div class="seat-grid" role="group" aria-label="Choose your seats">
-            @for (seat of seats(); track seat.seat_id) {
-              <button
-                type="button"
-                class="seat"
-                [class.selected]="selectedSeatIds().includes(seat.seat_id)"
-                [disabled]="seat.status !== 'AVAILABLE'"
-                (click)="toggleSeat(seat)"
-              >
-                {{ seat.seat_label }}
-              </button>
-            } @empty {
-              <p class="empty">No seats available.</p>
-            }
+        <div class="head-copy">
+          <a class="back" [routerLink]="backLink">{{
+            isOrganiser() ? 'Back to managed events' : 'Back to all events'
+          }}</a>
+          <h1>{{ event.title }}</h1>
+          <p class="where">{{ event.venue }}</p>
+          <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+          <p>{{ event.description }}</p>
+          <div class="event-facts">
+            <span
+              class="pill status"
+              [class.on-sale]="event.status === 'PUBLISHED'"
+              [class.cancelled]="event.status === 'CANCELLED'"
+              >{{ statusLabel(event.status) }}</span
+            >
+            <span>{{ event.total_seats }} seats</span>
+            <span>{{ priceLabel(event.price_cents) }} per ticket</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    @if (canBuy()) {
+      <section class="shell body purchase" aria-label="Buy tickets">
+        @if (ownership(); as owned) {
+          <div class="owned" role="status">
+            <p>
+              @if (owned.checkedIn === owned.tickets && owned.tickets > 0) {
+                You have checked in to this event.
+              } @else if (owned.tickets > 0) {
+                You have {{ owned.tickets }} ticket{{ owned.tickets === 1 ? '' : 's' }} for this
+                event{{ owned.checkedIn ? ' (' + owned.checkedIn + ' checked in)' : '' }}.
+              } @else {
+                Payment received. Your tickets are being issued.
+              }
+            </p>
+            <div class="queue-actions">
+              <a class="btn btn-primary" routerLink="/my-events">View my tickets</a>
+              @if (!showPurchaseFlow()) {
+                <button type="button" class="btn btn-ghost" (click)="buyingMore.set(true)">
+                  Buy more tickets
+                </button>
+              }
+            </div>
           </div>
         }
-        <button type="button" class="btn btn-primary" [disabled]="purchasing()" (click)="buy()">
-          {{ purchasing() ? 'Processing…' : 'Buy tickets' }}
-        </button>
-      }
-    </section>
-  }
-
-  @if (isOrganiser()) {
-    <section class="shell body management" aria-label="Event management">
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-      <form class="edit-form" [formGroup]="form" (ngSubmit)="save()">
-        <h2>Edit event</h2>
-        <div class="field"><label for="title">Title</label><input id="title" type="text" formControlName="title" /></div>
-        <div class="field field-wide"><label for="description">Description</label><textarea id="description" rows="4" formControlName="description"></textarea></div>
-        <div class="field"><label for="venue">Venue</label><input id="venue" type="text" formControlName="venue" /></div>
-        <div class="field"><label for="starts-at">Date and time</label><input id="starts-at" type="datetime-local" formControlName="startsAt" /></div>
-        <div class="field"><label for="seats">Total seats</label><input id="seats" type="number" min="1" step="1" formControlName="totalSeats" /></div>
-        <div class="field"><label for="price">Price</label><input id="price" type="number" min="0" step="0.01" formControlName="price" /></div>
-        <div class="field"><label for="tier">Ticketing</label><select id="tier" formControlName="tier"><option value="TIER1_GA">General admission</option><option value="TIER2_SEATED">Reserved seating</option></select></div>
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary" [disabled]="saving()">{{ saving() ? 'Saving...' : 'Save changes' }}</button>
-          @if (event.status === 'DRAFT') {
-            <button type="button" class="btn btn-ghost delete status-action" [disabled]="deleting()" (click)="deleteEvent()">{{ deleting() ? 'Deleting...' : 'Delete draft' }}</button>
-          } @else if (event.status === 'PUBLISHED') {
-            <button type="button" class="btn btn-ghost delete status-action" [disabled]="updatingStatus()" (click)="changeStatus('CANCELLED')">{{ updatingStatus() ? 'Cancelling...' : 'Cancel event' }}</button>
-          } @else {
-            <button type="button" class="btn btn-primary status-action" [disabled]="updatingStatus()" (click)="changeStatus('PUBLISHED')">{{ updatingStatus() ? 'Re-publishing...' : 'Re-publish event' }}</button>
+        @if (showPurchaseFlow()) {
+          @if (purchaseError()) {
+            <p class="error" role="alert">{{ purchaseError() }}</p>
           }
-        </div>
-      </form>
-
-      <section class="team" aria-labelledby="team-heading">
-        <h2 id="team-heading">Team</h2>
-        <form class="invite-form" [formGroup]="inviteForm" (ngSubmit)="invite()">
-          <div class="field"><label for="member-email">Email</label><input id="member-email" type="email" formControlName="email" placeholder="member@example.com" /></div>
-          <div class="field"><label for="member-role">Role</label><select id="member-role" formControlName="role"><option value="HELPER">Helper</option><option value="ORGANISER">Organizer</option></select></div>
-          <button type="submit" class="btn btn-primary btn-sm" [disabled]="inviting()">{{ inviting() ? 'Inviting...' : 'Invite' }}</button>
-        </form>
-        <ul class="member-list">
-          @for (member of members(); track member.membership_id) {
-            <li>
-              <span><strong>{{ member.user_email }}</strong><small>{{ member.role === 'ORGANISER' ? 'Organizer' : 'Helper' }} · {{ member.invite_status | lowercase }}</small></span>
-              @if (canRemove(member)) { <button type="button" class="btn btn-ghost btn-sm delete" (click)="remove(member)">Remove</button> }
-            </li>
-          } @empty { <li class="empty">No team members yet.</li> }
-        </ul>
-        @if (isOwner()) { <p class="owner-note">You own this event and can remove other organizers.</p> }
+          @if (needsQueue()) {
+            @switch (queueAccess()) {
+              @case ('checking') {
+                <p role="status">Checking your waiting-room status...</p>
+              }
+              @case ('waiting') {
+                <p>
+                  You are in the waiting room at position <strong>{{ queuePosition() ?? '—' }}</strong
+                  >.
+                </p>
+                <div class="queue-actions">
+                  <button type="button" class="btn btn-primary" (click)="goToQueue()">
+                    Return to waiting room
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    [disabled]="leavingQueue()"
+                    (click)="leaveQueue()"
+                  >
+                    {{ leavingQueue() ? 'Leaving...' : 'Leave queue' }}
+                  </button>
+                </div>
+              }
+              @case ('expired') {
+                <p>Your previous queue place or admission has expired.</p>
+                <button type="button" class="btn btn-primary" (click)="goToQueue()">
+                  Rejoin the queue
+                </button>
+              }
+              @case ('checkout') {
+                <p>Your admission has already been used for a purchase.</p>
+                <a class="btn btn-primary" routerLink="/my-events">View My Events</a>
+              }
+              @case ('unavailable') {
+                <p role="alert">
+                  The waiting room cannot be reached right now. Please try again shortly.
+                </p>
+                <button type="button" class="btn btn-primary" (click)="goToQueue()">
+                  Try waiting room
+                </button>
+              }
+              @default {
+                <p>Tickets for this event are released through the waiting room.</p>
+                <button type="button" class="btn btn-primary" (click)="goToQueue()">
+                  Join waiting room
+                </button>
+              }
+            }
+          } @else {
+            @if (event.tier === 'TIER2_SEATED') {
+              <div class="admission-window" role="status">
+                <p>
+                  <strong>It is your turn.</strong> Complete checkout within
+                  {{ admissionTimeLabel() }}.
+                </p>
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  [disabled]="leavingQueue()"
+                  (click)="leaveQueue()"
+                >
+                  {{ leavingQueue() ? 'Releasing...' : 'Release my place' }}
+                </button>
+              </div>
+            }
+            <div class="field">
+              <label for="quantity">Quantity</label>
+              <input
+                id="quantity"
+                type="number"
+                min="1"
+                [max]="event.total_seats"
+                [value]="quantity()"
+                (input)="quantity.set(+$any($event.target).value || 1)"
+              />
+            </div>
+            @if (event.tier === 'TIER2_SEATED') {
+              <div class="seat-grid" role="group" aria-label="Choose your seats">
+                @for (seat of seats(); track seat.seat_id) {
+                  <button
+                    type="button"
+                    class="seat"
+                    [class.selected]="selectedSeatIds().includes(seat.seat_id)"
+                    [disabled]="seat.status !== 'AVAILABLE'"
+                    (click)="toggleSeat(seat)"
+                  >
+                    {{ seat.seat_label }}
+                  </button>
+                } @empty {
+                  <p class="empty">No seats available.</p>
+                }
+              </div>
+            }
+            <button type="button" class="btn btn-primary" [disabled]="purchasing()" (click)="buy()">
+              {{ purchasing() ? 'Processing…' : 'Buy tickets' }}
+            </button>
+          }
+        }
       </section>
+    }
 
-      @if (event.tier === 'TIER2_SEATED') {
-        <section class="team" aria-labelledby="queue-heading">
-          <h2 id="queue-heading">Waiting room</h2>
-          <p class="note">Open the queue before customers can select reserved seats.</p>
-          <div class="form-actions">
-            <button type="button" class="btn btn-primary btn-sm" (click)="openQueue()">Open waiting room</button>
-            <button type="button" class="btn btn-ghost btn-sm" (click)="admitNext()">Admit next customer</button>
+    @if (isOrganiser()) {
+      <section class="shell body management" aria-label="Event management">
+        @if (error()) {
+          <p class="error" role="alert">{{ error() }}</p>
+        }
+        <form class="edit-form" [formGroup]="form" (ngSubmit)="save()">
+          <h2>Edit event</h2>
+          <div class="field">
+            <label for="title">Title</label><input id="title" type="text" formControlName="title" />
           </div>
+          <div class="field field-wide">
+            <label for="description">Description</label
+            ><textarea id="description" rows="4" formControlName="description"></textarea>
+          </div>
+          <div class="field">
+            <label for="venue">Venue</label><input id="venue" type="text" formControlName="venue" />
+          </div>
+          <div class="field">
+            <label for="starts-at">Date and time</label
+            ><input id="starts-at" type="datetime-local" formControlName="startsAt" />
+          </div>
+          <div class="field">
+            <label for="seats">Total seats</label
+            ><input id="seats" type="number" min="1" step="1" formControlName="totalSeats" />
+          </div>
+          <div class="field">
+            <label for="available-buyers">Available buyers</label
+            ><input
+              id="available-buyers"
+              type="number"
+              min="1"
+              [max]="form.controls.totalSeats.value"
+              step="1"
+              formControlName="availableBuyers"
+              aria-describedby="available-buyers-help"
+            /><small id="available-buyers-help"
+              >Concurrent buyers allowed from the waiting room. Leave blank to use 10% of total
+              seats.</small
+            >
+          </div>
+          <div class="field">
+            <label for="price">Price</label
+            ><input id="price" type="number" min="0" step="0.01" formControlName="price" />
+          </div>
+          <div class="field">
+            <label for="tier">Ticketing</label
+            ><select id="tier" formControlName="tier">
+              <option value="TIER1_GA">General admission</option>
+              <option value="TIER2_SEATED">Reserved seating</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" [disabled]="saving()">
+              {{ saving() ? 'Saving...' : 'Save changes' }}
+            </button>
+            @if (event.status === 'DRAFT') {
+              <button
+                type="button"
+                class="btn btn-ghost delete status-action"
+                [disabled]="deleting()"
+                (click)="deleteEvent()"
+              >
+                {{ deleting() ? 'Deleting...' : 'Delete draft' }}
+              </button>
+            } @else if (event.status === 'PUBLISHED') {
+              <button
+                type="button"
+                class="btn btn-ghost delete status-action"
+                [disabled]="updatingStatus()"
+                (click)="changeStatus('CANCELLED')"
+              >
+                {{ updatingStatus() ? 'Cancelling...' : 'Cancel event' }}
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-primary status-action"
+                [disabled]="updatingStatus()"
+                (click)="changeStatus('PUBLISHED')"
+              >
+                {{ updatingStatus() ? 'Re-publishing...' : 'Re-publish event' }}
+              </button>
+            }
+          </div>
+        </form>
+
+        <section class="team" aria-labelledby="team-heading">
+          <h2 id="team-heading">Team</h2>
+          <form class="invite-form" [formGroup]="inviteForm" (ngSubmit)="invite()">
+            <div class="field">
+              <label for="member-email">Email</label
+              ><input
+                id="member-email"
+                type="email"
+                formControlName="email"
+                placeholder="member@example.com"
+              />
+            </div>
+            <div class="field">
+              <label for="member-role">Role</label
+              ><select id="member-role" formControlName="role">
+                <option value="HELPER">Helper</option>
+                <option value="ORGANISER">Organizer</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm" [disabled]="inviting()">
+              {{ inviting() ? 'Inviting...' : 'Invite' }}
+            </button>
+          </form>
+          <ul class="member-list">
+            @for (member of members(); track member.membership_id) {
+              <li>
+                <span
+                  ><strong>{{ member.user_email }}</strong
+                  ><small
+                    >{{ member.role === 'ORGANISER' ? 'Organizer' : 'Helper' }} ·
+                    {{ member.invite_status | lowercase }}</small
+                  ></span
+                >
+                @if (canRemove(member)) {
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm delete"
+                    (click)="remove(member)"
+                  >
+                    Remove
+                  </button>
+                }
+              </li>
+            } @empty {
+              <li class="empty">No team members yet.</li>
+            }
+          </ul>
+          @if (isOwner()) {
+            <p class="owner-note">You own this event and can remove other organizers.</p>
+          }
         </section>
-      }
+
+        @if (event.tier === 'TIER2_SEATED') {
+          <section class="team" aria-labelledby="queue-heading">
+            <h2 id="queue-heading">Waiting room</h2>
+            @if (queueManagement(); as queue) {
+              <p class="note" role="status">
+                {{
+                  queue.status === 'OPEN'
+                    ? 'Open'
+                    : queue.status === 'CLOSED'
+                      ? 'Closed'
+                      : 'Drained'
+                }}
+                · {{ queue.waitingCount }} waiting · up to {{ queue.admissionBatchSize }} active
+                buyers
+              </p>
+            } @else {
+              <p class="note">Open the waiting room before customers can join.</p>
+            }
+            @if (queueActionMessage()) {
+              <p class="success" role="status">{{ queueActionMessage() }}</p>
+            }
+            @if (queueActionError()) {
+              <p class="error" role="alert">{{ queueActionError() }}</p>
+            }
+            <div class="form-actions">
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                [disabled]="queueActionBusy() || queueManagement()?.status === 'OPEN'"
+                (click)="openQueue()"
+              >
+                {{
+                  queueManagement()?.status === 'OPEN' ? 'Waiting room open' : 'Open waiting room'
+                }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                [disabled]="
+                  queueActionBusy() ||
+                  queueManagement()?.status !== 'OPEN' ||
+                  !queueManagement()?.waitingCount
+                "
+                (click)="admitNext()"
+              >
+                @if (queueActionBusy()) {
+                  Working...
+                } @else if (queueManagement()?.status !== 'OPEN') {
+                  Open waiting room first
+                } @else if (!queueManagement()?.waitingCount) {
+                  No customers waiting
+                } @else {
+                  Admit next customer
+                }
+              </button>
+            </div>
+          </section>
+        }
+      </section>
+    }
+  } @else {
+    <section class="shell body not-found">
+      <h1>Event not found</h1>
+      <p>{{ error() || 'It may have been removed or the link is out of date.' }}</p>
+      <a class="btn btn-primary" [routerLink]="backLink">Back to events</a>
     </section>
   }
-} @else {
-  <section class="shell body not-found"><h1>Event not found</h1><p>{{ error() || 'It may have been removed or the link is out of date.' }}</p><a class="btn btn-primary" [routerLink]="backLink">Back to events</a></section>
-}
 </app-workspace-shell>

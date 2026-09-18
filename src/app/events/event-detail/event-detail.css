@@ -101,6 +101,15 @@
   margin-bottom: 0.5rem;
 }
 
+.success {
+  color: var(--success-fg);
+}
+
+.form-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .management {
   display: grid;
   gap: 1rem;
@@ -126,6 +135,39 @@
   background: var(--bg);
   color: inherit;
   font: inherit;
+}
+
+.owned {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.owned p {
+  margin: 0;
+}
+
+.queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admission-window {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.admission-window p {
+  margin: 0;
+}
+
+.admission-window .btn {
+  justify-self: start;
 }
 
 .seat-grid {

@@ -1,8 +1,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 
 import { AuthService } from '../core/auth';
 import { AuthenticatedUser, CognitoGateway } from '../core/cognito-gateway';
@@ -13,11 +13,33 @@ function user(groups: readonly string[]): AuthenticatedUser {
 }
 
 const MOCK_EVENTS = [
-  { event_id: 1, title: 'Neon Skyline Tour', description: null, venue: 'Marina Bay Arena', starts_at: '2026-09-12 20:00:00', total_seats: 500, tier: 'TIER1_GA', status: 'PUBLISHED', price_cents: 8800 },
-  { event_id: 2, title: 'ASEAN Cup Final', description: null, venue: 'Kallang Grand Stadium', starts_at: '2026-09-28 17:00:00', total_seats: 2000, tier: 'TIER2_SEATED', status: 'PUBLISHED', price_cents: 4500 },
+  {
+    event_id: 1,
+    title: 'Neon Skyline Tour',
+    description: null,
+    venue: 'Marina Bay Arena',
+    starts_at: '2026-09-12 20:00:00',
+    total_seats: 500,
+    available_buyers: null,
+    tier: 'TIER1_GA',
+    status: 'PUBLISHED',
+    price_cents: 8800,
+  },
+  {
+    event_id: 2,
+    title: 'ASEAN Cup Final',
+    description: null,
+    venue: 'Kallang Grand Stadium',
+    starts_at: '2026-09-28 17:00:00',
+    total_seats: 2000,
+    available_buyers: 25,
+    tier: 'TIER2_SEATED',
+    status: 'PUBLISHED',
+    price_cents: 4500,
+  },
 ] as const;
 
-async function renderFor(current: AuthenticatedUser | null) {
+async function renderFor(current: AuthenticatedUser | null, query = '') {
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
     imports: [Events],
@@ -31,7 +53,15 @@ async function renderFor(current: AuthenticatedUser | null) {
       },
       {
         provide: ActivatedRoute,
-        useValue: { snapshot: { data: { workspace: current?.groups.includes('organiser') ? 'organiser' : undefined } } },
+        useValue: {
+          snapshot: {
+            data: current?.groups.includes('organiser')
+              ? { workspace: 'organiser' }
+              : { workspace: 'customer' },
+            queryParamMap: convertToParamMap(query ? { q: query } : {}),
+          },
+          queryParamMap: of(convertToParamMap(query ? { q: query } : {})),
+        },
       },
     ],
   }).compileComponents();
@@ -40,7 +70,6 @@ async function renderFor(current: AuthenticatedUser | null) {
   const httpMock = TestBed.inject(HttpTestingController);
   const fixture = TestBed.createComponent(Events);
   fixture.detectChanges();
-  await fixture.whenStable();
 
   return { fixture, httpMock, host: fixture.nativeElement as HTMLElement };
 }
@@ -55,16 +84,15 @@ describe('Events', () => {
     for (const event of MOCK_EVENTS) {
       httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
     }
+    await Promise.resolve();
+    await Promise.resolve();
     await fixture.whenStable();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    await fixture.whenRenderingDone();
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     fixture.detectChanges();
 
     expect(host.querySelectorAll('.event-card').length).toBe(2);
-    expect(host.querySelector('button')).toBeNull();
+    expect(host.textContent).toContain('Join waiting room');
+    expect(host.textContent).toContain('View tickets');
+    expect(host.textContent).not.toContain('New event');
     httpMock.verify();
   });
 
@@ -86,6 +114,39 @@ describe('Events', () => {
     await fixture.whenStable();
 
     expect(host.querySelector('#event-title')).not.toBeNull();
+    expect(host.querySelector('#event-available-buyers')).not.toBeNull();
+
+    const totalSeats = host.querySelector<HTMLInputElement>('#event-total-seats')!;
+    const availableBuyers = host.querySelector<HTMLInputElement>('#event-available-buyers')!;
+    totalSeats.value = '1';
+    totalSeats.dispatchEvent(new Event('input'));
+    availableBuyers.value = '2';
+    availableBuyers.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    const create = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Create event',
+    );
+    expect(create?.disabled).toBe(true);
+    expect(host.textContent).toContain('Available buyers cannot exceed total seats.');
+    httpMock.verify();
+  });
+
+  it('filters the catalogue by title, venue, or description from the search query', async () => {
+    const { fixture, httpMock, host } = await renderFor(null, 'kallang');
+
+    httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    for (const event of MOCK_EVENTS) {
+      httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.event-card').length).toBe(1);
+    expect(host.textContent).toContain('ASEAN Cup Final');
+    expect(host.textContent).not.toContain('Neon Skyline Tour');
     httpMock.verify();
   });
 });

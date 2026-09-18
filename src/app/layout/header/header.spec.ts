@@ -11,6 +11,7 @@ function user(groups: readonly string[]): AuthenticatedUser {
 
 const stubRoutes: Routes = [
   { path: '', children: [] },
+  { path: 'events', children: [] },
   { path: 'organiser', children: [] },
   { path: 'helper', children: [] },
   { path: 'checkin', children: [] },
@@ -52,7 +53,9 @@ describe('Header navigation', () => {
   it('offers the storefront to a signed-out visitor', async () => {
     const { host } = await navFor(null);
 
-    const labels = Array.from(host.querySelectorAll('.primary a')).map((a) => a.textContent?.trim());
+    const labels = Array.from(host.querySelectorAll('.primary a')).map((a) =>
+      a.textContent?.trim(),
+    );
     expect(labels).toEqual(['Events']);
     expect(host.querySelector('.search')).not.toBeNull();
     expect(host.textContent).toContain('Login');
@@ -95,5 +98,27 @@ describe('Header navigation', () => {
     await fixture.whenStable();
     expect(activeTab(host)).toBe('Event helper');
     expect(host.querySelector('.search')).toBeNull();
+  });
+
+  it('submits catalogue searches to the events page', async () => {
+    const { host, router, fixture } = await navFor(null);
+    const input = host.querySelector<HTMLInputElement>('#site-search')!;
+    input.value = '  Test Hall  ';
+    host
+      .querySelector<HTMLFormElement>('form.search')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+
+    expect(router.url).toBe('/events?q=Test%20Hall');
+  });
+
+  it('filters the catalogue as the visitor types', async () => {
+    const { host, router, fixture } = await navFor(null);
+    const input = host.querySelector<HTMLInputElement>('#site-search')!;
+    input.value = 'arena';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await fixture.whenStable();
+
+    expect(router.url).toBe('/events?q=arena');
   });
 });
