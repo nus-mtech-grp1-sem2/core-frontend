@@ -7,7 +7,18 @@ import { vi } from 'vitest';
 
 import { ApiService } from '../../core/api';
 import { AuthService } from '../../core/auth';
-import { EventDetail } from './event-detail';
+import { EventDetail, purchaseErrorMessage } from './event-detail';
+
+describe('EventDetail purchase errors', () => {
+  it('explains an inventory conflict instead of showing a generic failure', () => {
+    const error = new HttpErrorResponse({
+      status: 409,
+      error: { error: 'inventory_unavailable' },
+    });
+
+    expect(purchaseErrorMessage(error)).toContain('unavailable or sold out');
+  });
+});
 
 describe('EventDetail waiting-room controls', () => {
   it('opens the waiting room and manually admits a waiting customer', async () => {
