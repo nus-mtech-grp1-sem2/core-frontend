@@ -11,8 +11,8 @@ import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
-interface ManagedEvent { readonly event_id: number; readonly title: string; readonly description: string | null; readonly venue: string | null; readonly starts_at: string; readonly total_seats: number; readonly tier: EventTier; readonly status: EventStatus; readonly price_cents: number | null; readonly remaining_qty?: number; }
-interface EventApiRecord { readonly event_id: number; readonly title?: string; readonly event_name?: string; readonly description?: string | null; readonly venue?: string | null; readonly starts_at?: string; readonly event_start_datetime?: string; readonly total_seats: number; readonly tier?: EventTier; readonly event_type?: EventTier; readonly status: EventStatus; readonly price_cents?: number | null; readonly remaining_qty?: number; }
+interface ManagedEvent { readonly event_id: number; readonly title: string; readonly description: string | null; readonly venue: string | null; readonly starts_at: string; readonly total_seats: number; readonly available_buyers: number | null; readonly tier: EventTier; readonly status: EventStatus; readonly price_cents: number | null; readonly remaining_qty?: number; }
+interface EventApiRecord { readonly event_id: number; readonly title?: string; readonly event_name?: string; readonly description?: string | null; readonly venue?: string | null; readonly starts_at?: string; readonly event_start_datetime?: string; readonly total_seats: number; readonly available_buyers?: number | null; readonly tier?: EventTier; readonly event_type?: EventTier; readonly status: EventStatus; readonly price_cents?: number | null; readonly remaining_qty?: number; }
 interface EventResponse { readonly events: readonly EventApiRecord[]; }
 interface PublicEventDetailResponse { readonly event: EventApiRecord; }
 interface CognitoUser { readonly username: string; readonly firstName: string; readonly lastName: string; readonly email: string; }
@@ -50,6 +50,7 @@ export class Events {
     title: this.fb.control('', Validators.required), description: this.fb.control(''),
     venue: this.fb.control('', Validators.required), startsAt: this.fb.control('', Validators.required),
     totalSeats: this.fb.control(1, [Validators.required, Validators.min(1), Validators.max(1_000_000)]),
+    availableBuyers: this.fb.control<number | null>(null, [Validators.min(1), Validators.max(1_000_000)]),
     price: this.fb.control(0, [Validators.required, Validators.min(0)]),
     tier: this.fb.control<EventTier>('TIER1_GA', Validators.required),
   });
@@ -149,7 +150,7 @@ export class Events {
     try { const result = await firstValueFrom(this.api.get<InvitationResponse>('event', '/team-invitations')); this.invitations.set(result.invitations); }
     catch { this.invitations.set([]); }
   }
-  private resetForm(): void { this.editingEventId.set(null); this.eventForm.reset({ title: '', description: '', venue: '', startsAt: '', totalSeats: 1, price: 0, tier: 'TIER1_GA' }); }
+  private resetForm(): void { this.editingEventId.set(null); this.eventForm.reset({ title: '', description: '', venue: '', startsAt: '', totalSeats: 1, availableBuyers: null, price: 0, tier: 'TIER1_GA' }); }
 }
 
 function toManagedEvent(event: EventApiRecord): ManagedEvent {
@@ -160,6 +161,7 @@ function toManagedEvent(event: EventApiRecord): ManagedEvent {
     venue: event.venue ?? null,
     starts_at: event.starts_at ?? event.event_start_datetime ?? '',
     total_seats: event.total_seats,
+    available_buyers: event.available_buyers ?? null,
     tier: event.tier ?? event.event_type ?? 'TIER1_GA',
     status: event.status,
     price_cents: event.price_cents ?? null,

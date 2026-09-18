@@ -23,6 +23,7 @@ interface EventDetailData {
   readonly venue: string;
   readonly starts_at: string;
   readonly total_seats: number;
+  readonly available_buyers: number | null;
   readonly tier: EventTier;
   readonly status: EventStatus;
   readonly price_cents: number | null;
@@ -116,6 +117,7 @@ export class EventDetail {
     venue: this.fb.control('', Validators.required),
     startsAt: this.fb.control('', Validators.required),
     totalSeats: this.fb.control(1, [Validators.required, Validators.min(1), Validators.max(1_000_000)]),
+    availableBuyers: this.fb.control<number | null>(null, [Validators.min(1), Validators.max(1_000_000)]),
     price: this.fb.control(0, [Validators.required, Validators.min(0)]),
     tier: this.fb.control<EventTier>('TIER1_GA', Validators.required),
   });
@@ -331,6 +333,7 @@ export class EventDetail {
         venue: result.event.venue,
         startsAt: result.event.starts_at.replace(' ', 'T').slice(0, 16),
         totalSeats: result.event.total_seats,
+        availableBuyers: result.event.available_buyers,
         price: (result.event.price_cents ?? 0) / 100,
         tier: result.event.tier,
       });

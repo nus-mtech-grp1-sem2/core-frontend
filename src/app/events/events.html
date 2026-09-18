@@ -12,6 +12,7 @@
       <div class="field"><label for="event-venue">Venue</label><input id="event-venue" type="text" formControlName="venue" required /></div>
       <div class="field"><label for="event-start">Starts at</label><input id="event-start" type="datetime-local" formControlName="startsAt" required /></div>
       <div class="field"><label for="event-total-seats">Total seats</label><input id="event-total-seats" type="number" formControlName="totalSeats" min="1" max="1000000" step="1" required /></div>
+      <div class="field"><label for="event-available-buyers">Available buyers</label><input id="event-available-buyers" type="number" formControlName="availableBuyers" min="1" [max]="eventForm.controls.totalSeats.value" step="1" aria-describedby="event-available-buyers-help" /><small id="event-available-buyers-help" class="field-help">Concurrent buyers allowed from the waiting room. Leave blank to use 10% of total seats.</small></div>
       <div class="field"><label for="event-price">Price</label><input id="event-price" type="number" formControlName="price" min="0" step="0.01" required /></div>
       <div class="field"><label for="event-tier">Ticketing</label><select id="event-tier" formControlName="tier"><option value="TIER1_GA">General admission</option><option value="TIER2_SEATED">Reserved seating</option></select></div>
       <button type="submit" class="btn btn-primary btn-sm" [disabled]="submitting()">{{ editingEventId() === null ? 'Create event' : 'Save changes' }}</button>

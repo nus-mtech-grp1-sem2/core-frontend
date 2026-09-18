@@ -12,8 +12,8 @@ function user(groups: readonly string[]): AuthenticatedUser {
 }
 
 const MOCK_EVENTS = [
-  { event_id: 1, title: 'Neon Skyline Tour', description: null, venue: 'Marina Bay Arena', starts_at: '2026-09-12 20:00:00', total_seats: 500, tier: 'TIER1_GA', status: 'PUBLISHED', price_cents: 8800 },
-  { event_id: 2, title: 'ASEAN Cup Final', description: null, venue: 'Kallang Grand Stadium', starts_at: '2026-09-28 17:00:00', total_seats: 2000, tier: 'TIER2_SEATED', status: 'PUBLISHED', price_cents: 4500 },
+  { event_id: 1, title: 'Neon Skyline Tour', description: null, venue: 'Marina Bay Arena', starts_at: '2026-09-12 20:00:00', total_seats: 500, available_buyers: null, tier: 'TIER1_GA', status: 'PUBLISHED', price_cents: 8800 },
+  { event_id: 2, title: 'ASEAN Cup Final', description: null, venue: 'Kallang Grand Stadium', starts_at: '2026-09-28 17:00:00', total_seats: 2000, available_buyers: 25, tier: 'TIER2_SEATED', status: 'PUBLISHED', price_cents: 4500 },
 ] as const;
 
 async function renderFor(current: AuthenticatedUser | null) {
@@ -86,6 +86,7 @@ describe('Events', () => {
     await fixture.whenStable();
 
     expect(host.querySelector('#event-title')).not.toBeNull();
+    expect(host.querySelector('#event-available-buyers')).not.toBeNull();
     httpMock.verify();
   });
 });

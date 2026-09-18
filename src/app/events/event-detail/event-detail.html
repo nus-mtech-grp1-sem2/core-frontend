@@ -116,6 +116,7 @@
         <div class="field"><label for="venue">Venue</label><input id="venue" type="text" formControlName="venue" /></div>
         <div class="field"><label for="starts-at">Date and time</label><input id="starts-at" type="datetime-local" formControlName="startsAt" /></div>
         <div class="field"><label for="seats">Total seats</label><input id="seats" type="number" min="1" step="1" formControlName="totalSeats" /></div>
+        <div class="field"><label for="available-buyers">Available buyers</label><input id="available-buyers" type="number" min="1" [max]="form.controls.totalSeats.value" step="1" formControlName="availableBuyers" aria-describedby="available-buyers-help" /><small id="available-buyers-help">Concurrent buyers allowed from the waiting room. Leave blank to use 10% of total seats.</small></div>
         <div class="field"><label for="price">Price</label><input id="price" type="number" min="0" step="0.01" formControlName="price" /></div>
         <div class="field"><label for="tier">Ticketing</label><select id="tier" formControlName="tier"><option value="TIER1_GA">General admission</option><option value="TIER2_SEATED">Reserved seating</option></select></div>
         <div class="form-actions">
