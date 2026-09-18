@@ -1,3 +1,4 @@
+import { CurrencyPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 
 import { ApiService } from '../../core/api';
@@ -8,19 +9,30 @@ interface EventOption {
   readonly title: string;
 }
 
-interface EventResponse {
+interface ManagedEventResponse {
   readonly events: readonly {
     readonly event_id: number;
-    readonly title?: string;
-    readonly event_name?: string;
+    readonly title: string;
+  }[];
+}
+
+interface AttendeesResponse {
+  readonly attendees: readonly {
+    readonly ticket_id: number;
+    readonly customer_email: string;
+    readonly seat_label: string | null;
+    readonly status: 'ISSUED' | 'CHECKED_IN' | 'VOID';
+    readonly total_amount_cents: number;
+    readonly paid_at: string | null;
   }[];
 }
 
 interface AttendeeRow {
-  readonly buyer: string;
+  readonly ticketId: number;
   readonly email: string;
-  readonly ticketType: string;
-  readonly quantity: number;
+  readonly seatLabel: string;
+  readonly status: 'ISSUED' | 'CHECKED_IN' | 'VOID';
+  readonly amountPaid: number;
   readonly orderedAt: string;
 }
 
@@ -30,7 +42,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
 @Component({
   selector: 'app-attendees',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [WorkspaceShell],
+  imports: [CurrencyPipe, WorkspaceShell],
   template: `
     <app-workspace-shell workspace="organiser">
       <section class="page-head">
@@ -80,20 +92,20 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                     </caption>
                     <thead>
                       <tr>
-                        <th scope="col">Buyer</th>
                         <th scope="col">Email</th>
-                        <th scope="col">Ticket type</th>
-                        <th scope="col">Qty</th>
-                        <th scope="col">Order date</th>
+                        <th scope="col">Seat</th>
+                        <th scope="col">Ticket status</th>
+                        <th scope="col">Amount paid</th>
+                        <th scope="col">Paid on</th>
                       </tr>
                     </thead>
                     <tbody>
-                      @for (row of attendees(); track row.email) {
+                      @for (row of attendees(); track row.ticketId) {
                         <tr>
-                          <th scope="row">{{ row.buyer }}</th>
-                          <td><a [href]="'mailto:' + row.email">{{ row.email }}</a></td>
-                          <td>{{ row.ticketType }}</td>
-                          <td>{{ row.quantity }}</td>
+                          <th scope="row"><a [href]="'mailto:' + row.email">{{ row.email }}</a></th>
+                          <td>{{ row.seatLabel }}</td>
+                          <td>{{ row.status }}</td>
+                          <td>{{ row.amountPaid | currency: 'SGD' : 'S$' : '1.2-2' }}</td>
                           <td>{{ row.orderedAt }}</td>
                         </tr>
                       } @empty {
@@ -215,11 +227,14 @@ export class Attendees {
 
   protected loadEvents(): void {
     this.eventsStatus.set('loading');
-    this.api.get<EventResponse>('event', '/events').subscribe({
+    // /events/manage (not the public /events listing) so this page only
+    // ever offers events this organiser actually runs — matches what the
+    // attendees endpoint itself is gated on.
+    this.api.get<ManagedEventResponse>('event', '/events/manage').subscribe({
       next: (result) => {
         const events = result.events.map((event) => ({
           id: event.event_id,
-          title: event.title ?? event.event_name ?? `Event ${event.event_id}`,
+          title: event.title,
         }));
         this.events.set(events);
         this.eventsStatus.set('ready');
@@ -238,8 +253,18 @@ export class Attendees {
     }
 
     this.attendeesStatus.set('loading');
-    this.api.get<AttendeeRow[]>('order', `/attendees?eventId=${eventId}`).subscribe({
-      next: (rows) => {
+    this.api.get<AttendeesResponse>('ticket', `/events/${eventId}/attendees`).subscribe({
+      next: (result) => {
+        const rows = result.attendees.map(
+          (attendee): AttendeeRow => ({
+            ticketId: attendee.ticket_id,
+            email: attendee.customer_email,
+            seatLabel: attendee.seat_label ?? 'General admission',
+            status: attendee.status,
+            amountPaid: attendee.total_amount_cents / 100,
+            orderedAt: attendee.paid_at ? new Date(attendee.paid_at).toLocaleDateString('en-SG') : '—',
+          }),
+        );
         this.attendees.set(rows);
         this.attendeesStatus.set('ready');
       },
