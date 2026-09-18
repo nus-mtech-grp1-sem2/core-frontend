@@ -1,6 +1,14 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  effect,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { Subscription, exhaustMap, firstValueFrom, from, timer } from 'rxjs';
@@ -49,7 +57,9 @@ interface EventNameResponse {
             <button type="button" class="btn btn-ghost" (click)="leave()">Leave queue</button>
           }
           @case ('admitted') {
-            <p class="status-message success" role="status">It’s your turn. Opening seat selection…</p>
+            <p class="status-message success" role="status">
+              It’s your turn. Opening seat selection…
+            </p>
           }
           @case ('leaving') {
             <p class="status-message" role="status">Leaving the queue…</p>
@@ -98,9 +108,16 @@ interface EventNameResponse {
       gap: 0.875rem;
     }
 
-    .eyebrow { margin: 0; }
-    h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); }
-    h2 { font-size: 1.25rem; margin-top: 0.5rem; }
+    .eyebrow {
+      margin: 0;
+    }
+    h1 {
+      font-size: clamp(1.75rem, 5vw, 2.5rem);
+    }
+    h2 {
+      font-size: 1.25rem;
+      margin-top: 0.5rem;
+    }
 
     .position {
       display: grid;
@@ -113,9 +130,17 @@ interface EventNameResponse {
       box-shadow: var(--shadow-sm);
     }
 
-    .position span { color: var(--text-muted); font-size: 0.875rem; }
-    .position strong { font-size: 2.5rem; font-variant-numeric: tabular-nums; }
-    .success { color: var(--success-fg); }
+    .position span {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+    .position strong {
+      font-size: 2.5rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .success {
+      color: var(--success-fg);
+    }
 
     .loader {
       width: 2rem;
@@ -126,9 +151,21 @@ interface EventNameResponse {
       animation: spin 0.8s linear infinite;
     }
 
-    .back { margin-top: 1rem; font-size: 0.875rem; color: var(--brand-600); }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @media (prefers-reduced-motion: reduce) { .loader { animation: none; } }
+    .back {
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: var(--brand-600);
+    }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .loader {
+        animation: none;
+      }
+    }
   `,
 })
 export class EventQueue {
@@ -184,6 +221,7 @@ export class EventQueue {
   private async start(eventId: number): Promise<void> {
     this.polling?.unsubscribe();
     this.state.set('joining');
+    this.position.set(null);
     this.message.set('Please try again.');
     void this.loadEventName(eventId);
 
@@ -198,8 +236,8 @@ export class EventQueue {
         this.state.set('sold-out');
         return;
       }
-      const joined = await this.queue.join(eventId);
-      this.apply(eventId, joined);
+      await this.queue.join(eventId);
+      this.apply(eventId, await this.queue.status(eventId));
     } catch (error) {
       this.fail(error);
     }
@@ -242,9 +280,10 @@ export class EventQueue {
 
   private fail(error: unknown): void {
     this.polling?.unsubscribe();
-    const code = error instanceof HttpErrorResponse
-      ? (error.error as { error?: string } | null)?.error
-      : undefined;
+    const code =
+      error instanceof HttpErrorResponse
+        ? (error.error as { error?: string } | null)?.error
+        : undefined;
     if (code === 'queue_not_open') {
       this.state.set('closed');
       return;
@@ -254,9 +293,11 @@ export class EventQueue {
       return;
     }
     if (code === 'queue_not_configured' || code === 'event_not_on_sale') {
-      this.message.set(code === 'queue_not_configured'
-        ? 'The organiser has not configured a waiting room for this event.'
-        : 'Tickets for this event are not currently on sale.');
+      this.message.set(
+        code === 'queue_not_configured'
+          ? 'The organiser has not configured a waiting room for this event.'
+          : 'Tickets for this event are not currently on sale.',
+      );
       this.state.set('unavailable');
       return;
     }

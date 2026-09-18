@@ -7,7 +7,18 @@ import { vi } from 'vitest';
 
 import { ApiService } from '../../core/api';
 import { AuthService } from '../../core/auth';
-import { EventDetail, purchaseErrorMessage } from './event-detail';
+import { buyerCapacity, EventDetail, purchaseErrorMessage } from './event-detail';
+
+describe('EventDetail buyer capacity', () => {
+  it('uses the configured number of concurrent buyers', () => {
+    expect(buyerCapacity(104, 1)).toBe(1);
+  });
+
+  it('falls back to ten percent rounded up, with a minimum of one', () => {
+    expect(buyerCapacity(104, null)).toBe(11);
+    expect(buyerCapacity(5, null)).toBe(1);
+  });
+});
 
 describe('EventDetail purchase errors', () => {
   it('explains an inventory conflict instead of showing a generic failure', () => {

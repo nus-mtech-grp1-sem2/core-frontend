@@ -32,6 +32,17 @@
             >
             <span>{{ event.total_seats }} seats</span>
             <span>{{ priceLabel(event.price_cents) }} per ticket</span>
+            @if (event.tier === 'TIER2_SEATED') {
+              <span>
+                Up to {{ buyerCapacity(event.total_seats, event.available_buyers) }}
+                {{
+                  buyerCapacity(event.total_seats, event.available_buyers) === 1
+                    ? 'buyer'
+                    : 'buyers'
+                }}
+                at a time
+              </span>
+            }
           </div>
         </div>
       </div>

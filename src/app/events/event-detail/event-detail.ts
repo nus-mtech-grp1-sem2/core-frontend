@@ -190,6 +190,7 @@ export class EventDetail {
   protected readonly shellWorkspace = () =>
     this.organiserMode ? ('organiser' as const) : ('customer' as const);
   protected readonly backLink = this.organiserMode ? '/organiser/events' : '/events';
+  protected readonly buyerCapacity = buyerCapacity;
   protected readonly isOwner = () => this.event()?.organiser_sub === this.auth.user()?.sub;
   protected readonly form = this.fb.group({
     title: this.fb.control('', Validators.required),
@@ -709,6 +710,14 @@ export class EventDetail {
       this.queueAccess.set('expired');
     }
   }
+}
+
+export function buyerCapacity(totalSeats: number, configuredBuyers: number | null): number {
+  const seats = Math.max(0, Math.floor(totalSeats));
+  if (configuredBuyers !== null && Number.isSafeInteger(configuredBuyers) && configuredBuyers > 0) {
+    return Math.min(configuredBuyers, seats);
+  }
+  return seats === 0 ? 0 : Math.max(1, Math.ceil(seats * 0.1));
 }
 
 function queueAdmissionRequired(error: unknown): boolean {
