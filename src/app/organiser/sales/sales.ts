@@ -1,8 +1,25 @@
 import { CurrencyPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/api';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
+
+interface ManagedEventResponse {
+  readonly events: readonly {
+    readonly event_id: number;
+    readonly title: string;
+    readonly venue: string;
+    readonly total_seats: number;
+    readonly remaining_qty: number;
+    readonly status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+  }[];
+}
+
+interface OrdersSummaryResponse {
+  readonly ordersPaid: number;
+  readonly revenueCents: number;
+}
 
 interface SalesRow {
   readonly eventId: number;
@@ -94,7 +111,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
               </table>
             </div>
 
-            <p class="note">Figures update once the payments service is connected.</p>
+            <p class="note">Revenue reflects paid orders only.</p>
           }
         }
       </section>
@@ -200,17 +217,46 @@ export class Sales {
   });
 
   constructor() {
-    this.load();
+    void this.load();
   }
 
-  protected load(): void {
+  /**
+   * Two calls per event: the event service (via `/events/manage`, already
+   * scoped to this organiser) gives capacity and remaining stock, and the
+   * ticket service's `/orders/summary` gives live revenue. Revenue failing
+   * for one event (e.g. no orders yet) shouldn't blank the whole table, so
+   * that call falls back to zero instead of failing the row.
+   */
+  protected async load(): Promise<void> {
     this.status.set('loading');
-    this.api.get<SalesRow[]>('order', '/sales').subscribe({
-      next: (rows) => {
-        this.rows.set(rows);
-        this.status.set('ready');
-      },
-      error: () => this.status.set('error'),
-    });
+    try {
+      const managed = await firstValueFrom(this.api.get<ManagedEventResponse>('event', '/events/manage'));
+      const rows = await Promise.all(
+        managed.events.map(async (event): Promise<SalesRow> => {
+          const summary = await firstValueFrom(
+            this.api.get<OrdersSummaryResponse>('ticket', `/events/${event.event_id}/orders/summary`),
+          ).catch(() => ({ ordersPaid: 0, revenueCents: 0 }));
+          const sold = event.total_seats - event.remaining_qty;
+          return {
+            eventId: event.event_id,
+            event: event.title,
+            venue: event.venue,
+            sold,
+            capacity: event.total_seats,
+            revenue: summary.revenueCents / 100,
+            status:
+              event.status === 'CANCELLED' || event.remaining_qty <= 0
+                ? 'Sold out'
+                : event.total_seats > 0 && event.remaining_qty / event.total_seats < 0.15
+                  ? 'Few left'
+                  : 'On sale',
+          };
+        }),
+      );
+      this.rows.set(rows);
+      this.status.set('ready');
+    } catch {
+      this.status.set('error');
+    }
   }
 }
