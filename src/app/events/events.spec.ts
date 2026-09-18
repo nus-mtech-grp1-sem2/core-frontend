@@ -8,7 +8,7 @@ import { AuthenticatedUser, CognitoGateway } from '../core/cognito-gateway';
 import { Events } from './events';
 
 function user(groups: readonly string[]): AuthenticatedUser {
-  return { sub: 's', email: 'someone@example.com', groups };
+  return { sub: 's', email: 'someone@example.com', name: 'Someone Example', groups };
 }
 
 const MOCK_EVENTS = [
@@ -53,6 +53,7 @@ describe('Events', () => {
 
     httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
     await fixture.whenStable();
+    fixture.detectChanges();
     for (const event of MOCK_EVENTS) {
       httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
     }

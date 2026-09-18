@@ -148,6 +148,17 @@
         </ul>
         @if (isOwner()) { <p class="owner-note">You own this event and can remove other organizers.</p> }
       </section>
+
+      @if (event.tier === 'TIER2_SEATED') {
+        <section class="team" aria-labelledby="queue-heading">
+          <h2 id="queue-heading">Waiting room</h2>
+          <p class="note">Open the queue before customers can select reserved seats.</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary btn-sm" (click)="openQueue()">Open waiting room</button>
+            <button type="button" class="btn btn-ghost btn-sm" (click)="admitNext()">Admit next customer</button>
+          </div>
+        </section>
+      }
     </section>
   }
 } @else {

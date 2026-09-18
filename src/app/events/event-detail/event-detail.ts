@@ -221,6 +221,30 @@ export class EventDetail {
     }
   }
 
+  protected async openQueue(): Promise<void> {
+    const event = this.event();
+    if (!event) return;
+    this.error.set('');
+    try {
+      await firstValueFrom(this.api.put('queue', `/events/${event.event_id}/queue/config`, {
+        opensAt: new Date().toISOString(), admissionBatchSize: 1, admissionIntervalSec: 60,
+      }));
+    } catch (error) {
+      this.error.set(describeError(error, 'open the waiting room'));
+    }
+  }
+
+  protected async admitNext(): Promise<void> {
+    const event = this.event();
+    if (!event) return;
+    this.error.set('');
+    try {
+      await firstValueFrom(this.api.post('queue', `/events/${event.event_id}/queue/admit-next`, {}));
+    } catch (error) {
+      this.error.set(describeError(error, 'admit the next customer'));
+    }
+  }
+
   protected eventImageUrl(eventId: number): string {
     return this.api.url('event', `/events/${eventId}/image`);
   }
@@ -288,6 +312,7 @@ export class EventDetail {
           seatIds: event.tier === 'TIER2_SEATED' ? this.selectedSeatIds() : undefined,
           admissionToken: event.tier === 'TIER2_SEATED' ? this.queue.admissionTokenFor(event.event_id) : undefined,
           customerEmail: this.auth.user()?.email ?? '',
+          customerName: this.auth.user()?.name ?? '',
         }),
       );
       await firstValueFrom(
@@ -452,7 +477,11 @@ function describeError(error: unknown, action: string): string {
     }
     if (error.status === 401) return 'Please sign in again before managing this event.';
     if (error.status === 403) return 'You do not have permission to manage this event.';
-    if (error.status === 404) return 'This event was not found.';
+    if (error.status === 404) {
+      return action === 'complete your purchase'
+        ? 'Ticket purchasing is unavailable right now. Please try again later.'
+        : 'This event was not found.';
+    }
   }
   return `Unable to ${action}. Please try again.`;
 }

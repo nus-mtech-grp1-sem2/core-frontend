@@ -207,7 +207,12 @@ export class Sales {
     this.status.set('loading');
     this.api.get<SalesRow[]>('order', '/sales').subscribe({
       next: (rows) => {
-        this.rows.set(rows);
+        this.rows.set(rows.map((row) => ({
+          ...row,
+          sold: Number(row.sold),
+          capacity: Number(row.capacity),
+          revenue: Number(row.revenue),
+        })));
         this.status.set('ready');
       },
       error: () => this.status.set('error'),

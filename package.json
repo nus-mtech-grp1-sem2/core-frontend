@@ -4,6 +4,7 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
+    "start:all": "bash scripts/start-all.sh",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
