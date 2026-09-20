@@ -21,6 +21,16 @@
           />
           Include cancelled</label
         >
+      }
+      <label class="include-completed"
+        ><input
+          type="checkbox"
+          [checked]="includeCompleted()"
+          (change)="includeCompleted.set($any($event.target).checked)"
+        />
+        Include completed events</label
+      >
+      @if (isAdmin()) {
         <button
           type="button"
           class="btn btn-primary btn-sm"
@@ -181,38 +191,44 @@
                 <p class="where">{{ event.description }}</p>
               }
               @if (isAdmin()) {
-                <div class="actions">
-                  @if (event.status === 'DRAFT') {
-                    <button
-                      type="button"
-                      class="btn btn-primary btn-sm"
-                      (click)="publishEvent(event.event_id)"
-                    >
-                      Publish</button
-                    ><button
-                      type="button"
-                      class="btn btn-ghost btn-sm delete"
-                      (click)="deleteEvent(event.event_id)"
-                    >
-                      Delete
-                    </button>
-                  } @else if (event.status === 'PUBLISHED') {
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-sm delete"
-                      (click)="cancelEvent(event.event_id)"
-                    >
-                      Cancel
-                    </button>
-                  } @else {
-                    <button
-                      type="button"
-                      class="btn btn-primary btn-sm"
-                      (click)="publishEvent(event.event_id)"
-                    >
-                      Re-publish
-                    </button>
-                  }
+                @if (!isEventCompleted(event)) {
+                  <div class="actions">
+                    @if (event.status === 'DRAFT') {
+                      <button
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        (click)="publishEvent(event.event_id)"
+                      >
+                        Publish</button
+                      ><button
+                        type="button"
+                        class="btn btn-ghost btn-sm delete"
+                        (click)="deleteEvent(event.event_id)"
+                      >
+                        Delete
+                      </button>
+                    } @else if (event.status === 'PUBLISHED') {
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-sm delete"
+                        (click)="cancelEvent(event.event_id)"
+                      >
+                        Cancel
+                      </button>
+                    } @else {
+                      <button
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        (click)="publishEvent(event.event_id)"
+                      >
+                        Re-publish
+                      </button>
+                    }
+                  </div>
+                }
+              } @else if (isEventCompleted(event)) {
+                <div class="customer-action">
+                  <span class="pill status completed">Completed</span>
                 </div>
               } @else if (event.status === 'PUBLISHED') {
                 <div class="customer-action">

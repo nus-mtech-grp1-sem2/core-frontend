@@ -71,72 +71,76 @@ type LoadStatus = 'loading' | 'ready' | 'error';
             </p>
           }
           @case ('ready') {
-            <div class="field filter">
-              <label for="event">Filter by event</label>
-              <select id="event" [value]="selectedEventId()" (change)="onEventChange($event)">
-                @for (event of events(); track event.id) {
-                  <option [value]="event.id">{{ event.title }}</option>
+            @if (events().length === 0) {
+              <p class="status-message" role="status">You don't have any events yet.</p>
+            } @else {
+              <div class="field filter">
+                <label for="event">Filter by event</label>
+                <select id="event" [value]="selectedEventId()" (change)="onEventChange($event)">
+                  @for (event of events(); track event.id) {
+                    <option [value]="event.id">{{ event.title }}</option>
+                  }
+                </select>
+              </div>
+
+              @switch (attendeesStatus()) {
+                @case ('loading') {
+                  <p class="status-message" role="status">Loading attendees…</p>
                 }
-              </select>
-            </div>
+                @case ('error') {
+                  <p class="status-message error" role="alert">
+                    Couldn't load attendees.
+                    <button type="button" class="retry" (click)="loadAttendees()">Try again</button>
+                  </p>
+                }
+                @case ('ready') {
+                  <div class="table-card">
+                    <table>
+                      <caption class="visually-hidden">
+                        Attendees for
+                        {{
+                          selectedEvent()?.title
+                        }}
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Buyer</th>
+                          <th scope="col">Email</th>
+                          <th scope="col">Ticket type</th>
+                          <th scope="col">Qty</th>
+                          <th scope="col">Order date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (row of attendees(); track row.id) {
+                          <tr>
+                            <th scope="row">{{ row.buyer || row.email || 'Legacy customer' }}</th>
+                            <td>
+                              @if (row.email) {
+                                <a [href]="'mailto:' + row.email">{{ row.email }}</a>
+                              } @else {
+                                <span class="empty">Not recorded</span>
+                              }
+                            </td>
+                            <td>{{ row.ticketType }}</td>
+                            <td>{{ row.quantity }}</td>
+                            <td>{{ row.orderedAt }}</td>
+                          </tr>
+                        } @empty {
+                          <tr>
+                            <td colspan="5" class="empty">
+                              No one has bought a ticket for this event yet.
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              }
 
-            @switch (attendeesStatus()) {
-              @case ('loading') {
-                <p class="status-message" role="status">Loading attendees…</p>
-              }
-              @case ('error') {
-                <p class="status-message error" role="alert">
-                  Couldn't load attendees.
-                  <button type="button" class="retry" (click)="loadAttendees()">Try again</button>
-                </p>
-              }
-              @case ('ready') {
-                <div class="table-card">
-                  <table>
-                    <caption class="visually-hidden">
-                      Attendees for
-                      {{
-                        selectedEvent()?.title
-                      }}
-                    </caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">Buyer</th>
-                        <th scope="col">Email</th>
-                        <th scope="col">Ticket type</th>
-                        <th scope="col">Qty</th>
-                        <th scope="col">Order date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (row of attendees(); track row.id) {
-                        <tr>
-                          <th scope="row">{{ row.buyer || row.email || 'Legacy customer' }}</th>
-                          <td>
-                            @if (row.email) {
-                              <a [href]="'mailto:' + row.email">{{ row.email }}</a>
-                            } @else {
-                              <span class="empty">Not recorded</span>
-                            }
-                          </td>
-                          <td>{{ row.ticketType }}</td>
-                          <td>{{ row.quantity }}</td>
-                          <td>{{ row.orderedAt }}</td>
-                        </tr>
-                      } @empty {
-                        <tr>
-                          <td colspan="5" class="empty">
-                            No one has bought a ticket for this event yet.
-                          </td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              }
+              <p class="note">Attendee data reflects paid orders only.</p>
             }
-
-            <p class="note">Attendee data reflects paid orders only.</p>
           }
         }
       </section>

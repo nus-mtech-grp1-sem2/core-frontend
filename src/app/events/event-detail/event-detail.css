@@ -105,7 +105,8 @@
   color: var(--success-fg);
 }
 
-.form-actions button:disabled {
+.form-actions button:disabled,
+.member-list button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }

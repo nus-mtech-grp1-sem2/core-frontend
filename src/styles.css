@@ -247,7 +247,9 @@ img {
   color: var(--warn-fg);
 }
 
-.status.sold-out {
+.status.sold-out,
+.status.completed,
+.status.cancelled {
   background: var(--muted-bg);
   color: var(--muted-fg);
 }

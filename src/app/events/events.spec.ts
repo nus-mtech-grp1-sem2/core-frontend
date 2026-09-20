@@ -18,7 +18,7 @@ const MOCK_EVENTS = [
     title: 'Neon Skyline Tour',
     description: null,
     venue: 'Marina Bay Arena',
-    starts_at: '2026-09-12 20:00:00',
+    starts_at: '2099-09-12 20:00:00',
     total_seats: 500,
     available_buyers: null,
     tier: 'TIER1_GA',
@@ -30,7 +30,7 @@ const MOCK_EVENTS = [
     title: 'ASEAN Cup Final',
     description: null,
     venue: 'Kallang Grand Stadium',
-    starts_at: '2026-09-28 17:00:00',
+    starts_at: '2099-09-28 17:00:00',
     total_seats: 2000,
     available_buyers: 25,
     tier: 'TIER2_SEATED',
@@ -130,6 +130,138 @@ describe('Events', () => {
     expect(create?.disabled).toBe(true);
     expect(host.textContent).toContain('Available buyers cannot exceed total seats.');
     httpMock.verify();
+  });
+
+  it('hides completed events from an organiser until asked, and offers no actions on them', async () => {
+    const { fixture, httpMock, host } = await renderFor(user(['organiser']));
+    const completed = {
+      ...MOCK_EVENTS[0],
+      event_id: 3,
+      title: 'Old Farewell Show',
+      starts_at: '2020-01-01 20:00:00',
+    };
+
+    httpMock.expectOne('/api/event/events/manage').flush({ events: [...MOCK_EVENTS, completed] });
+    httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const include = host.querySelector<HTMLInputElement>('.include-completed input')!;
+    expect(include.checked).toBe(false);
+    expect(host.querySelectorAll('.event-card').length).toBe(2);
+    expect(host.textContent).not.toContain('Old Farewell Show');
+
+    include.click();
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.event-card').length).toBe(3);
+    const card = Array.from(host.querySelectorAll('.event-card')).find((element) =>
+      element.textContent?.includes('Old Farewell Show'),
+    )!;
+    expect(card.textContent).toContain('Completed');
+    expect(card.querySelector('.actions')).toBeNull();
+    expect(card.querySelector('a.thumb')?.getAttribute('href')).toBe('/organiser/events/3');
+    const upcoming = host.querySelector('.event-card .actions');
+    expect(upcoming?.textContent).toContain('Cancel');
+    httpMock.verify();
+  });
+
+  describe('completed events for a customer', () => {
+    const past = { ...MOCK_EVENTS[0], starts_at: '2020-01-01 20:00:00' };
+    const upcomingSeated = MOCK_EVENTS[1];
+    const pastSeated = {
+      ...MOCK_EVENTS[1],
+      event_id: 3,
+      title: 'Old Cup Final',
+      starts_at: '2020-01-01 17:00:00',
+    };
+
+    async function renderCustomerList(query = '') {
+      const rendered = await renderFor(null, query);
+      const { fixture, httpMock } = rendered;
+      httpMock.expectOne('/api/event/events').flush({ events: [past, upcomingSeated, pastSeated] });
+      await new Promise<void>((resolve) => setTimeout(resolve));
+      fixture.detectChanges();
+      for (const event of [past, upcomingSeated, pastSeated]) {
+        httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve));
+      fixture.detectChanges();
+      const cards = () => Array.from(rendered.host.querySelectorAll('.event-card'));
+      const card = (title: string) =>
+        cards().find((element) => element.textContent?.includes(title));
+      const checkbox = rendered.host.querySelector<HTMLInputElement>('.include-completed input')!;
+      return { ...rendered, cards, card, checkbox };
+    }
+
+    it('offers an "Include completed events" checkbox, unchecked by default', async () => {
+      const { checkbox, host } = await renderCustomerList();
+
+      expect(checkbox).not.toBeNull();
+      expect(checkbox.checked).toBe(false);
+      expect(host.querySelector('.include-completed')?.textContent).toContain(
+        'Include completed events',
+      );
+      // Organiser-only controls stay organiser-only.
+      expect(host.querySelector('.include-cancelled')).toBeNull();
+    });
+
+    it('hides completed events until the checkbox is ticked, and counts only what is shown', async () => {
+      const { cards, card, host, httpMock } = await renderCustomerList();
+
+      expect(cards()).toHaveLength(1);
+      expect(card('ASEAN Cup Final')).toBeTruthy();
+      expect(card('Neon Skyline Tour')).toBeUndefined();
+      expect(card('Old Cup Final')).toBeUndefined();
+      expect(host.querySelector('.count')?.textContent?.trim()).toBe('1 events');
+      httpMock.verify();
+    });
+
+    it('shows completed events, marked Completed and with no way to buy, once ticked', async () => {
+      const { checkbox, cards, card, fixture, host, httpMock } = await renderCustomerList();
+
+      checkbox.click();
+      fixture.detectChanges();
+
+      expect(cards()).toHaveLength(3);
+      expect(host.querySelector('.count')?.textContent?.trim()).toBe('3 events');
+      for (const title of ['Neon Skyline Tour', 'Old Cup Final']) {
+        expect(card(title)?.querySelector('.status')?.textContent?.trim(), title).toBe('Completed');
+        expect(card(title)?.querySelector('.customer-action a'), title).toBeNull();
+      }
+      // An upcoming event is still bought from its card.
+      expect(card('ASEAN Cup Final')?.querySelector('.customer-action a')?.textContent).toContain(
+        'Join waiting room',
+      );
+      httpMock.verify();
+    });
+
+    it('hides them again when the checkbox is cleared', async () => {
+      const { checkbox, cards, fixture, httpMock } = await renderCustomerList();
+
+      checkbox.click();
+      fixture.detectChanges();
+      checkbox.click();
+      fixture.detectChanges();
+
+      expect(cards()).toHaveLength(1);
+      httpMock.verify();
+    });
+
+    it('applies the search to completed events too, once they are included', async () => {
+      const { checkbox, cards, card, fixture, host, httpMock } =
+        await renderCustomerList('old cup');
+
+      expect(cards()).toHaveLength(0);
+      expect(host.textContent).toContain('No events match your search.');
+
+      checkbox.click();
+      fixture.detectChanges();
+
+      expect(cards()).toHaveLength(1);
+      expect(card('Old Cup Final')).toBeTruthy();
+      httpMock.verify();
+    });
   });
 
   it('excludes events where the signed-in customer is an organiser or helper', async () => {

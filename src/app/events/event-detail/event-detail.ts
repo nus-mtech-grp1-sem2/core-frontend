@@ -17,8 +17,12 @@ import { firstValueFrom, timer } from 'rxjs';
 
 import { ApiService } from '../../core/api';
 import { AuthService } from '../../core/auth';
+import { isCompleted } from '../../core/event-time';
 import { QueueService, QueueStatus } from '../../core/queue';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
+
+const EVENT_COMPLETED_MESSAGE =
+  'This event has already taken place, so tickets are no longer on sale.';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
@@ -192,6 +196,13 @@ export class EventDetail {
   protected readonly backLink = this.organiserMode ? '/organiser/events' : '/events';
   protected readonly buyerCapacity = buyerCapacity;
   protected readonly isOwner = () => this.event()?.organiser_sub === this.auth.user()?.sub;
+  /** An event that has started is completed: its tickets can no longer be bought. */
+  protected readonly completed = computed(() => {
+    const event = this.event();
+    return !!event && isCompleted(event.starts_at);
+  });
+  /** A completed event stays viewable to its organisers, but nothing on it can be changed. */
+  protected readonly readOnly = computed(() => this.organiserMode && this.completed());
   protected readonly form = this.fb.group({
     title: this.fb.control('', Validators.required),
     description: this.fb.control(''),
@@ -226,7 +237,7 @@ export class EventDetail {
 
   protected async save(): Promise<void> {
     const event = this.event();
-    if (!event || this.form.invalid || this.saving()) {
+    if (!event || this.readOnly() || this.form.invalid || this.saving()) {
       this.form.markAllAsTouched();
       return;
     }
@@ -246,7 +257,7 @@ export class EventDetail {
 
   protected async invite(): Promise<void> {
     const event = this.event();
-    if (!event || this.inviteForm.invalid || this.inviting()) {
+    if (!event || this.readOnly() || this.inviteForm.invalid || this.inviting()) {
       this.inviteForm.markAllAsTouched();
       return;
     }
@@ -273,6 +284,7 @@ export class EventDetail {
     const event = this.event();
     if (
       !event ||
+      this.readOnly() ||
       event.status !== 'DRAFT' ||
       this.deleting() ||
       !window.confirm('Delete this draft event? This cannot be undone.')
@@ -292,7 +304,7 @@ export class EventDetail {
 
   protected async changeStatus(status: 'PUBLISHED' | 'CANCELLED'): Promise<void> {
     const event = this.event();
-    if (!event || this.updatingStatus()) return;
+    if (!event || this.readOnly() || this.updatingStatus()) return;
     const enabling = status === 'PUBLISHED';
     const action = enabling ? 'enable this event and put it back on sale' : 'cancel this event';
     if (!window.confirm(`Are you sure you want to ${action}?`)) return;
@@ -313,7 +325,12 @@ export class EventDetail {
 
   protected async remove(member: TeamMember): Promise<void> {
     const event = this.event();
-    if (!event || !window.confirm(`Remove ${member.user_email} from this event?`)) return;
+    if (
+      !event ||
+      this.readOnly() ||
+      !window.confirm(`Remove ${member.user_email} from this event?`)
+    )
+      return;
     this.error.set('');
     try {
       await firstValueFrom(
@@ -330,7 +347,7 @@ export class EventDetail {
 
   protected async openQueue(): Promise<void> {
     const event = this.event();
-    if (!event || this.queueActionBusy()) return;
+    if (!event || this.readOnly() || this.queueActionBusy()) return;
     this.queueActionBusy.set(true);
     this.queueActionMessage.set('');
     this.queueActionError.set('');
@@ -354,7 +371,7 @@ export class EventDetail {
 
   protected async admitNext(): Promise<void> {
     const event = this.event();
-    if (!event || this.queueActionBusy()) return;
+    if (!event || this.readOnly() || this.queueActionBusy()) return;
     this.queueActionBusy.set(true);
     this.queueActionMessage.set('');
     this.queueActionError.set('');
@@ -383,6 +400,7 @@ export class EventDetail {
     return (
       this.customerMode &&
       this.event()?.status === 'PUBLISHED' &&
+      !this.completed() &&
       this.purchaseEligibility() === 'allowed'
     );
   }
@@ -397,6 +415,7 @@ export class EventDetail {
   }
 
   protected goToQueue(): void {
+    if (this.completed()) return;
     void this.router.navigate(['/events', this.id(), 'queue']);
   }
 
@@ -422,6 +441,11 @@ export class EventDetail {
   protected async buy(): Promise<void> {
     const event = this.event();
     if (!event || this.purchasing()) return;
+
+    if (this.completed()) {
+      this.purchaseError.set(EVENT_COMPLETED_MESSAGE);
+      return;
+    }
 
     if (this.purchaseEligibility() === 'event-team') {
       this.purchaseError.set(
@@ -510,37 +534,40 @@ export class EventDetail {
         price: (result.event.price_cents ?? 0) / 100,
         tier: result.event.tier,
       });
-      if (this.organiserMode) await this.loadMembers(eventId);
-      if (
-        result.event.tier === 'TIER2_SEATED' &&
-        (this.organiserMode || this.purchaseEligibility() === 'allowed')
-      ) {
-        await this.loadSeats(eventId);
+      if (this.readOnly()) {
+        this.form.disable();
+        this.inviteForm.disable();
+      } else {
+        this.form.enable();
+        this.inviteForm.enable();
       }
+      if (this.organiserMode) await this.loadMembers(eventId);
+      if (this.wantsSeatMap(result.event)) await this.loadSeats(eventId);
       if (this.organiserMode && result.event.tier === 'TIER2_SEATED') {
         await this.loadQueueManagement(eventId);
       }
-      if (
-        this.customerMode &&
-        this.purchaseEligibility() === 'allowed' &&
-        this.auth.isAuthenticated()
-      ) {
-        await this.loadOwnership(eventId);
-      }
-      if (
-        this.customerMode &&
-        this.purchaseEligibility() === 'allowed' &&
-        result.event.tier === 'TIER2_SEATED'
-      ) {
-        if (this.auth.isAuthenticated()) await this.loadQueueAccess(eventId);
-        else this.queueAccess.set('not-joined');
-      }
+      await this.loadCustomerPurchaseState(result.event);
     } catch (error) {
       this.event.set(null);
       this.error.set(describeError(error, 'load this event'));
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /** Organisers manage the seat map; customers only need it while the event can still be bought. */
+  private wantsSeatMap(event: EventDetailData): boolean {
+    if (event.tier !== 'TIER2_SEATED') return false;
+    return this.organiserMode || (this.purchaseEligibility() === 'allowed' && !this.completed());
+  }
+
+  /** What a customer already holds, and their waiting-room place. A completed event needs no queue place. */
+  private async loadCustomerPurchaseState(event: EventDetailData): Promise<void> {
+    if (!this.customerMode || this.purchaseEligibility() !== 'allowed') return;
+    if (this.auth.isAuthenticated()) await this.loadOwnership(event.event_id);
+    if (event.tier !== 'TIER2_SEATED' || this.completed()) return;
+    if (this.auth.isAuthenticated()) await this.loadQueueAccess(event.event_id);
+    else this.queueAccess.set('not-joined');
   }
 
   private async loadPurchaseEligibility(event: EventDetailData): Promise<void> {
@@ -762,6 +789,7 @@ export function purchaseErrorMessage(error: HttpErrorResponse): string | null {
     return 'Ticket inventory has not been configured for this event.';
   }
   if (code === 'event_not_on_sale') return 'This event is no longer on sale.';
+  if (code === 'event_completed') return EVENT_COMPLETED_MESSAGE;
   if (code === 'order_not_payable') return 'This order can no longer be paid.';
   return null;
 }
