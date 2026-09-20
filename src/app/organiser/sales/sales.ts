@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/api';
+import { formatEventDate, formatEventTime, isCompleted } from '../../core/event-time';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
 
 interface ManagedEventResponse {
@@ -10,6 +11,7 @@ interface ManagedEventResponse {
     readonly event_id: number;
     readonly title: string;
     readonly venue: string;
+    readonly starts_at: string;
     readonly total_seats: number;
     readonly remaining_qty: number;
     readonly status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
@@ -30,10 +32,28 @@ interface SalesRow {
   readonly paidOrders: number;
   readonly capacity: number;
   readonly revenue: number;
-  readonly status: 'On sale' | 'Few left' | 'Sold out';
+  readonly date: string;
+  readonly time: string;
+  readonly status: 'On sale' | 'Few left' | 'Sold out' | 'Completed' | 'Cancelled';
 }
 
 type LoadStatus = 'loading' | 'ready' | 'error';
+
+/**
+ * Sold out means every ticket has really been sold. Stock that is only held or
+ * reserved by buyers mid-checkout is not sold, so it never makes an event Sold out.
+ */
+function saleStatus(
+  event: ManagedEventResponse['events'][number],
+  sold: number,
+  now: number,
+): SalesRow['status'] {
+  const capacity = Number(event.total_seats);
+  if (isCompleted(event.starts_at, now)) return 'Completed';
+  if (event.status === 'CANCELLED') return 'Cancelled';
+  if (capacity > 0 && sold >= capacity) return 'Sold out';
+  return capacity > 0 && event.remaining_qty / capacity < 0.15 ? 'Few left' : 'On sale';
+}
 
 /** Revenue and ticket sales per event, from the order service. */
 @Component({
@@ -92,6 +112,8 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                     <th scope="col">Venue</th>
                     <th scope="col">Tickets sold</th>
                     <th scope="col">Revenue</th>
+                    <th scope="col">Event date</th>
+                    <th scope="col">Event time</th>
                     <th scope="col">Status</th>
                   </tr>
                 </thead>
@@ -105,12 +127,16 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                         {{ row.capacity.toLocaleString('en-SG') }}
                       </td>
                       <td>{{ row.revenue | currency: 'SGD' : 'S$' : '1.0-0' }}</td>
+                      <td>{{ row.date }}</td>
+                      <td>{{ row.time }}</td>
                       <td>
                         <span
                           class="pill status"
                           [class.on-sale]="row.status === 'On sale'"
                           [class.few-left]="row.status === 'Few left'"
                           [class.sold-out]="row.status === 'Sold out'"
+                          [class.completed]="row.status === 'Completed'"
+                          [class.cancelled]="row.status === 'Cancelled'"
                           >{{ row.status }}</span
                         >
                       </td>
@@ -168,7 +194,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
 
     table {
       width: 100%;
-      min-width: 44rem;
+      min-width: 56rem;
       border-collapse: collapse;
       font-size: 0.9375rem;
     }
@@ -248,20 +274,18 @@ export class Sales {
             ),
           ).catch(() => ({ paidOrders: 0, ticketsSold: 0, revenueCents: 0 }));
 
+          const sold = Number(summary.ticketsSold);
           return {
             eventId: event.event_id,
             event: event.title,
             venue: event.venue,
-            sold: Number(summary.ticketsSold),
+            sold,
             paidOrders: Number(summary.paidOrders),
             capacity: Number(event.total_seats),
             revenue: Number(summary.revenueCents) / 100,
-            status:
-              event.status === 'CANCELLED' || event.remaining_qty <= 0
-                ? 'Sold out'
-                : event.total_seats > 0 && event.remaining_qty / event.total_seats < 0.15
-                  ? 'Few left'
-                  : 'On sale',
+            date: formatEventDate(event.starts_at),
+            time: formatEventTime(event.starts_at),
+            status: saleStatus(event, sold, Date.now()),
           };
         }),
       );
