@@ -108,7 +108,7 @@ export class Events {
     const query = this.searchTerm();
     let events = this.allEvents();
     if (!this.includeCancelled()) events = events.filter((event) => event.status !== 'CANCELLED');
-    if (this.isAdmin() && !this.includeCompleted()) {
+    if (!this.includeCompleted()) {
       events = events.filter((event) => !isCompleted(event.starts_at));
     }
     if (!query) return events;

@@ -26,9 +26,9 @@
           <div class="event-facts">
             <span
               class="pill status"
-              [class.on-sale]="event.status === 'PUBLISHED' && !readOnly()"
-              [class.cancelled]="event.status === 'CANCELLED' && !readOnly()"
-              >{{ readOnly() ? 'Completed' : statusLabel(event.status) }}</span
+              [class.on-sale]="event.status === 'PUBLISHED' && !completed()"
+              [class.cancelled]="event.status === 'CANCELLED' && !completed()"
+              >{{ completed() ? 'Completed' : statusLabel(event.status) }}</span
             >
             <span>{{ event.total_seats }} seats</span>
             <span>{{ priceLabel(event.price_cents) }} per ticket</span>
@@ -48,7 +48,18 @@
       </div>
     </section>
 
-    @if (customerMode && purchaseEligibility() === 'event-team') {
+    @if (customerMode && completed()) {
+      <section class="shell body purchase" aria-label="Ticket sales closed">
+        <div class="owned" role="status">
+          <p>This event has already taken place, so tickets are no longer on sale.</p>
+          @if (ownership(); as owned) {
+            @if (owned.tickets > 0) {
+              <a class="btn btn-primary" routerLink="/my-events">View my tickets</a>
+            }
+          }
+        </div>
+      </section>
+    } @else if (customerMode && purchaseEligibility() === 'event-team') {
       <section class="shell body purchase" aria-label="Ticket purchase unavailable">
         <div class="owned" role="status">
           <p>

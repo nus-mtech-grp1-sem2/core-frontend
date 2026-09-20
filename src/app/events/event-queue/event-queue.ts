@@ -28,6 +28,13 @@ type QueueState =
   | 'unavailable'
   | 'error';
 
+/** Server refusals that mean the waiting room cannot be used, keyed by the API's error code. */
+const UNAVAILABLE_MESSAGES: Readonly<Record<string, string>> = {
+  queue_not_configured: 'The organiser has not configured a waiting room for this event.',
+  event_not_on_sale: 'Tickets for this event are not currently on sale.',
+  event_completed: 'This event has already taken place, so tickets are no longer on sale.',
+};
+
 interface EventNameResponse {
   readonly event: { readonly title: string };
 }
@@ -292,12 +299,9 @@ export class EventQueue {
       this.state.set('sold-out');
       return;
     }
-    if (code === 'queue_not_configured' || code === 'event_not_on_sale') {
-      this.message.set(
-        code === 'queue_not_configured'
-          ? 'The organiser has not configured a waiting room for this event.'
-          : 'Tickets for this event are not currently on sale.',
-      );
+    const unavailable = code ? UNAVAILABLE_MESSAGES[code] : undefined;
+    if (unavailable) {
+      this.message.set(unavailable);
       this.state.set('unavailable');
       return;
     }

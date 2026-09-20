@@ -20,14 +20,17 @@
             (change)="includeCancelled.set($any($event.target).checked)"
           />
           Include cancelled</label
-        ><label class="include-completed"
-          ><input
-            type="checkbox"
-            [checked]="includeCompleted()"
-            (change)="includeCompleted.set($any($event.target).checked)"
-          />
-          Include completed events</label
         >
+      }
+      <label class="include-completed"
+        ><input
+          type="checkbox"
+          [checked]="includeCompleted()"
+          (change)="includeCompleted.set($any($event.target).checked)"
+        />
+        Include completed events</label
+      >
+      @if (isAdmin()) {
         <button
           type="button"
           class="btn btn-primary btn-sm"
@@ -223,6 +226,10 @@
                     }
                   </div>
                 }
+              } @else if (isEventCompleted(event)) {
+                <div class="customer-action">
+                  <span class="pill status completed">Completed</span>
+                </div>
               } @else if (event.status === 'PUBLISHED') {
                 <div class="customer-action">
                   @if (event.tier === 'TIER2_SEATED') {

@@ -166,20 +166,102 @@ describe('Events', () => {
     httpMock.verify();
   });
 
-  it('does not hide past events from customers', async () => {
-    const { fixture, httpMock, host } = await renderFor(null);
+  describe('completed events for a customer', () => {
     const past = { ...MOCK_EVENTS[0], starts_at: '2020-01-01 20:00:00' };
+    const upcomingSeated = MOCK_EVENTS[1];
+    const pastSeated = {
+      ...MOCK_EVENTS[1],
+      event_id: 3,
+      title: 'Old Cup Final',
+      starts_at: '2020-01-01 17:00:00',
+    };
 
-    httpMock.expectOne('/api/event/events').flush({ events: [past] });
-    await new Promise<void>((resolve) => setTimeout(resolve));
-    fixture.detectChanges();
-    httpMock.expectOne('/api/event/events/1').flush({ event: past });
-    await new Promise<void>((resolve) => setTimeout(resolve));
-    fixture.detectChanges();
+    async function renderCustomerList(query = '') {
+      const rendered = await renderFor(null, query);
+      const { fixture, httpMock } = rendered;
+      httpMock.expectOne('/api/event/events').flush({ events: [past, upcomingSeated, pastSeated] });
+      await new Promise<void>((resolve) => setTimeout(resolve));
+      fixture.detectChanges();
+      for (const event of [past, upcomingSeated, pastSeated]) {
+        httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve));
+      fixture.detectChanges();
+      const cards = () => Array.from(rendered.host.querySelectorAll('.event-card'));
+      const card = (title: string) =>
+        cards().find((element) => element.textContent?.includes(title));
+      const checkbox = rendered.host.querySelector<HTMLInputElement>('.include-completed input')!;
+      return { ...rendered, cards, card, checkbox };
+    }
 
-    expect(host.querySelector('.include-completed')).toBeNull();
-    expect(host.querySelectorAll('.event-card').length).toBe(1);
-    httpMock.verify();
+    it('offers an "Include completed events" checkbox, unchecked by default', async () => {
+      const { checkbox, host } = await renderCustomerList();
+
+      expect(checkbox).not.toBeNull();
+      expect(checkbox.checked).toBe(false);
+      expect(host.querySelector('.include-completed')?.textContent).toContain(
+        'Include completed events',
+      );
+      // Organiser-only controls stay organiser-only.
+      expect(host.querySelector('.include-cancelled')).toBeNull();
+    });
+
+    it('hides completed events until the checkbox is ticked, and counts only what is shown', async () => {
+      const { cards, card, host, httpMock } = await renderCustomerList();
+
+      expect(cards()).toHaveLength(1);
+      expect(card('ASEAN Cup Final')).toBeTruthy();
+      expect(card('Neon Skyline Tour')).toBeUndefined();
+      expect(card('Old Cup Final')).toBeUndefined();
+      expect(host.querySelector('.count')?.textContent?.trim()).toBe('1 events');
+      httpMock.verify();
+    });
+
+    it('shows completed events, marked Completed and with no way to buy, once ticked', async () => {
+      const { checkbox, cards, card, fixture, host, httpMock } = await renderCustomerList();
+
+      checkbox.click();
+      fixture.detectChanges();
+
+      expect(cards()).toHaveLength(3);
+      expect(host.querySelector('.count')?.textContent?.trim()).toBe('3 events');
+      for (const title of ['Neon Skyline Tour', 'Old Cup Final']) {
+        expect(card(title)?.querySelector('.status')?.textContent?.trim(), title).toBe('Completed');
+        expect(card(title)?.querySelector('.customer-action a'), title).toBeNull();
+      }
+      // An upcoming event is still bought from its card.
+      expect(card('ASEAN Cup Final')?.querySelector('.customer-action a')?.textContent).toContain(
+        'Join waiting room',
+      );
+      httpMock.verify();
+    });
+
+    it('hides them again when the checkbox is cleared', async () => {
+      const { checkbox, cards, fixture, httpMock } = await renderCustomerList();
+
+      checkbox.click();
+      fixture.detectChanges();
+      checkbox.click();
+      fixture.detectChanges();
+
+      expect(cards()).toHaveLength(1);
+      httpMock.verify();
+    });
+
+    it('applies the search to completed events too, once they are included', async () => {
+      const { checkbox, cards, card, fixture, host, httpMock } =
+        await renderCustomerList('old cup');
+
+      expect(cards()).toHaveLength(0);
+      expect(host.textContent).toContain('No events match your search.');
+
+      checkbox.click();
+      fixture.detectChanges();
+
+      expect(cards()).toHaveLength(1);
+      expect(card('Old Cup Final')).toBeTruthy();
+      httpMock.verify();
+    });
   });
 
   it('excludes events where the signed-in customer is an organiser or helper', async () => {

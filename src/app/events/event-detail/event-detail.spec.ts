@@ -51,7 +51,7 @@ describe('EventDetail event-team purchase restriction', () => {
             title: 'Test event',
             description: 'Description',
             venue: 'Test Hall',
-            starts_at: '2026-09-20 20:00:00',
+            starts_at: '2099-09-20 20:00:00',
             total_seats: 10,
             available_buyers: 2,
             tier: 'TIER1_GA',
@@ -311,5 +311,135 @@ describe('EventDetail completed events for an organiser', () => {
     for (const label of ['Save changes', 'Cancel event', 'Invite', 'Remove']) {
       expect(button(label)?.disabled, label).toBe(false);
     }
+  });
+});
+
+describe('EventDetail completed events for a customer', () => {
+  async function renderCustomer(options: {
+    startsAt: string;
+    tier?: 'TIER1_GA' | 'TIER2_SEATED';
+    ownedTickets?: number;
+  }) {
+    const requested: string[] = [];
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      requested.push(path);
+      if (path === '/events/172') {
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner-sub',
+            title: 'Test event',
+            description: 'Description',
+            venue: 'Test Hall',
+            starts_at: options.startsAt,
+            total_seats: 10,
+            available_buyers: 2,
+            tier: options.tier ?? 'TIER1_GA',
+            status: 'PUBLISHED',
+            price_cents: 2_000,
+          },
+        });
+      }
+      if (path === '/helper/shifts') return of({ events: [] });
+      if (path === '/customers/me/orders') return of({ orders: [] });
+      if (path === '/customers/me/tickets') {
+        return of({
+          tickets: Array.from({ length: options.ownedTickets ?? 0 }, () => ({
+            event_id: 172,
+            order_id: 9,
+            status: 'ISSUED',
+          })),
+        });
+      }
+      if (path === '/events/172/seats') return of({ seats: [] });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+    const post = vi.fn(() => of({}));
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
+        {
+          provide: AuthService,
+          useValue: {
+            user: signal({
+              sub: 'customer-sub',
+              email: 'buyer@example.com',
+              name: 'Buyer',
+              groups: [],
+            }),
+            isAuthenticated: () => true,
+          },
+        },
+        { provide: ApiService, useValue: { get, put: vi.fn(), post, delete: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const hasControl = (label: string) =>
+      Array.from(host.querySelectorAll('button, a')).some(
+        (element) => element.textContent?.trim() === label,
+      );
+    return { host, post, requested, hasControl };
+  }
+
+  const PAST = '2020-01-01 20:00:00';
+
+  it('offers no way to buy tickets, and says the event has taken place', async () => {
+    const { host, post, hasControl } = await renderCustomer({ startsAt: PAST });
+
+    expect(host.textContent).toContain('This event has already taken place');
+    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('Completed');
+    expect(host.querySelector('.purchase[aria-label="Buy tickets"]')).toBeNull();
+    for (const label of ['Buy tickets', 'Join waiting room', 'Buy more tickets']) {
+      expect(hasControl(label), label).toBe(false);
+    }
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('does not offer the waiting room, or load its seat map or queue, for a completed reserved-seating event', async () => {
+    const { requested, hasControl } = await renderCustomer({
+      startsAt: PAST,
+      tier: 'TIER2_SEATED',
+    });
+
+    expect(hasControl('Join waiting room')).toBe(false);
+    expect(requested).not.toContain('/events/172/seats');
+    expect(requested.some((path) => path.includes('/queue'))).toBe(false);
+  });
+
+  it('points a customer who holds tickets to them', async () => {
+    const { host, hasControl } = await renderCustomer({ startsAt: PAST, ownedTickets: 2 });
+
+    expect(hasControl('View my tickets')).toBe(true);
+    expect(host.querySelector('a[href="/my-events"]')).not.toBeNull();
+  });
+
+  it('shows no tickets link to a customer who holds none', async () => {
+    const { hasControl } = await renderCustomer({ startsAt: PAST });
+
+    expect(hasControl('View my tickets')).toBe(false);
+  });
+
+  it('still lets customers buy while the event is upcoming', async () => {
+    const { host, hasControl } = await renderCustomer({ startsAt: '2099-01-01 20:00:00' });
+
+    expect(hasControl('Buy tickets')).toBe(true);
+    expect(host.textContent).not.toContain('This event has already taken place');
+    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('On sale');
+  });
+
+  it('explains the server refusing an order for a completed event', () => {
+    const error = new HttpErrorResponse({ status: 409, error: { error: 'event_completed' } });
+
+    expect(purchaseErrorMessage(error)).toContain('already taken place');
   });
 });
