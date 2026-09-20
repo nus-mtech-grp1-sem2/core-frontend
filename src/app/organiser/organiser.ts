@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
 import { EventListing } from '../core/catalog';
+import { formatEventDate, formatEventTime, isCompleted } from '../core/event-time';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
@@ -24,7 +25,19 @@ interface ManagedEventResponse {
   }[];
 }
 
-type OrganiserEvent = EventListing;
+/** An event that has already started is 'Completed', whatever its remaining stock. */
+type OrganiserEvent = Omit<EventListing, 'status'> & {
+  readonly status: EventListing['status'] | 'Completed';
+};
+
+function saleStatus(
+  event: ManagedEventResponse['events'][number],
+  now: number,
+): OrganiserEvent['status'] {
+  if (isCompleted(event.starts_at, now)) return 'Completed';
+  if (event.status === 'CANCELLED' || event.remaining_qty <= 0) return 'Sold out';
+  return event.remaining_qty / event.total_seats < 0.15 ? 'Few left' : 'On sale';
+}
 
 /** Organiser workspace: every event, its sale status, and a link to edit it. */
 @Component({
@@ -63,6 +76,10 @@ type OrganiserEvent = EventListing;
                 <span class="stat-label">On sale now</span>
               </li>
               <li>
+                <span class="stat-value">{{ completed() }}</span>
+                <span class="stat-label">Completed events</span>
+              </li>
+              <li>
                 <span class="stat-value">{{
                   lowestPrice() | currency: 'SGD' : 'S$' : '1.0-0'
                 }}</span>
@@ -96,17 +113,32 @@ type OrganiserEvent = EventListing;
                           [class.on-sale]="event.status === 'On sale'"
                           [class.few-left]="event.status === 'Few left'"
                           [class.sold-out]="event.status === 'Sold out'"
+                          [class.completed]="event.status === 'Completed'"
                           >{{ event.status }}</span
                         >
                       </td>
                       <td class="actions">
-                        <a
-                          class="btn btn-primary btn-sm"
-                          [routerLink]="['/organiser/events', event.id]"
-                        >
-                          Update
-                          <span class="visually-hidden"> {{ event.title }}</span>
-                        </a>
+                        @if (event.status === 'Completed') {
+                          <button
+                            type="button"
+                            class="btn btn-primary btn-sm"
+                            disabled
+                            title="Completed events can't be updated"
+                          >
+                            Update
+                            <span class="visually-hidden">
+                              {{ event.title }} (completed event, can't be updated)</span
+                            >
+                          </button>
+                        } @else {
+                          <a
+                            class="btn btn-primary btn-sm"
+                            [routerLink]="['/organiser/events', event.id]"
+                          >
+                            Update
+                            <span class="visually-hidden"> {{ event.title }}</span>
+                          </a>
+                        }
                       </td>
                     </tr>
                   }
@@ -132,7 +164,7 @@ type OrganiserEvent = EventListing;
       margin: 0 0 1.5rem;
       padding: 0;
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 1rem;
     }
 
@@ -200,6 +232,12 @@ type OrganiserEvent = EventListing;
       color: var(--text-muted);
     }
 
+    @media (max-width: 960px) {
+      .stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
     @media (max-width: 720px) {
       .stats {
         grid-template-columns: 1fr;
@@ -215,7 +253,13 @@ export class Organiser {
   protected readonly events = signal<readonly OrganiserEvent[]>([]);
 
   protected readonly onSale = computed(
-    () => this.events().filter((event) => event.status !== 'Sold out').length,
+    () =>
+      this.events().filter((event) => event.status === 'On sale' || event.status === 'Few left')
+        .length,
+  );
+
+  protected readonly completed = computed(
+    () => this.events().filter((event) => event.status === 'Completed').length,
   );
 
   protected readonly lowestPrice = computed(() => {
@@ -231,6 +275,7 @@ export class Organiser {
     this.status.set('loading');
     this.api.get<ManagedEventResponse>('event', '/events/manage').subscribe({
       next: (result) => {
+        const now = Date.now();
         const events = result.events.map((event): OrganiserEvent => ({
           id: event.event_id,
           title: event.title,
@@ -238,25 +283,13 @@ export class Organiser {
           category: event.tier === 'TIER2_SEATED' ? 'Theatre' : 'Concerts',
           venueId: event.event_id,
           venue: event.venue,
-          date: new Date(event.starts_at).toLocaleDateString('en-SG', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-          }),
-          time: new Date(event.starts_at).toLocaleTimeString('en-SG', {
-            hour: 'numeric',
-            minute: '2-digit',
-          }),
+          date: formatEventDate(event.starts_at),
+          time: formatEventTime(event.starts_at),
           featured: false,
           priceFrom: (event.price_cents ?? 0) / 100,
           image: 'images/hero-concert.jpg',
           alt: `${event.title} artwork`,
-          status:
-            event.status === 'CANCELLED' || event.remaining_qty <= 0
-              ? 'Sold out'
-              : event.remaining_qty / event.total_seats < 0.15
-                ? 'Few left'
-                : 'On sale',
+          status: saleStatus(event, now),
         }));
         this.events.set(events);
         this.status.set('ready');

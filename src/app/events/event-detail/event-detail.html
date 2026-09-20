@@ -26,9 +26,9 @@
           <div class="event-facts">
             <span
               class="pill status"
-              [class.on-sale]="event.status === 'PUBLISHED'"
-              [class.cancelled]="event.status === 'CANCELLED'"
-              >{{ statusLabel(event.status) }}</span
+              [class.on-sale]="event.status === 'PUBLISHED' && !readOnly()"
+              [class.cancelled]="event.status === 'CANCELLED' && !readOnly()"
+              >{{ readOnly() ? 'Completed' : statusLabel(event.status) }}</span
             >
             <span>{{ event.total_seats }} seats</span>
             <span>{{ priceLabel(event.price_cents) }} per ticket</span>
@@ -193,6 +193,12 @@
         @if (error()) {
           <p class="error" role="alert">{{ error() }}</p>
         }
+        @if (readOnly()) {
+          <p class="owner-note" role="status">
+            This event has completed. You can view it, but its details, team and waiting room can no
+            longer be changed.
+          </p>
+        }
         <form class="edit-form" [formGroup]="form" (ngSubmit)="save()">
           <h2>Edit event</h2>
           <div class="field">
@@ -240,14 +246,14 @@
             </select>
           </div>
           <div class="form-actions">
-            <button type="submit" class="btn btn-primary" [disabled]="saving()">
+            <button type="submit" class="btn btn-primary" [disabled]="saving() || readOnly()">
               {{ saving() ? 'Saving...' : 'Save changes' }}
             </button>
             @if (event.status === 'DRAFT') {
               <button
                 type="button"
                 class="btn btn-ghost delete status-action"
-                [disabled]="deleting()"
+                [disabled]="deleting() || readOnly()"
                 (click)="deleteEvent()"
               >
                 {{ deleting() ? 'Deleting...' : 'Delete draft' }}
@@ -256,7 +262,7 @@
               <button
                 type="button"
                 class="btn btn-ghost delete status-action"
-                [disabled]="updatingStatus()"
+                [disabled]="updatingStatus() || readOnly()"
                 (click)="changeStatus('CANCELLED')"
               >
                 {{ updatingStatus() ? 'Cancelling...' : 'Cancel event' }}
@@ -265,7 +271,7 @@
               <button
                 type="button"
                 class="btn btn-primary status-action"
-                [disabled]="updatingStatus()"
+                [disabled]="updatingStatus() || readOnly()"
                 (click)="changeStatus('PUBLISHED')"
               >
                 {{ updatingStatus() ? 'Re-publishing...' : 'Re-publish event' }}
@@ -293,7 +299,11 @@
                 <option value="ORGANISER">Organizer</option>
               </select>
             </div>
-            <button type="submit" class="btn btn-primary btn-sm" [disabled]="inviting()">
+            <button
+              type="submit"
+              class="btn btn-primary btn-sm"
+              [disabled]="inviting() || readOnly()"
+            >
               {{ inviting() ? 'Inviting...' : 'Invite' }}
             </button>
           </form>
@@ -311,6 +321,7 @@
                   <button
                     type="button"
                     class="btn btn-ghost btn-sm delete"
+                    [disabled]="readOnly()"
                     (click)="remove(member)"
                   >
                     Remove
@@ -354,7 +365,7 @@
               <button
                 type="button"
                 class="btn btn-primary btn-sm"
-                [disabled]="queueActionBusy() || queueManagement()?.status === 'OPEN'"
+                [disabled]="queueActionBusy() || readOnly() || queueManagement()?.status === 'OPEN'"
                 (click)="openQueue()"
               >
                 {{
@@ -366,6 +377,7 @@
                 class="btn btn-ghost btn-sm"
                 [disabled]="
                   queueActionBusy() ||
+                  readOnly() ||
                   queueManagement()?.status !== 'OPEN' ||
                   !queueManagement()?.waitingCount
                 "

@@ -17,6 +17,7 @@ import { firstValueFrom, timer } from 'rxjs';
 
 import { ApiService } from '../../core/api';
 import { AuthService } from '../../core/auth';
+import { isCompleted } from '../../core/event-time';
 import { QueueService, QueueStatus } from '../../core/queue';
 import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
 
@@ -192,6 +193,11 @@ export class EventDetail {
   protected readonly backLink = this.organiserMode ? '/organiser/events' : '/events';
   protected readonly buyerCapacity = buyerCapacity;
   protected readonly isOwner = () => this.event()?.organiser_sub === this.auth.user()?.sub;
+  /** A completed event stays viewable to its organisers, but nothing on it can be changed. */
+  protected readonly readOnly = computed(() => {
+    const event = this.event();
+    return this.organiserMode && !!event && isCompleted(event.starts_at);
+  });
   protected readonly form = this.fb.group({
     title: this.fb.control('', Validators.required),
     description: this.fb.control(''),
@@ -226,7 +232,7 @@ export class EventDetail {
 
   protected async save(): Promise<void> {
     const event = this.event();
-    if (!event || this.form.invalid || this.saving()) {
+    if (!event || this.readOnly() || this.form.invalid || this.saving()) {
       this.form.markAllAsTouched();
       return;
     }
@@ -246,7 +252,7 @@ export class EventDetail {
 
   protected async invite(): Promise<void> {
     const event = this.event();
-    if (!event || this.inviteForm.invalid || this.inviting()) {
+    if (!event || this.readOnly() || this.inviteForm.invalid || this.inviting()) {
       this.inviteForm.markAllAsTouched();
       return;
     }
@@ -273,6 +279,7 @@ export class EventDetail {
     const event = this.event();
     if (
       !event ||
+      this.readOnly() ||
       event.status !== 'DRAFT' ||
       this.deleting() ||
       !window.confirm('Delete this draft event? This cannot be undone.')
@@ -292,7 +299,7 @@ export class EventDetail {
 
   protected async changeStatus(status: 'PUBLISHED' | 'CANCELLED'): Promise<void> {
     const event = this.event();
-    if (!event || this.updatingStatus()) return;
+    if (!event || this.readOnly() || this.updatingStatus()) return;
     const enabling = status === 'PUBLISHED';
     const action = enabling ? 'enable this event and put it back on sale' : 'cancel this event';
     if (!window.confirm(`Are you sure you want to ${action}?`)) return;
@@ -313,7 +320,12 @@ export class EventDetail {
 
   protected async remove(member: TeamMember): Promise<void> {
     const event = this.event();
-    if (!event || !window.confirm(`Remove ${member.user_email} from this event?`)) return;
+    if (
+      !event ||
+      this.readOnly() ||
+      !window.confirm(`Remove ${member.user_email} from this event?`)
+    )
+      return;
     this.error.set('');
     try {
       await firstValueFrom(
@@ -330,7 +342,7 @@ export class EventDetail {
 
   protected async openQueue(): Promise<void> {
     const event = this.event();
-    if (!event || this.queueActionBusy()) return;
+    if (!event || this.readOnly() || this.queueActionBusy()) return;
     this.queueActionBusy.set(true);
     this.queueActionMessage.set('');
     this.queueActionError.set('');
@@ -354,7 +366,7 @@ export class EventDetail {
 
   protected async admitNext(): Promise<void> {
     const event = this.event();
-    if (!event || this.queueActionBusy()) return;
+    if (!event || this.readOnly() || this.queueActionBusy()) return;
     this.queueActionBusy.set(true);
     this.queueActionMessage.set('');
     this.queueActionError.set('');
@@ -510,6 +522,13 @@ export class EventDetail {
         price: (result.event.price_cents ?? 0) / 100,
         tier: result.event.tier,
       });
+      if (this.readOnly()) {
+        this.form.disable();
+        this.inviteForm.disable();
+      } else {
+        this.form.enable();
+        this.inviteForm.enable();
+      }
       if (this.organiserMode) await this.loadMembers(eventId);
       if (
         result.event.tier === 'TIER2_SEATED' &&

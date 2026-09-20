@@ -18,7 +18,7 @@ const MOCK_EVENTS = [
     title: 'Neon Skyline Tour',
     description: null,
     venue: 'Marina Bay Arena',
-    starts_at: '2026-09-12 20:00:00',
+    starts_at: '2099-09-12 20:00:00',
     total_seats: 500,
     available_buyers: null,
     tier: 'TIER1_GA',
@@ -30,7 +30,7 @@ const MOCK_EVENTS = [
     title: 'ASEAN Cup Final',
     description: null,
     venue: 'Kallang Grand Stadium',
-    starts_at: '2026-09-28 17:00:00',
+    starts_at: '2099-09-28 17:00:00',
     total_seats: 2000,
     available_buyers: 25,
     tier: 'TIER2_SEATED',
@@ -129,6 +129,56 @@ describe('Events', () => {
     );
     expect(create?.disabled).toBe(true);
     expect(host.textContent).toContain('Available buyers cannot exceed total seats.');
+    httpMock.verify();
+  });
+
+  it('hides completed events from an organiser until asked, and offers no actions on them', async () => {
+    const { fixture, httpMock, host } = await renderFor(user(['organiser']));
+    const completed = {
+      ...MOCK_EVENTS[0],
+      event_id: 3,
+      title: 'Old Farewell Show',
+      starts_at: '2020-01-01 20:00:00',
+    };
+
+    httpMock.expectOne('/api/event/events/manage').flush({ events: [...MOCK_EVENTS, completed] });
+    httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const include = host.querySelector<HTMLInputElement>('.include-completed input')!;
+    expect(include.checked).toBe(false);
+    expect(host.querySelectorAll('.event-card').length).toBe(2);
+    expect(host.textContent).not.toContain('Old Farewell Show');
+
+    include.click();
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.event-card').length).toBe(3);
+    const card = Array.from(host.querySelectorAll('.event-card')).find((element) =>
+      element.textContent?.includes('Old Farewell Show'),
+    )!;
+    expect(card.textContent).toContain('Completed');
+    expect(card.querySelector('.actions')).toBeNull();
+    expect(card.querySelector('a.thumb')?.getAttribute('href')).toBe('/organiser/events/3');
+    const upcoming = host.querySelector('.event-card .actions');
+    expect(upcoming?.textContent).toContain('Cancel');
+    httpMock.verify();
+  });
+
+  it('does not hide past events from customers', async () => {
+    const { fixture, httpMock, host } = await renderFor(null);
+    const past = { ...MOCK_EVENTS[0], starts_at: '2020-01-01 20:00:00' };
+
+    httpMock.expectOne('/api/event/events').flush({ events: [past] });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    httpMock.expectOne('/api/event/events/1').flush({ event: past });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(host.querySelector('.include-completed')).toBeNull();
+    expect(host.querySelectorAll('.event-card').length).toBe(1);
     httpMock.verify();
   });
 

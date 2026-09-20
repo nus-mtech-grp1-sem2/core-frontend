@@ -116,7 +116,7 @@ describe('EventDetail waiting-room controls', () => {
             title: 'Test event',
             description: 'Description',
             venue: 'Test Hall',
-            starts_at: '2026-09-20 20:00:00',
+            starts_at: '2099-09-20 20:00:00',
             total_seats: 10,
             available_buyers: 2,
             tier: 'TIER2_SEATED',
@@ -203,5 +203,113 @@ describe('EventDetail waiting-room controls', () => {
 
     expect(post).toHaveBeenCalledWith('queue', '/events/172/queue/admit-next', {});
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('1 customer admitted.');
+  });
+});
+
+describe('EventDetail completed events for an organiser', () => {
+  async function renderOrganiser(startsAt: string) {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172') {
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner-sub',
+            title: 'Test event',
+            description: 'Description',
+            venue: 'Test Hall',
+            starts_at: startsAt,
+            total_seats: 10,
+            available_buyers: 2,
+            tier: 'TIER1_GA',
+            status: 'PUBLISHED',
+            price_cents: 2_000,
+          },
+        });
+      }
+      if (path === '/events/172/team-members') {
+        return of({
+          members: [
+            {
+              membership_id: 1,
+              user_sub: 'helper-sub',
+              user_email: 'helper@example.com',
+              role: 'HELPER',
+              invite_status: 'ACCEPTED',
+            },
+          ],
+        });
+      }
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+    const put = vi.fn(() => of({}));
+    const post = vi.fn(() => of({}));
+    const remove = vi.fn(() => of({}));
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'organiser' } } } },
+        {
+          provide: AuthService,
+          useValue: {
+            user: signal({
+              sub: 'owner-sub',
+              email: 'owner@example.com',
+              name: 'Owner',
+              groups: [],
+            }),
+            isAuthenticated: () => true,
+          },
+        },
+        { provide: ApiService, useValue: { get, put, post, delete: remove } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const button = (label: string) =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+        (candidate) => candidate.textContent?.trim() === label,
+      );
+    return { host, button, put, post, remove };
+  }
+
+  it('can be opened but not edited, and its team cannot be changed', async () => {
+    const { host, button, put, post, remove } = await renderOrganiser('2020-01-01 20:00:00');
+
+    expect(host.textContent).toContain('This event has completed');
+    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('Completed');
+    for (const field of ['title', 'description', 'venue', 'starts-at', 'seats', 'price', 'tier']) {
+      expect(host.querySelector<HTMLInputElement>(`#${field}`)?.disabled).toBe(true);
+    }
+    expect(host.querySelector<HTMLInputElement>('#member-email')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLSelectElement>('#member-role')?.disabled).toBe(true);
+    for (const label of ['Save changes', 'Cancel event', 'Invite', 'Remove']) {
+      expect(button(label)?.disabled, label).toBe(true);
+    }
+
+    for (const label of ['Save changes', 'Cancel event', 'Invite', 'Remove'])
+      button(label)?.click();
+    expect(put).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('stays fully editable while the event is still upcoming', async () => {
+    const { host, button } = await renderOrganiser('2099-01-01 20:00:00');
+
+    expect(host.textContent).not.toContain('This event has completed');
+    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('On sale');
+    expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(false);
+    expect(host.querySelector<HTMLInputElement>('#member-email')?.disabled).toBe(false);
+    for (const label of ['Save changes', 'Cancel event', 'Invite', 'Remove']) {
+      expect(button(label)?.disabled, label).toBe(false);
+    }
   });
 });

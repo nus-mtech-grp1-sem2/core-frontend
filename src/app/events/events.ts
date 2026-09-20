@@ -15,6 +15,7 @@ import { firstValueFrom, map } from 'rxjs';
 
 import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
+import { isCompleted } from '../core/event-time';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
@@ -105,9 +106,11 @@ export class Events {
   protected readonly allEvents = signal<readonly ManagedEvent[]>([]);
   protected readonly visibleEvents = computed(() => {
     const query = this.searchTerm();
-    const events = this.includeCancelled()
-      ? this.allEvents()
-      : this.allEvents().filter((event) => event.status !== 'CANCELLED');
+    let events = this.allEvents();
+    if (!this.includeCancelled()) events = events.filter((event) => event.status !== 'CANCELLED');
+    if (this.isAdmin() && !this.includeCompleted()) {
+      events = events.filter((event) => !isCompleted(event.starts_at));
+    }
     if (!query) return events;
     return events.filter((event) =>
       [event.title, event.venue, event.description].some((value) =>
@@ -123,6 +126,7 @@ export class Events {
   protected readonly editingEventId = signal<number | null>(null);
   protected readonly isAdmin = computed(() => this.organiserMode);
   protected readonly includeCancelled = signal(false);
+  protected readonly includeCompleted = signal(false);
   protected readonly canViewEventDetails = this.auth.isAuthenticated;
   protected readonly showEventForm = signal(false);
   protected readonly teamEventId = signal<number | null>(null);
@@ -259,7 +263,13 @@ export class Events {
     return this.organiserMode ? ['/organiser/events', eventId] : ['/events', eventId];
   }
 
+  /** A completed event can still be opened, but nothing on it can be changed. */
+  protected isEventCompleted(event: ManagedEvent): boolean {
+    return isCompleted(event.starts_at);
+  }
+
   protected statusFor(event: ManagedEvent): string {
+    if (this.isEventCompleted(event)) return 'Completed';
     return event.status === 'PUBLISHED'
       ? 'On sale'
       : event.status === 'DRAFT'
