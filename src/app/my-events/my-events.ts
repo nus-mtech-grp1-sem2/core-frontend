@@ -1,4 +1,5 @@
 import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -9,11 +10,42 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { firstValueFrom, timer } from 'rxjs';
+import { exhaustMap, firstValueFrom, from, take, takeWhile, timer } from 'rxjs';
 import { toDataURL } from 'qrcode';
 
 import { ApiService } from '../core/api';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
+
+/** How often, and how many times, to ask whether the confirmation emails have gone out. */
+const CONFIRMATION_POLL_MS = 2_000;
+const CONFIRMATION_POLL_ATTEMPTS = 20;
+/** How long the "confirmation email sent" note stays on screen. */
+const EMAIL_TOAST_MS = 3_000;
+
+type ConfirmationEmailStatus = 'SENT' | 'FAILED' | 'PENDING';
+
+interface ConfirmationEmailResponse {
+  readonly status: ConfirmationEmailStatus;
+}
+
+const toastSeenKey = (orderId: number) => `onestage.confirmationEmailToast.${orderId}`;
+
+/** The note is shown once per order, so reloading the page after a purchase does not repeat it. */
+function hasSeenEmailToast(orderId: number): boolean {
+  try {
+    return sessionStorage.getItem(toastSeenKey(orderId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markEmailToastSeen(orderId: number): void {
+  try {
+    sessionStorage.setItem(toastSeenKey(orderId), '1');
+  } catch {
+    // Storage is unavailable: the note may show again on a reload, which is harmless.
+  }
+}
 
 type TicketStatus = 'ISSUED' | 'CHECKED_IN' | 'VOID';
 
@@ -166,6 +198,12 @@ type LoadStatus = 'loading' | 'ready' | 'error';
           }
         }
       </section>
+
+      <div class="toast-region" role="status" aria-live="polite">
+        @if (emailToast()) {
+          <p class="toast">Confirmation email sent</p>
+        }
+      </div>
     </app-workspace-shell>
   `,
   styles: `
@@ -179,6 +217,27 @@ type LoadStatus = 'loading' | 'ready' | 'error';
       border-radius: var(--radius);
       background: var(--success-bg);
       color: var(--success-fg);
+    }
+    .toast-region {
+      position: fixed;
+      inset-inline: 0;
+      bottom: 1.5rem;
+      z-index: 50;
+      display: flex;
+      justify-content: center;
+      padding-inline: 1rem;
+      pointer-events: none;
+    }
+    .toast {
+      margin: 0;
+      padding: 0.625rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--success-bg);
+      color: var(--success-fg);
+      box-shadow: var(--shadow-sm);
+      font-size: 0.875rem;
+      font-weight: 600;
     }
     .ticket-list {
       list-style: none;
@@ -296,6 +355,9 @@ export class MyEvents {
       !this.tickets().some((ticket) => ticket.order_id === this.pendingOrderId),
   );
 
+  protected readonly emailToast = signal(false);
+  private toastTimer: ReturnType<typeof setTimeout> | undefined;
+
   constructor() {
     void this.load();
     timer(5_000, 5_000)
@@ -303,6 +365,52 @@ export class MyEvents {
       .subscribe(() => {
         if (this.waitingForTicket()) void this.load(true);
       });
+    if (this.pendingOrderId !== null) this.watchConfirmationEmail(this.pendingOrderId);
+    this.destroyRef.onDestroy(() => clearTimeout(this.toastTimer));
+  }
+
+  /**
+   * Right after a purchase the emails go out a moment later, from the backend.
+   * Ask until they have, then say so once; give up quietly if they do not.
+   */
+  private watchConfirmationEmail(orderId: number): void {
+    if (hasSeenEmailToast(orderId)) return;
+    timer(0, CONFIRMATION_POLL_MS)
+      .pipe(
+        take(CONFIRMATION_POLL_ATTEMPTS),
+        exhaustMap(() => from(this.confirmationEmailStatus(orderId))),
+        takeWhile((status) => status === 'PENDING', true),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((status) => {
+        if (status === 'SENT') this.showEmailToast(orderId);
+      });
+  }
+
+  private async confirmationEmailStatus(
+    orderId: number,
+  ): Promise<ConfirmationEmailStatus | 'UNAVAILABLE'> {
+    try {
+      const result = await firstValueFrom(
+        this.api.get<ConfirmationEmailResponse>(
+          'ticket',
+          `/customers/me/orders/${orderId}/confirmation`,
+        ),
+      );
+      return result.status;
+    } catch (error) {
+      // Not this customer's order (or not an order): there is nothing to wait for.
+      // Any other failure is treated as temporary and asked again.
+      const settled = error instanceof HttpErrorResponse && [404, 422].includes(error.status);
+      return settled ? 'UNAVAILABLE' : 'PENDING';
+    }
+  }
+
+  private showEmailToast(orderId: number): void {
+    markEmailToastSeen(orderId);
+    this.emailToast.set(true);
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => this.emailToast.set(false), EMAIL_TOAST_MS);
   }
 
   protected async load(silent = false): Promise<void> {
