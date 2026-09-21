@@ -5,6 +5,7 @@ import {
   Component,
   DestroyRef,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -14,6 +15,7 @@ import { exhaustMap, firstValueFrom, from, take, takeWhile, timer } from 'rxjs';
 import { toDataURL } from 'qrcode';
 
 import { ApiService } from '../core/api';
+import { clearPaymentProcessing, hasSubmittedPayment } from '../core/payment-processing';
 import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
@@ -73,6 +75,7 @@ interface PaidOrder {
   readonly total_amount_cents: number;
   readonly currency: string;
   readonly paid_at: string | null;
+  readonly created_at?: string;
   readonly reservation_expires_at?: string;
   readonly event_title: string;
   readonly venue: string;
@@ -165,6 +168,26 @@ type LoadStatus = 'loading' | 'ready' | 'error';
             @if (reservationError()) {
               <p class="status-message error" role="alert">{{ reservationError() }}</p>
             }
+            @if (processingOrders().length > 0) {
+              <section class="pending-list" aria-label="Orders processing payment">
+                @for (order of processingOrders(); track order.order_id) {
+                  <article class="ticket-card pending-card">
+                    <div class="ticket-placeholder" aria-hidden="true">â€¦</div>
+                    <div class="details">
+                      <h2>{{ order.event_title }}</h2>
+                      <p>
+                        Order #{{ order.order_id }} Â· {{ order.ticket_count }} ticket(s) Â·
+                        {{ money(order.total_amount_cents, order.currency) }}
+                      </p>
+                      <p>
+                        Payment is processing. This order can no longer be cancelled. Your ticket
+                        will appear here after payment completes.
+                      </p>
+                    </div>
+                  </article>
+                }
+              </section>
+            }
             @if (pendingOrders().length > 0) {
               <section class="pending-list" aria-label="Paid orders awaiting tickets">
                 @for (order of pendingOrders(); track order.order_id) {
@@ -246,7 +269,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                   </article>
                 </li>
               } @empty {
-                @if (pendingOrders().length === 0) {
+                @if (pendingOrders().length === 0 && processingOrders().length === 0) {
                   <li class="empty">
                     <h2>No tickets yet</h2>
                     <p>Tickets you buy will show up here with a scannable QR code.</p>
@@ -417,7 +440,16 @@ export class MyEvents {
     () => new Map(this.orders().map((order) => [Number(order.order_id), order.paid_at])),
   );
   protected readonly unpaidOrders = computed(() =>
-    this.orders().filter((order) => order.status === 'PENDING'),
+    this.orders().filter(
+      (order) =>
+        order.status === 'PENDING' && !hasSubmittedPayment(order.order_id, order.created_at),
+    ),
+  );
+  protected readonly processingOrders = computed(() =>
+    this.orders().filter(
+      (order) =>
+        order.status === 'PENDING' && hasSubmittedPayment(order.order_id, order.created_at),
+    ),
   );
   protected readonly pendingOrders = computed(() => {
     const issuedOrderIds = new Set(this.tickets().map((ticket) => ticket.order_id));
@@ -438,11 +470,14 @@ export class MyEvents {
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
+    effect(() => {
+      console.log('unpaidOrders().length:', this.unpaidOrders().length);
+    });
     void this.load();
     timer(5_000, 5_000)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
-        if (this.waitingForTicket()) void this.load(true);
+        if (this.waitingForTicket() || this.processingOrders().length > 0) void this.load(true);
       });
     timer(0, 1_000)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -521,6 +556,11 @@ export class MyEvents {
       const visibleOrders = orderResult.orders.filter(
         (order) => !teamEventIds.has(Number(order.event_id)),
       );
+      for (const order of visibleOrders) {
+        if (order.status !== 'PENDING') {
+          clearPaymentProcessing(order.order_id);
+        }
+      }
       const withQr = await Promise.all(
         visibleTickets.map(async (ticket) => ({
           ...ticket,
@@ -563,10 +603,22 @@ export class MyEvents {
 
   protected async cancelReservation(order: PaidOrder, expired = false): Promise<void> {
     if (this.isCancelling(order.order_id)) return;
+    if (hasSubmittedPayment(order.order_id, order.created_at)) {
+      this.reservationError.set(
+        'Payment has already been submitted, so this order can no longer be cancelled.',
+      );
+      return;
+    }
     this.cancellingOrderIds.update((ids) => new Set(ids).add(order.order_id));
     this.reservationError.set('');
     try {
-      await firstValueFrom(this.api.post<void>('order', `/orders/${order.order_id}/cancel`, {}));
+      await firstValueFrom(
+        this.api.post<void>(
+          'order',
+          `/orders/${order.order_id}/cancel`,
+          expired ? { reason: 'expired' } : {},
+        ),
+      );
       this.orders.update((orders) => orders.filter((item) => item.order_id !== order.order_id));
       this.queue.clear(order.event_id);
     } catch {

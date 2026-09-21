@@ -21,6 +21,7 @@ describe('Home', () => {
   beforeEach(async () => {
     authenticated.set(false);
     authUser.set(null);
+    sessionStorage.clear();
     await TestBed.configureTestingModule({
       imports: [Home],
       providers: [
@@ -104,6 +105,51 @@ describe('Home', () => {
     expect(text).toContain('Postman Tier 2 Test');
     expect(text).toContain('2 tickets');
     expect(text).toContain('Payment received · issuing ticket');
+    httpMock.verify();
+  });
+
+  it('shows an unpaid reservation on the default route and allows cancellation', async () => {
+    authenticated.set(true);
+    authUser.set({ sub: 'customer-1', email: 'customer@example.com', name: '', groups: [] });
+    const httpMock = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(Home);
+    fixture.detectChanges();
+    httpMock.expectOne('/api/event/events').flush({ events: [] });
+    httpMock.expectOne('/api/event/venues').flush({ venues: [] });
+    httpMock.expectOne('/api/ticket/customers/me/tickets').flush({ tickets: [] });
+    httpMock.expectOne('/api/order/customers/me/orders').flush({
+      orders: [
+        {
+          order_id: 42,
+          event_id: 172,
+          status: 'PENDING',
+          event_title: 'Reserved show',
+          venue: 'Test Theatre',
+          starts_at: '2027-02-11T04:00:00.000Z',
+          ticket_count: 2,
+          created_at: new Date(Date.now() - 1_000).toISOString(),
+          reservation_expires_at: new Date(Date.now() + 180_000).toISOString(),
+        },
+      ],
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const reservation = (fixture.nativeElement as HTMLElement).querySelector(
+      '.active-reservations',
+    );
+    expect(reservation?.textContent).toContain('Reserved show');
+    expect(reservation?.textContent).toContain('Continue to payment');
+    expect(reservation?.querySelector('a')?.getAttribute('href')).toBe('/checkout/42');
+
+    reservation?.querySelector<HTMLButtonElement>('button')?.click();
+    const cancel = httpMock.expectOne('/api/order/orders/42/cancel');
+    expect(cancel.request.body).toEqual({});
+    cancel.flush(null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('.active-reservations')).toBeNull();
     httpMock.verify();
   });
 });

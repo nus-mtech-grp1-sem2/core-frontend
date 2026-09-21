@@ -167,7 +167,9 @@ describe('Checkout', () => {
   it('releases an unpaid reservation when its countdown reaches zero', async () => {
     const { host, post, clear, settle } = await render({ expiresInMs: 2_000 });
     await settle(2_000);
-    expect(post).toHaveBeenCalledExactlyOnceWith('order', '/orders/42/cancel', {});
+    expect(post).toHaveBeenCalledExactlyOnceWith('order', '/orders/42/cancel', {
+      reason: 'expired',
+    });
     expect(clear).toHaveBeenCalledWith(172);
     expect(host.textContent).toContain('tickets have been released for other customers');
     expect(host.querySelector('form')).toBeNull();
@@ -212,6 +214,26 @@ describe('Checkout', () => {
     payment.next({});
     payment.complete();
     await settle();
+  });
+
+  it('does not mark payment as submitted until the backend accepts the request', async () => {
+    const payment = new Subject<unknown>();
+    const { fill, submit, settle } = await render({ payment });
+    fill();
+    submit();
+
+    expect(sessionStorage.getItem('onestage.acceptedPayment.42')).toBeNull();
+
+    payment.next({ paymentStatus: 'PROCESSING' });
+    await settle(0);
+    expect(sessionStorage.getItem('onestage.acceptedPayment.42')).not.toBeNull();
+  });
+
+  it('does not mark payment as submitted when checkout is opened and left', async () => {
+    const { fixture } = await render();
+    fixture.destroy();
+
+    expect(sessionStorage.getItem('onestage.acceptedPayment.42')).toBeNull();
   });
 
   it('checks status after an ambiguous network failure without submitting another payment', async () => {
@@ -268,7 +290,7 @@ describe('Checkout', () => {
   });
 
   it('resumes status checks after refresh without asking for card details again', async () => {
-    sessionStorage.setItem('onestage.mockPayment.42', 'processing');
+    sessionStorage.setItem('onestage.acceptedPayment.42', String(Date.now()));
     const { host, get, post, settle, navigate } = await render();
     expect(host.querySelector('form')).toBeNull();
     get.mockReturnValue(of({ order: paidOrder }));
