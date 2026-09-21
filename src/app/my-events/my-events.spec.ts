@@ -7,8 +7,164 @@ import { afterEach, beforeEach, vi } from 'vitest';
 import { ApiService } from '../core/api';
 import { MyEvents } from './my-events';
 
-// Rendering issued tickets builds a QR image; a stub keeps that out of these tests.
-vi.mock('qrcode', () => ({ toDataURL: vi.fn(async () => 'data:image/png;base64,AA==') }));
+vi.mock('qrcode', () => ({ toDataURL: vi.fn(async () => 'data:image/png;base64,test') }));
+
+describe('MyEvents purchase dates', () => {
+  async function render(
+    options: {
+      issued?: boolean;
+      paidAt?: string | null;
+      status?: string;
+      missingOrder?: boolean;
+    } = {},
+  ) {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/customers/me/tickets')
+        return of({
+          tickets: options.issued
+            ? [
+                {
+                  ticket_id: 1,
+                  order_id: 42,
+                  event_id: 172,
+                  event_title: 'Test concert',
+                  venue: 'Test Hall',
+                  starts_at: '2099-01-01T20:00:00',
+                  seat_label: 'A1',
+                  qr_token: 'dummy',
+                  status: 'ISSUED',
+                },
+              ]
+            : [],
+        });
+      if (path === '/customers/me/orders')
+        return of({
+          orders: options.missingOrder
+            ? []
+            : [
+                {
+                  order_id: 42,
+                  event_id: 172,
+                  status: options.status ?? 'PAID',
+                  event_title: 'Test concert',
+                  venue: 'Test Hall',
+                  starts_at: '2099-01-01T20:00:00',
+                  ticket_count: 1,
+                  total_amount_cents: 2000,
+                  currency: 'SGD',
+                  paid_at: options.paidAt === undefined ? '2026-09-21T12:30:00' : options.paidAt,
+                },
+                {
+                  order_id: 99,
+                  event_id: 172,
+                  status: 'PAID',
+                  event_title: 'Another booking',
+                  venue: 'Test Hall',
+                  starts_at: '2099-01-01T20:00:00',
+                  ticket_count: 1,
+                  total_amount_cents: 2000,
+                  currency: 'SGD',
+                  paid_at: '2026-08-01T12:30:00',
+                },
+              ],
+        });
+      if (path === '/helper/shifts') return of({ events: [] });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+    await TestBed.configureTestingModule({
+      imports: [MyEvents],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { queryParamMap: convertToParamMap({}) } },
+        },
+        { provide: ApiService, useValue: { get } },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(MyEvents);
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('shows the matching order payment date, not the event date or another booking date', async () => {
+    const host = await render({ issued: true });
+    const card = host.querySelector('.ticket-list .ticket-card');
+    expect(card?.textContent).toContain('Bought on');
+    expect(card?.textContent).toContain('Event Time: Thu 1 Jan 2099, 8:00 PM');
+    expect(card?.textContent).toContain('21 Sep 2026, 12:30 PM');
+    expect(card?.textContent).not.toContain('1 Aug 2026');
+  });
+
+  it('shows the date while a paid order is awaiting ticket issuance', async () => {
+    const host = await render();
+    const card = host.querySelector('[aria-label="Paid orders awaiting tickets"] .ticket-card');
+    expect(card?.textContent).toContain('Bought on');
+    expect(card?.textContent).toContain('Start time: Thu 1 Jan 2099, 8:00 PM');
+    expect(card?.textContent).toContain('21 Sep 2026, 12:30 PM');
+  });
+
+  it.each([{ paidAt: null }, { missingOrder: true }])(
+    'does not invent a purchase date when unavailable: %j',
+    async (options) => {
+      const host = await render({ issued: true, ...options });
+      expect(host.querySelector('.ticket-list .ticket-card')?.textContent).toContain('Unavailable');
+    },
+  );
+
+  it('does not label an unpaid reservation as bought', async () => {
+    const host = await render({ status: 'PENDING', paidAt: null });
+    expect(host.querySelector('[aria-label="Orders awaiting payment"]')?.textContent).not.toContain(
+      'Bought on',
+    );
+  });
+});
+
+describe('MyEvents unpaid orders', () => {
+  it('offers a link to resume mock payment', async () => {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/customers/me/tickets') return of({ tickets: [] });
+      if (path === '/helper/shifts') return of({ events: [] });
+      if (path === '/customers/me/orders')
+        return of({
+          orders: [
+            {
+              order_id: 42,
+              event_id: 172,
+              status: 'PENDING',
+              event_title: 'Test concert',
+              ticket_count: 2,
+              total_amount_cents: 4000,
+              currency: 'SGD',
+            },
+          ],
+        });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+    await TestBed.configureTestingModule({
+      imports: [MyEvents],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { queryParamMap: convertToParamMap({}) } },
+        },
+        { provide: ApiService, useValue: { get } },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(MyEvents);
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('a[href="/checkout/42"]')?.textContent).toContain(
+      'Continue to payment',
+    );
+    expect(host.textContent).toContain('Payment pending');
+  });
+});
 
 describe('MyEvents', () => {
   it('excludes tickets and orders for events where the account is on the event team', async () => {

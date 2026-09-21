@@ -126,6 +126,25 @@ type LoadStatus = 'loading' | 'ready' | 'error';
             </p>
           }
           @case ('ready') {
+            @if (unpaidOrders().length > 0) {
+              <section class="pending-list" aria-label="Orders awaiting payment">
+                @for (order of unpaidOrders(); track order.order_id) {
+                  <article class="ticket-card pending-card">
+                    <div class="details">
+                      <h2>{{ order.event_title }}</h2>
+                      <p>
+                        Order #{{ order.order_id }} · {{ order.ticket_count }} ticket(s) ·
+                        {{ money(order.total_amount_cents, order.currency) }}
+                      </p>
+                      <p>Payment pending. Reservations are held for a limited time.</p>
+                      <a class="btn btn-primary" [routerLink]="['/checkout', order.order_id]"
+                        >Continue to payment</a
+                      >
+                    </div>
+                  </article>
+                }
+              </section>
+            }
             @if (pendingOrders().length > 0) {
               <section class="pending-list" aria-label="Paid orders awaiting tickets">
                 @for (order of pendingOrders(); track order.order_id) {
@@ -135,7 +154,8 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                       <h2>
                         <a [routerLink]="['/events', order.event_id]">{{ order.event_title }}</a>
                       </h2>
-                      <p>{{ order.venue }} · {{ order.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+                      <p>Venue: {{ order.venue }}</p>
+                      <p>Start time: {{ order.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
                       <dl>
                         <div>
                           <dt>Tickets</dt>
@@ -144,6 +164,16 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                         <div>
                           <dt>Paid</dt>
                           <dd>{{ money(order.total_amount_cents, order.currency) }}</dd>
+                        </div>
+                        <div>
+                          <dt>Bought on</dt>
+                          <dd>
+                            {{
+                              order.paid_at
+                                ? (order.paid_at | date: 'd MMM y, h:mm a')
+                                : 'Unavailable'
+                            }}
+                          </dd>
                         </div>
                         <div>
                           <dt>Status</dt>
@@ -168,10 +198,19 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                       <h2>
                         <a [routerLink]="['/events', ticket.event_id]">{{ ticket.event_title }}</a>
                       </h2>
-                      <p>
-                        {{ ticket.venue }} · {{ ticket.starts_at | date: 'EEE d MMM y, h:mm a' }}
-                      </p>
+                      <p>Venue: {{ ticket.venue }}</p>
+                      <p>Event Time: {{ ticket.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
                       <dl>
+                        <div>
+                          <dt>Bought on</dt>
+                          <dd>
+                            @if (purchaseDates().get(+ticket.order_id); as boughtOn) {
+                              {{ boughtOn | date: 'd MMM y, h:mm a' }}
+                            } @else {
+                              Unavailable
+                            }
+                          </dd>
+                        </div>
                         @if (ticket.seat_label) {
                           <div>
                             <dt>Seat</dt>
@@ -291,7 +330,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
       text-decoration: underline;
     }
     .details > p {
-      margin: 0.25rem 0 0.875rem;
+      margin: 0.1rem 0;
       color: var(--text-muted);
     }
     dl {
@@ -341,6 +380,12 @@ export class MyEvents {
   protected readonly status = signal<LoadStatus>('loading');
   protected readonly tickets = signal<readonly TicketWithQr[]>([]);
   protected readonly orders = signal<readonly PaidOrder[]>([]);
+  protected readonly purchaseDates = computed(
+    () => new Map(this.orders().map((order) => [Number(order.order_id), order.paid_at])),
+  );
+  protected readonly unpaidOrders = computed(() =>
+    this.orders().filter((order) => order.status === 'PENDING'),
+  );
   protected readonly pendingOrders = computed(() => {
     const issuedOrderIds = new Set(this.tickets().map((ticket) => ticket.order_id));
     return this.orders().filter(

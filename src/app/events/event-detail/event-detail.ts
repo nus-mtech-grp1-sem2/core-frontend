@@ -480,15 +480,7 @@ export class EventDetail {
           customerName: this.auth.user()?.name ?? '',
         }),
       );
-      await firstValueFrom(
-        this.api.post('order', `/orders/${created.order.order_id}/payment`, {
-          paymentToken: 'simulated',
-        }),
-      );
-      this.queue.clear(event.event_id);
-      await this.router.navigate(['/my-events'], {
-        queryParams: { orderId: created.order.order_id },
-      });
+      await this.router.navigate(['/checkout', created.order.order_id]);
     } catch (error) {
       if (queueAdmissionRequired(error)) {
         this.queue.clear(event.event_id);

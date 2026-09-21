@@ -1,0 +1,221 @@
+<app-workspace-shell workspace="customer">
+  <section class="page-head">
+    <div class="shell">
+      <p class="eyebrow">Tickets / Payment</p>
+      <h1>Complete your booking</h1>
+      <p>One last step before your next live experience.</p>
+    </div>
+  </section>
+
+  <div class="shell checkout-body">
+    @if (loading()) {
+      <p role="status">Loading your order…</p>
+    } @else {
+      @if (error()) {
+        <div class="notice error" role="alert">{{ error() }}</div>
+      }
+      @if (order(); as order) {
+        @if (order.status === 'PAID') {
+          <section class="panel confirmation" aria-labelledby="paid-title">
+            <h2 id="paid-title">Payment complete</h2>
+            <p>This order has already been paid. No further payment is needed.</p>
+            <a
+              class="btn btn-primary"
+              routerLink="/my-events"
+              [queryParams]="{ orderId: order.order_id }"
+              >View my tickets</a
+            >
+          </section>
+        } @else {
+          <div class="checkout-grid">
+            <section class="panel payment-panel" aria-labelledby="payment-title">
+              <div class="panel-heading">
+                <h2 id="payment-title">Payment details</h2>
+                <span class="demo-badge">DEMO ONLY</span>
+              </div>
+              <p class="intro">Use made-up details below. Do not enter a real credit card.</p>
+              @if (processing()) {
+                <div class="processing-state" role="status" aria-live="polite">
+                  @if (!slow()) {
+                    <span class="payment-spinner" aria-hidden="true"></span>
+                  }
+                  <h3>
+                    {{ slow() ? 'Payment is taking longer than usual' : 'Processing your payment' }}
+                  </h3>
+                  <p>
+                    We are waiting for confirmation. Please do not submit another payment. No real
+                    money is charged.
+                  </p>
+                </div>
+                @if (slow()) {
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    [disabled]="checking()"
+                    (click)="checkPayment()"
+                  >
+                    {{ checking() ? 'Checking…' : 'Check payment status' }}
+                  </button>
+                  <p class="hint">You can also return to this order from My events.</p>
+                }
+              } @else if (!unavailable()) {
+                <form
+                  [formGroup]="form"
+                  (ngSubmit)="pay()"
+                  autocomplete="off"
+                  novalidate
+                  [attr.aria-busy]="paying()"
+                >
+                  <fieldset [disabled]="paying()">
+                    <legend class="sr-only">Mock credit card details</legend>
+                    <div class="field">
+                      <label for="mock-card-number">Card number</label>
+                      <input
+                        id="mock-card-number"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        formControlName="cardNumber"
+                        (input)="formatCardNumber($event)"
+                        placeholder="1234 5678 9012 3456"
+                        maxlength="19"
+                        class="card-number"
+                        spellcheck="false"
+                        required
+                        [attr.aria-invalid]="invalid('cardNumber')"
+                        aria-describedby="card-help card-error"
+                      />
+                      <p id="card-help" class="hint">
+                        Enter any 16 digits. Spaces are added automatically. Dummy numbers only.
+                      </p>
+                      <p id="card-error" class="field-error">
+                        @if (invalid('cardNumber')) {
+                          Enter exactly 16 digits.
+                        }
+                      </p>
+                    </div>
+                    <div class="card-row">
+                      <div class="field">
+                        <label for="mock-expiry">Expiry date</label>
+                        <input
+                          id="mock-expiry"
+                          type="text"
+                          inputmode="text"
+                          autocomplete="off"
+                          formControlName="expiry"
+                          placeholder="MM/YY"
+                          maxlength="5"
+                          required
+                          [attr.aria-invalid]="invalid('expiry')"
+                          aria-describedby="expiry-help expiry-error"
+                        />
+                        <p id="expiry-help" class="hint">MM/YY, e.g. 12/39</p>
+                        <p id="expiry-error" class="field-error">
+                          @if (invalid('expiry')) {
+                            Enter a valid, unexpired date in MM/YY format.
+                          }
+                        </p>
+                      </div>
+                      <div class="field">
+                        <label for="mock-cvc">CVC</label>
+                        <input
+                          id="mock-cvc"
+                          type="password"
+                          inputmode="numeric"
+                          autocomplete="off"
+                          formControlName="cvc"
+                          placeholder="123"
+                          maxlength="3"
+                          required
+                          [attr.aria-invalid]="invalid('cvc')"
+                          aria-describedby="cvc-help cvc-error"
+                        />
+                        <p id="cvc-help" class="hint">Any 3 digits</p>
+                        <p id="cvc-error" class="field-error">
+                          @if (invalid('cvc')) {
+                            Enter exactly 3 digits.
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary pay-button" [disabled]="paying()">
+                      @if (paying()) {
+                        Processing mock payment…
+                      } @else {
+                        Pay
+                        {{ order.total_amount_cents / 100 | currency: order.currency : 'code' }} ·
+                        Mock payment
+                      }
+                    </button>
+                  </fieldset>
+                </form>
+                @if (paying()) {
+                  <p class="processing-inline" role="status">
+                    <span class="payment-spinner" aria-hidden="true"></span>Processing your mock
+                    payment. Please wait…
+                  </p>
+                }
+                <p class="privacy-note">
+                  These fields stay in your browser and are not saved or sent to our server.
+                </p>
+              } @else {
+                <a class="btn btn-primary" [routerLink]="['/events', order.event_id]"
+                  >Select tickets again</a
+                >
+              }
+            </section>
+
+            <aside class="panel order-summary" aria-labelledby="summary-title">
+              <h2 id="summary-title">Order summary</h2>
+              <p class="order-reference">Order #{{ order.order_id }}</p>
+              @if (event(); as event) {
+                <h3>{{ event.title }}</h3>
+                <p>{{ event.venue }}</p>
+                <p>{{ event.starts_at | date: 'medium' }}</p>
+                <span class="ticket-type">{{
+                  event.tier === 'TIER2_SEATED' ? 'Reserved seating' : 'General admission'
+                }}</span>
+              }
+              <ul class="order-items">
+                @for (item of order.items; track item.order_item_id) {
+                  <li>
+                    <div>
+                      <strong>{{ item.description }}</strong
+                      ><span
+                        >Qty {{ item.quantity }} ×
+                        {{ item.unit_price_cents / 100 | currency: order.currency : 'code' }}</span
+                      >
+                    </div>
+                    <span>{{
+                      (item.quantity * item.unit_price_cents) / 100
+                        | currency: order.currency : 'code'
+                    }}</span>
+                  </li>
+                }
+              </ul>
+              <div class="order-total">
+                <strong>Total</strong
+                ><strong>{{
+                  order.total_amount_cents / 100 | currency: order.currency : 'code'
+                }}</strong>
+              </div>
+              <p class="hint">
+                Your tickets are reserved for a limited time. Complete payment before your
+                reservation expires.
+              </p>
+            </aside>
+          </div>
+        }
+      } @else {
+        <div class="recovery-actions">
+          <button class="btn btn-primary" type="button" (click)="load()">Try again</button>
+          <a class="btn btn-ghost" routerLink="/events">Browse events</a>
+        </div>
+      }
+    }
+    <p class="notice mock-notice">
+      <strong>This is just a mock payment.</strong> No real credit card is used and no money is
+      charged. Please use dummy details only.
+    </p>
+  </div>
+</app-workspace-shell>
