@@ -32,6 +32,13 @@ export const routes: Routes = [
     loadComponent: () => import('./events/event-queue/event-queue').then((m) => m.EventQueue),
   },
   {
+    path: 'checkout/:orderId',
+    title: 'Mock payment — OneStage',
+    canActivate: [authGuard],
+    data: { workspace: 'customer' },
+    loadComponent: () => import('./checkout/checkout').then((m) => m.Checkout),
+  },
+  {
     path: 'my-events',
     title: 'My events — OneStage',
     canActivate: [authGuard],
