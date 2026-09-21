@@ -32,11 +32,12 @@ interface ShiftView {
   readonly doorsOpen: string;
   readonly expected: number;
   readonly today: boolean;
+  readonly past: boolean;
 }
 
 /**
- * Home page for an event helper: the shift they are working now, then the ones
- * coming up. Backed by the event service's staffing endpoint — see
+ * Home page for an event helper: the shift they are working now, the ones
+ * coming up, then the ones already worked. Backed by the event service's staffing endpoint — see
  * `backend-repo/API_DESIGN.md` §1 ("Event-helper" / `event_staff`).
  */
 @Component({
@@ -111,6 +112,25 @@ interface ShiftView {
               <li class="empty">Nothing scheduled after tonight.</li>
             }
           </ul>
+
+          @if (completed().length > 0) {
+            <h2 class="section-title">Completed shifts</h2>
+            <ul class="shifts completed">
+              @for (shift of completed(); track shift.id) {
+                <li>
+                  <div class="when">
+                    <span class="date">{{ shift.date }}</span>
+                    <span class="time">Doors {{ shift.doorsOpen }}</span>
+                  </div>
+                  <div class="what">
+                    <span class="event">{{ shift.event }}</span>
+                    <span class="venue">{{ shift.venue }} · {{ shift.gate }}</span>
+                  </div>
+                  <span class="count">{{ shift.expected.toLocaleString('en-SG') }}</span>
+                </li>
+              }
+            </ul>
+          }
 
           <p class="note">
             Scans are recorded against your account, so the log shows who admitted each ticket.
@@ -266,7 +286,15 @@ export class HelperHome {
   private readonly shifts = signal<readonly ShiftView[]>([]);
 
   protected readonly today = computed(() => this.shifts().find((shift) => shift.today) ?? null);
-  protected readonly upcoming = computed(() => this.shifts().filter((shift) => !shift.today));
+  protected readonly upcoming = computed(() =>
+    this.shifts().filter((shift) => !shift.today && !shift.past),
+  );
+  // The service returns shifts oldest-first; completed ones read best most-recent-first.
+  protected readonly completed = computed(() =>
+    this.shifts()
+      .filter((shift) => !shift.today && shift.past)
+      .reverse(),
+  );
 
   protected readonly greeting = computed(() => {
     const email = this.auth.user()?.email ?? '';
@@ -305,6 +333,7 @@ function toShiftView(dto: HelperEventDto, now: Date): ShiftView {
     doorsOpen: formatDate(doorsOpen, 'h:mm a', 'en-SG'),
     expected: dto.total_seats,
     today: isSameDay(eventStart, now),
+    past: eventStart.getTime() < now.getTime(),
   };
 }
 
