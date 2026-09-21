@@ -1,13 +1,107 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
 import { ApiService } from '../../core/api';
 import { AuthService } from '../../core/auth';
+import { QueueService } from '../../core/queue';
 import { buyerCapacity, EventDetail, purchaseErrorMessage } from './event-detail';
+
+describe('EventDetail checkout navigation', () => {
+  it.each(['TIER1_GA', 'TIER2_SEATED'] as const)(
+    'opens payment without paying for %s tickets',
+    async (tier) => {
+      const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+        if (path === '/events/172')
+          return of({
+            event: {
+              event_id: 172,
+              organiser_sub: 'owner',
+              title: 'Test event',
+              description: '',
+              venue: 'Test Hall',
+              starts_at: '2099-01-01 20:00:00',
+              total_seats: 10,
+              available_buyers: 2,
+              tier,
+              status: 'PUBLISHED',
+              price_cents: 2000,
+            },
+          });
+        if (path === '/helper/shifts') return of({ events: [] });
+        if (path === '/customers/me/orders') return of({ orders: [] });
+        if (path === '/customers/me/tickets') return of({ tickets: [] });
+        if (path === '/events/172/seats')
+          return of({ seats: [{ seat_id: 8, seat_label: 'A8', status: 'AVAILABLE' }] });
+        return throwError(() => new Error(`Unexpected GET ${path}`));
+      });
+      const post = vi.fn(() => of({ order: { order_id: 42 } }));
+      const clear = vi.fn();
+      await TestBed.configureTestingModule({
+        imports: [EventDetail],
+        providers: [
+          provideRouter([]),
+          { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
+          { provide: ApiService, useValue: { get, post } },
+          {
+            provide: AuthService,
+            useValue: {
+              isAuthenticated: () => true,
+              user: signal({
+                sub: 'customer',
+                email: 'test@example.com',
+                name: 'Test',
+                groups: [],
+              }),
+            },
+          },
+          {
+            provide: QueueService,
+            useValue: {
+              status: vi.fn().mockResolvedValue({
+                status: 'ADMITTED',
+                admissionToken: 'test-admission',
+                tokenExpiresAt: '2099-01-01T20:00:00Z',
+              }),
+              admissionTokenFor: () => 'test-admission',
+              clear,
+            },
+          },
+        ],
+      }).compileComponents();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const fixture = TestBed.createComponent(EventDetail);
+      fixture.componentRef.setInput('id', '172');
+      fixture.detectChanges();
+      await new Promise<void>((resolve) => setTimeout(resolve));
+      fixture.detectChanges();
+      const host = fixture.nativeElement as HTMLElement;
+      if (tier === 'TIER2_SEATED') {
+        host.querySelector<HTMLButtonElement>('button.seat')!.click();
+        fixture.detectChanges();
+      }
+      const buy = Array.from(host.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Buy tickets',
+      );
+      expect(buy).toBeDefined();
+      buy!.click();
+      await new Promise<void>((resolve) => setTimeout(resolve));
+      expect(post).toHaveBeenCalledExactlyOnceWith('order', '/orders', {
+        eventId: 172,
+        quantity: 1,
+        seatIds: tier === 'TIER2_SEATED' ? [8] : undefined,
+        admissionToken: tier === 'TIER2_SEATED' ? 'test-admission' : undefined,
+        customerEmail: 'test@example.com',
+        customerName: 'Test',
+      });
+      expect(navigate).toHaveBeenCalledWith(['/checkout', 42]);
+      expect(clear).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe('EventDetail buyer capacity', () => {
   it('uses the configured number of concurrent buyers', () => {

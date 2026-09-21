@@ -128,8 +128,11 @@
                 </button>
               }
               @case ('checkout') {
-                <p>Your admission has already been used for a purchase.</p>
-                <a class="btn btn-primary" routerLink="/my-events">View My Events</a>
+                <p>
+                  Your tickets are reserved for checkout. Continue your pending payment from My
+                  events.
+                </p>
+                <a class="btn btn-primary" routerLink="/my-events">View pending payment</a>
               }
               @case ('unavailable') {
                 <p role="alert">
