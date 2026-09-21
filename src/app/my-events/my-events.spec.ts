@@ -5,20 +5,26 @@ import { Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, vi } from 'vitest';
 
 import { ApiService } from '../core/api';
+import { paidOrderFixture, ticketFixture } from '../testing/customer-fixtures';
 import { MyEvents } from './my-events';
 
 vi.mock('qrcode', () => ({ toDataURL: vi.fn(async () => 'data:image/png;base64,test') }));
 
-describe('MyEvents purchase dates', () => {
+describe('MyEvents tickets and orders', () => {
   async function render(
     options: {
       issued?: boolean;
       paidAt?: string | null;
       status?: string;
       missingOrder?: boolean;
+      tickets?: readonly object[];
+      orders?: readonly object[];
     } = {},
   ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/customers/me/tickets' && options.tickets)
+        return of({ tickets: options.tickets });
+      if (path === '/customers/me/orders' && options.orders) return of({ orders: options.orders });
       if (path === '/customers/me/tickets')
         return of({
           tickets: options.issued
@@ -119,6 +125,47 @@ describe('MyEvents purchase dates', () => {
     expect(host.querySelector('[aria-label="Orders awaiting payment"]')?.textContent).not.toContain(
       'Bought on',
     );
+  });
+
+  const titles = (host: HTMLElement, list: string) =>
+    Array.from(host.querySelectorAll(`${list} .ticket-card h2`)).map(
+      (el) => el.textContent?.trim() ?? '',
+    );
+
+  it('drops tickets for events on earlier days and keeps today and later', async () => {
+    const host = await render({
+      tickets: [
+        ticketFixture(1, 'Last week', -10),
+        ticketFixture(2, 'Last night', -1),
+        ticketFixture(3, 'Tonight', 0),
+        ticketFixture(4, 'Next week', 7),
+      ],
+      orders: [],
+    });
+
+    expect(titles(host, '.ticket-list')).toEqual(['Tonight', 'Next week']);
+  });
+
+  it('drops paid orders still waiting for a ticket the same way', async () => {
+    const host = await render({
+      tickets: [],
+      orders: [
+        paidOrderFixture(1, 'Last week', -10),
+        paidOrderFixture(2, 'Tonight', 0),
+        paidOrderFixture(3, 'Next week', 7),
+      ],
+    });
+
+    expect(titles(host, '.pending-list')).toEqual(['Tonight', 'Next week']);
+  });
+
+  it('lists nothing when every ticket is for an earlier day', async () => {
+    const host = await render({
+      tickets: [ticketFixture(1, 'Last week', -10)],
+      orders: [paidOrderFixture(2, 'Last month', -30)],
+    });
+
+    expect(host.querySelectorAll('.ticket-card').length).toBe(0);
   });
 });
 
@@ -413,95 +460,5 @@ describe('MyEvents confirmation email note', () => {
     const region = host.querySelector('.toast-region');
     expect(region?.getAttribute('role')).toBe('status');
     expect(region?.getAttribute('aria-live')).toBe('polite');
-  });
-});
-
-describe('MyEvents only lists events happening today or later', () => {
-  const DAY_MS = 24 * 60 * 60 * 1000;
-  const at = (daysFromNow: number) => new Date(Date.now() + daysFromNow * DAY_MS).toISOString();
-  const ticket = (id: number, title: string, daysFromNow: number) => ({
-    ticket_id: id,
-    order_id: 100 + id,
-    event_id: id,
-    event_title: title,
-    venue: 'Test Hall',
-    starts_at: at(daysFromNow),
-    seat_label: null,
-    qr_token: `token-${id}`,
-    status: 'ISSUED',
-  });
-  const paidOrder = (id: number, title: string, daysFromNow: number) => ({
-    order_id: 200 + id,
-    event_id: id,
-    status: 'PAID',
-    total_amount_cents: 2_000,
-    currency: 'SGD',
-    paid_at: null,
-    event_title: title,
-    venue: 'Test Hall',
-    starts_at: at(daysFromNow),
-    ticket_count: 1,
-  });
-
-  async function render(tickets: readonly object[], orders: readonly object[]) {
-    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
-      if (path === '/customers/me/tickets') return of({ tickets });
-      if (path === '/customers/me/orders') return of({ orders });
-      if (path === '/helper/shifts') return of({ events: [] });
-      return throwError(() => new Error(`Unexpected GET ${path}`));
-    });
-
-    TestBed.resetTestingModule();
-    await TestBed.configureTestingModule({
-      imports: [MyEvents],
-      providers: [
-        provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: { snapshot: { queryParamMap: convertToParamMap({}) } },
-        },
-        { provide: ApiService, useValue: { get } },
-      ],
-    }).compileComponents();
-
-    const fixture = TestBed.createComponent(MyEvents);
-    fixture.detectChanges();
-    await new Promise<void>((resolve) => setTimeout(resolve));
-    fixture.detectChanges();
-    return fixture.nativeElement as HTMLElement;
-  }
-
-  const titles = (root: HTMLElement, selector: string) =>
-    Array.from(root.querySelectorAll(`${selector} .ticket-card h2`)).map(
-      (el) => el.textContent?.trim() ?? '',
-    );
-
-  it('drops tickets for events on earlier days and keeps today and later', async () => {
-    const root = await render(
-      [
-        ticket(1, 'Last week', -10),
-        ticket(2, 'Last night', -1),
-        ticket(3, 'Tonight', 0),
-        ticket(4, 'Next week', 7),
-      ],
-      [],
-    );
-
-    expect(titles(root, '.ticket-list')).toEqual(['Tonight', 'Next week']);
-  });
-
-  it('drops paid orders still waiting for a ticket the same way', async () => {
-    const root = await render(
-      [],
-      [paidOrder(1, 'Last week', -10), paidOrder(2, 'Tonight', 0), paidOrder(3, 'Next week', 7)],
-    );
-
-    expect(titles(root, '.pending-list')).toEqual(['Tonight', 'Next week']);
-  });
-
-  it('lists nothing when every ticket is for an earlier day', async () => {
-    const root = await render([ticket(1, 'Last week', -10)], [paidOrder(2, 'Last month', -30)]);
-
-    expect(root.querySelectorAll('.ticket-card').length).toBe(0);
   });
 });
