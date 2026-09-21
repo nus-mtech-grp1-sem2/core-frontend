@@ -123,7 +123,7 @@ describe('MyEvents purchase dates', () => {
 });
 
 describe('MyEvents unpaid orders', () => {
-  it('offers a link to resume mock payment', async () => {
+  it('offers payment and cancellation controls for a timed reservation', async () => {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/customers/me/tickets') return of({ tickets: [] });
       if (path === '/helper/shifts') return of({ events: [] });
@@ -138,11 +138,13 @@ describe('MyEvents unpaid orders', () => {
               ticket_count: 2,
               total_amount_cents: 4000,
               currency: 'SGD',
+              reservation_expires_at: new Date(Date.now() + 180_000).toISOString(),
             },
           ],
         });
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
+    const post = vi.fn(() => of(undefined));
     await TestBed.configureTestingModule({
       imports: [MyEvents],
       providers: [
@@ -151,7 +153,7 @@ describe('MyEvents unpaid orders', () => {
           provide: ActivatedRoute,
           useValue: { snapshot: { queryParamMap: convertToParamMap({}) } },
         },
-        { provide: ApiService, useValue: { get } },
+        { provide: ApiService, useValue: { get, post } },
       ],
     }).compileComponents();
     const fixture = TestBed.createComponent(MyEvents);
@@ -163,6 +165,14 @@ describe('MyEvents unpaid orders', () => {
       'Continue to payment',
     );
     expect(host.textContent).toContain('Payment pending');
+    expect(host.textContent).toMatch(/Reservation expires in\s+3:00/);
+    const cancel = host.querySelector<HTMLButtonElement>('.cancel-button');
+    expect(cancel?.textContent).toContain('Cancel reservation');
+    cancel?.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    expect(post).toHaveBeenCalledWith('order', '/orders/42/cancel', {});
+    expect(host.querySelector('[aria-label="Orders awaiting payment"]')).toBeNull();
   });
 });
 

@@ -14,6 +14,7 @@ import { exhaustMap, firstValueFrom, from, take, takeWhile, timer } from 'rxjs';
 import { toDataURL } from 'qrcode';
 
 import { ApiService } from '../core/api';
+import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 /** How often, and how many times, to ask whether the confirmation emails have gone out. */
@@ -72,6 +73,7 @@ interface PaidOrder {
   readonly total_amount_cents: number;
   readonly currency: string;
   readonly paid_at: string | null;
+  readonly reservation_expires_at?: string;
   readonly event_title: string;
   readonly venue: string;
   readonly starts_at: string;
@@ -135,14 +137,33 @@ type LoadStatus = 'loading' | 'ready' | 'error';
                         Order #{{ order.order_id }} · {{ order.ticket_count }} ticket(s) ·
                         {{ money(order.total_amount_cents, order.currency) }}
                       </p>
-                      <p>Payment pending. Reservations are held for a limited time.</p>
-                      <a class="btn btn-primary" [routerLink]="['/checkout', order.order_id]"
-                        >Continue to payment</a
-                      >
+                      <p>
+                        Payment pending. Reservation expires in
+                        <strong>{{ reservationTimeLabel(order) }}</strong
+                        >.
+                      </p>
+                      <div class="reservation-actions">
+                        <a class="btn btn-primary" [routerLink]="['/checkout', order.order_id]"
+                          >Continue to payment</a
+                        >
+                        <button
+                          type="button"
+                          class="btn btn-ghost cancel-button"
+                          [disabled]="isCancelling(order.order_id)"
+                          (click)="cancelReservation(order)"
+                        >
+                          {{
+                            isCancelling(order.order_id) ? 'Cancellingâ€¦' : 'Cancel reservation'
+                          }}
+                        </button>
+                      </div>
                     </div>
                   </article>
                 }
               </section>
+            }
+            @if (reservationError()) {
+              <p class="status-message error" role="alert">{{ reservationError() }}</p>
             }
             @if (pendingOrders().length > 0) {
               <section class="pending-list" aria-label="Paid orders awaiting tickets">
@@ -332,6 +353,15 @@ type LoadStatus = 'loading' | 'ready' | 'error';
       margin: 0.1rem 0;
       color: var(--text-muted);
     }
+    .reservation-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+    .cancel-button {
+      color: #912018;
+    }
     dl {
       display: flex;
       flex-wrap: wrap;
@@ -371,6 +401,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
 })
 export class MyEvents {
   private readonly api = inject(ApiService);
+  private readonly queue = inject(QueueService);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private requestRunning = false;
@@ -379,6 +410,9 @@ export class MyEvents {
   protected readonly status = signal<LoadStatus>('loading');
   protected readonly tickets = signal<readonly TicketWithQr[]>([]);
   protected readonly orders = signal<readonly PaidOrder[]>([]);
+  protected readonly now = signal(Date.now());
+  protected readonly cancellingOrderIds = signal<ReadonlySet<number>>(new Set());
+  protected readonly reservationError = signal('');
   protected readonly purchaseDates = computed(
     () => new Map(this.orders().map((order) => [Number(order.order_id), order.paid_at])),
   );
@@ -409,6 +443,16 @@ export class MyEvents {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         if (this.waitingForTicket()) void this.load(true);
+      });
+    timer(0, 1_000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.now.set(Date.now());
+        for (const order of this.unpaidOrders()) {
+          if (this.reservationSeconds(order) === 0 && !this.isCancelling(order.order_id)) {
+            void this.cancelReservation(order, true);
+          }
+        }
       });
     if (this.pendingOrderId !== null) this.watchConfirmationEmail(this.pendingOrderId);
     this.destroyRef.onDestroy(() => clearTimeout(this.toastTimer));
@@ -499,6 +543,45 @@ export class MyEvents {
 
   protected statusLabel(status: TicketStatus): string {
     return status === 'CHECKED_IN' ? 'Checked in' : status === 'VOID' ? 'Void' : 'Ready to scan';
+  }
+
+  protected reservationTimeLabel(order: PaidOrder): string {
+    const seconds = this.reservationSeconds(order);
+    if (seconds === null) return 'soon';
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  private reservationSeconds(order: PaidOrder): number | null {
+    const expiresAt = Date.parse(order.reservation_expires_at ?? '');
+    if (!Number.isFinite(expiresAt)) return null;
+    return Math.max(0, Math.ceil((expiresAt - this.now()) / 1_000));
+  }
+
+  protected isCancelling(orderId: number): boolean {
+    return this.cancellingOrderIds().has(orderId);
+  }
+
+  protected async cancelReservation(order: PaidOrder, expired = false): Promise<void> {
+    if (this.isCancelling(order.order_id)) return;
+    this.cancellingOrderIds.update((ids) => new Set(ids).add(order.order_id));
+    this.reservationError.set('');
+    try {
+      await firstValueFrom(this.api.post<void>('order', `/orders/${order.order_id}/cancel`, {}));
+      this.orders.update((orders) => orders.filter((item) => item.order_id !== order.order_id));
+      this.queue.clear(order.event_id);
+    } catch {
+      if (expired) {
+        await this.load(true);
+      } else {
+        this.reservationError.set('Unable to cancel this reservation. Please try again.');
+      }
+    } finally {
+      this.cancellingOrderIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(order.order_id);
+        return next;
+      });
+    }
   }
 
   protected money(cents: number, currency: string): string {

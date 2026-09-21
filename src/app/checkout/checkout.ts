@@ -10,6 +10,7 @@ import {
   input,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   NonNullableFormBuilder,
   ReactiveFormsModule,
@@ -17,7 +18,7 @@ import {
   Validators,
 } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { firstValueFrom, timeout } from 'rxjs';
+import { firstValueFrom, timeout, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
 import { QueueService } from '../core/queue';
@@ -29,6 +30,7 @@ interface CheckoutOrder {
   readonly status: string;
   readonly currency: string;
   readonly total_amount_cents: number;
+  readonly reservation_expires_at?: string;
   readonly items: readonly {
     readonly order_item_id: number;
     readonly description: string;
@@ -82,9 +84,11 @@ export class Checkout {
   protected readonly paying = signal(false);
   protected readonly processing = signal(false);
   protected readonly checking = signal(false);
+  protected readonly cancelling = signal(false);
   protected readonly slow = signal(false);
   protected readonly error = signal('');
   protected readonly unavailable = signal(false);
+  protected readonly now = signal(Date.now());
   protected readonly form = this.fb.group({
     cardNumber: [
       '',
@@ -103,6 +107,22 @@ export class Checkout {
     effect(() => {
       void this.load(this.orderId());
     });
+    timer(0, 1_000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.now.set(Date.now());
+        const order = this.order();
+        if (
+          order?.status === 'PENDING' &&
+          this.reservationSecondsRemaining() === 0 &&
+          !this.paying() &&
+          !this.processing() &&
+          !this.cancelling() &&
+          !this.unavailable()
+        ) {
+          void this.cancelReservation(true);
+        }
+      });
   }
 
   protected formatCardNumber(event: Event): void {
@@ -283,6 +303,54 @@ export class Checkout {
       }
     } finally {
       this.paying.set(false);
+    }
+  }
+
+  protected reservationTimeLabel(): string {
+    const seconds = this.reservationSecondsRemaining();
+    if (seconds === null) return 'soon';
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  private reservationSecondsRemaining(): number | null {
+    const expiresAt = Date.parse(this.order()?.reservation_expires_at ?? '');
+    if (!Number.isFinite(expiresAt)) return null;
+    return Math.max(0, Math.ceil((expiresAt - this.now()) / 1_000));
+  }
+
+  protected async cancelReservation(expired = false): Promise<void> {
+    const order = this.order();
+    if (
+      !order ||
+      order.status !== 'PENDING' ||
+      this.cancelling() ||
+      this.paying() ||
+      this.processing()
+    )
+      return;
+    this.cancelling.set(true);
+    this.error.set('');
+    try {
+      await firstValueFrom(this.api.post<void>('order', `/orders/${order.order_id}/cancel`, {}));
+      this.form.reset();
+      this.queue.clear(order.event_id);
+      this.unavailable.set(true);
+      if (expired) {
+        this.error.set(
+          'Your reservation expired. The tickets have been released for other customers.',
+        );
+      } else {
+        await this.router.navigateByUrl('/my-events');
+      }
+    } catch (error) {
+      const code =
+        error instanceof HttpErrorResponse
+          ? (error.error as { error?: string } | null)?.error
+          : undefined;
+      if (code === 'reservation_not_cancellable') await this.load();
+      else this.error.set('Unable to cancel this reservation. Please try again.');
+    } finally {
+      this.cancelling.set(false);
     }
   }
 
