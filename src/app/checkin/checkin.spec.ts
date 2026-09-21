@@ -1,6 +1,7 @@
 import { create } from 'qrcode';
 
 import {
+  currentAndFutureEvents,
   decodeQrPixels,
   outcomeDescription,
   outcomeIcon,
@@ -24,6 +25,59 @@ describe('event helper outcomes', () => {
   it('provides non-color indicators for every outcome', () => {
     const outcomes = ['VALID', 'ALREADY_USED', 'INVALID', 'WRONG_EVENT'] as const;
     expect(new Set(outcomes.map((outcome) => outcomeIcon(outcome))).size).toBe(4);
+  });
+});
+
+describe('assigned events for check-in', () => {
+  const now = new Date(2026, 8, 21, 15, 30);
+  const at = (day: number, hour: number, minute = 0) =>
+    new Date(2026, 8, day, hour, minute).toISOString();
+  const ids = (events: readonly { readonly event_id: number }[]) =>
+    events.map((event) => event.event_id);
+
+  it('drops events from earlier days and keeps today and later', () => {
+    const events = [
+      { event_id: 1, title: 'Last week', starts_at: at(14, 19) },
+      { event_id: 2, title: 'Last night', starts_at: at(20, 23, 59) },
+      { event_id: 3, title: 'Tonight', starts_at: at(21, 19, 30) },
+      { event_id: 4, title: 'Tomorrow', starts_at: at(22, 19) },
+      { event_id: 5, title: 'Next month', starts_at: new Date(2026, 9, 30, 19).toISOString() },
+    ];
+
+    expect(ids(currentAndFutureEvents(events, now))).toEqual([3, 4, 5]);
+  });
+
+  it('keeps an event that already started earlier today, since the door is still open', () => {
+    const events = [
+      { event_id: 1, title: 'Started at midnight', starts_at: at(21, 0) },
+      { event_id: 2, title: 'Started this morning', starts_at: at(21, 9) },
+    ];
+
+    expect(ids(currentAndFutureEvents(events, now))).toEqual([1, 2]);
+  });
+
+  it('reads the alternate event_start_datetime field the service may return', () => {
+    const events = [
+      { event_id: 1, title: 'Past', event_start_datetime: at(19, 19) },
+      { event_id: 2, title: 'Upcoming', event_start_datetime: at(23, 19) },
+    ];
+
+    expect(ids(currentAndFutureEvents(events, now))).toEqual([2]);
+  });
+
+  it('keeps an event whose start time is missing or unreadable rather than hiding it', () => {
+    const events = [
+      { event_id: 1, title: 'No date' },
+      { event_id: 2, title: 'Bad date', starts_at: 'not a date' },
+    ];
+
+    expect(ids(currentAndFutureEvents(events, now))).toEqual([1, 2]);
+  });
+
+  it('returns an empty list when every assigned event is in the past', () => {
+    const events = [{ event_id: 1, title: 'Old', starts_at: at(1, 19) }];
+
+    expect(currentAndFutureEvents(events, now)).toEqual([]);
   });
 });
 
