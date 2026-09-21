@@ -14,6 +14,7 @@ import { exhaustMap, firstValueFrom, from, take, takeWhile, timer } from 'rxjs';
 import { toDataURL } from 'qrcode';
 
 import { ApiService } from '../core/api';
+import { startsTodayOrLater } from '../core/event-dates';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 /** How often, and how many times, to ask whether the confirmation emails have gone out. */
@@ -471,11 +472,15 @@ export class MyEvents {
         ),
       ]);
       const teamEventIds = new Set(teamResult.events.map((event) => Number(event.event_id)));
+      // Only events happening today or later; earlier ones are no longer of use at the door.
+      const now = new Date();
       const visibleTickets = result.tickets.filter(
-        (ticket) => !teamEventIds.has(Number(ticket.event_id)),
+        (ticket) =>
+          !teamEventIds.has(Number(ticket.event_id)) && startsTodayOrLater(ticket.starts_at, now),
       );
       const visibleOrders = orderResult.orders.filter(
-        (order) => !teamEventIds.has(Number(order.event_id)),
+        (order) =>
+          !teamEventIds.has(Number(order.event_id)) && startsTodayOrLater(order.starts_at, now),
       );
       const withQr = await Promise.all(
         visibleTickets.map(async (ticket) => ({
