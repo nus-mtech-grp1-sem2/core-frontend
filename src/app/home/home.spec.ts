@@ -106,4 +106,87 @@ describe('Home', () => {
     expect(text).toContain('Payment received · issuing ticket');
     httpMock.verify();
   });
+
+  describe('upcoming tickets', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const at = (daysFromNow: number) => new Date(Date.now() + daysFromNow * DAY_MS).toISOString();
+    const ticket = (id: number, title: string, daysFromNow: number) => ({
+      ticket_id: id,
+      order_id: 100 + id,
+      event_id: id,
+      event_title: title,
+      venue: 'Test Hall',
+      starts_at: at(daysFromNow),
+      seat_label: null,
+      status: 'ISSUED',
+    });
+    const paidOrder = (id: number, title: string, daysFromNow: number) => ({
+      order_id: 200 + id,
+      event_id: id,
+      status: 'PAID',
+      event_title: title,
+      venue: 'Test Hall',
+      starts_at: at(daysFromNow),
+      ticket_count: 1,
+    });
+
+    async function renderSignedIn(tickets: readonly object[], orders: readonly object[] = []) {
+      authenticated.set(true);
+      authUser.set({ sub: 'customer-1', email: 'customer@example.com', name: '', groups: [] });
+      const httpMock = TestBed.inject(HttpTestingController);
+      const fixture = TestBed.createComponent(Home);
+      fixture.detectChanges();
+      httpMock.expectOne('/api/event/events').flush({ events: [] });
+      httpMock.expectOne('/api/event/venues').flush({ venues: [] });
+      httpMock.expectOne('/api/ticket/customers/me/tickets').flush({ tickets });
+      httpMock.expectOne('/api/order/customers/me/orders').flush({ orders });
+      await fixture.whenStable();
+      fixture.detectChanges();
+      httpMock.verify();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    const listed = (root: HTMLElement) =>
+      Array.from(root.querySelectorAll('.orders .order-event')).map(
+        (el) => el.textContent?.trim() ?? '',
+      );
+
+    it('lists only events happening today or later, soonest first', async () => {
+      const root = await renderSignedIn([
+        ticket(1, 'Last week', -10),
+        ticket(2, 'Last night', -1),
+        ticket(3, 'Next week', 7),
+        ticket(4, 'Tonight', 0),
+      ]);
+
+      expect(listed(root)).toEqual(['Tonight', 'Next week']);
+    });
+
+    it('does not let past tickets take up the five visible places', async () => {
+      const root = await renderSignedIn([
+        ticket(1, 'Past A', -30),
+        ticket(2, 'Past B', -20),
+        ticket(3, 'Past C', -10),
+        ...[1, 2, 3, 4, 5, 6].map((day) => ticket(10 + day, `Future ${day}`, day)),
+      ]);
+
+      expect(listed(root)).toEqual(['Future 1', 'Future 2', 'Future 3', 'Future 4', 'Future 5']);
+    });
+
+    it('drops paid orders still waiting for a ticket when their event was on an earlier day', async () => {
+      const root = await renderSignedIn(
+        [],
+        [paidOrder(1, 'Last month', -30), paidOrder(2, 'Next week', 7)],
+      );
+
+      expect(listed(root)).toEqual(['Next week']);
+    });
+
+    it('says there is nothing upcoming when every ticket is for an earlier day', async () => {
+      const root = await renderSignedIn([ticket(1, 'Last week', -10)]);
+
+      expect(listed(root)).toEqual([]);
+      expect(root.querySelector('.no-orders')?.textContent).toContain('No upcoming tickets yet');
+    });
+  });
 });
