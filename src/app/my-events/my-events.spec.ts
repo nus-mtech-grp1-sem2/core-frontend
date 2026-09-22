@@ -5,20 +5,26 @@ import { Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, vi } from 'vitest';
 
 import { ApiService } from '../core/api';
+import { paidOrderFixture, ticketFixture } from '../testing/customer-fixtures';
 import { MyEvents } from './my-events';
 
 vi.mock('qrcode', () => ({ toDataURL: vi.fn(async () => 'data:image/png;base64,test') }));
 
-describe('MyEvents purchase dates', () => {
+describe('MyEvents tickets and orders', () => {
   async function render(
     options: {
       issued?: boolean;
       paidAt?: string | null;
       status?: string;
       missingOrder?: boolean;
+      tickets?: readonly object[];
+      orders?: readonly object[];
     } = {},
   ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/customers/me/tickets' && options.tickets)
+        return of({ tickets: options.tickets });
+      if (path === '/customers/me/orders' && options.orders) return of({ orders: options.orders });
       if (path === '/customers/me/tickets')
         return of({
           tickets: options.issued
@@ -119,6 +125,47 @@ describe('MyEvents purchase dates', () => {
     expect(host.querySelector('[aria-label="Orders awaiting payment"]')?.textContent).not.toContain(
       'Bought on',
     );
+  });
+
+  const titles = (host: HTMLElement, list: string) =>
+    Array.from(host.querySelectorAll(`${list} .ticket-card h2`)).map(
+      (el) => el.textContent?.trim() ?? '',
+    );
+
+  it('drops tickets for events on earlier days and keeps today and later', async () => {
+    const host = await render({
+      tickets: [
+        ticketFixture(1, 'Last week', -10),
+        ticketFixture(2, 'Last night', -1),
+        ticketFixture(3, 'Tonight', 0),
+        ticketFixture(4, 'Next week', 7),
+      ],
+      orders: [],
+    });
+
+    expect(titles(host, '.ticket-list')).toEqual(['Tonight', 'Next week']);
+  });
+
+  it('drops paid orders still waiting for a ticket the same way', async () => {
+    const host = await render({
+      tickets: [],
+      orders: [
+        paidOrderFixture(1, 'Last week', -10),
+        paidOrderFixture(2, 'Tonight', 0),
+        paidOrderFixture(3, 'Next week', 7),
+      ],
+    });
+
+    expect(titles(host, '.pending-list')).toEqual(['Tonight', 'Next week']);
+  });
+
+  it('lists nothing when every ticket is for an earlier day', async () => {
+    const host = await render({
+      tickets: [ticketFixture(1, 'Last week', -10)],
+      orders: [paidOrderFixture(2, 'Last month', -30)],
+    });
+
+    expect(host.querySelectorAll('.ticket-card').length).toBe(0);
   });
 });
 

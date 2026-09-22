@@ -17,6 +17,7 @@ import { AuthService } from '../core/auth';
 import { EventCategory, FeaturedSlide, Venue } from '../core/catalog';
 import { hasSubmittedPayment } from '../core/payment-processing';
 import { QueueService } from '../core/queue';
+import { startsTodayOrLater } from '../core/event-dates';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 import { Carousel } from './carousel/carousel';
 
@@ -146,7 +147,11 @@ export class Home {
         state: 'Payment received · issuing ticket',
       }));
 
+    // Only events happening today or later, and before the top-5 cut so that past
+    // tickets do not take up the slots.
+    const now = new Date();
     return [...ticketRows, ...paidOrderRows]
+      .filter((purchase) => startsTodayOrLater(purchase.startsAt, now))
       .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))
       .slice(0, 5);
   });

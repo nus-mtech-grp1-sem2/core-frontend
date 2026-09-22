@@ -15,7 +15,6 @@ import { exhaustMap, firstValueFrom, from, take, takeWhile, timer } from 'rxjs';
 import { toDataURL } from 'qrcode';
 
 import { ApiService } from '../core/api';
-import { clearPaymentProcessing, hasSubmittedPayment } from '../core/payment-processing';
 import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
@@ -24,6 +23,9 @@ const CONFIRMATION_POLL_MS = 2_000;
 const CONFIRMATION_POLL_ATTEMPTS = 20;
 /** How long the "confirmation email sent" note stays on screen. */
 const EMAIL_TOAST_MS = 3_000;
+const paymentProcessingKey = (orderId: number) => `onestage.acceptedPayment.${orderId}`;
+const legacyPaymentProcessingKey = (orderId: number) => `onestage.mockPayment.${orderId}`;
+const PAYMENT_PROCESSING_MARKER_MAX_AGE_MS = 5 * 60_000;
 
 type ConfirmationEmailStatus = 'SENT' | 'FAILED' | 'PENDING';
 
@@ -47,6 +49,30 @@ function markEmailToastSeen(orderId: number): void {
     sessionStorage.setItem(toastSeenKey(orderId), '1');
   } catch {
     // Storage is unavailable: the note may show again on a reload, which is harmless.
+  }
+}
+
+function hasSubmittedPayment(orderId: number, orderCreatedAt?: string): boolean {
+  try {
+    const key = paymentProcessingKey(orderId);
+    sessionStorage.removeItem(legacyPaymentProcessingKey(orderId));
+    const startedAt = Number(sessionStorage.getItem(key));
+    const age = Date.now() - startedAt;
+    const createdAt = Date.parse(orderCreatedAt ?? '');
+    const belongsToOrder = !Number.isFinite(createdAt) || startedAt >= createdAt - 1_000;
+    if (
+      Number.isFinite(startedAt) &&
+      startedAt > 0 &&
+      age >= 0 &&
+      age <= PAYMENT_PROCESSING_MARKER_MAX_AGE_MS &&
+      belongsToOrder
+    ) {
+      return true;
+    }
+    sessionStorage.removeItem(key);
+    return false;
+  } catch {
+    return false;
   }
 }
 
@@ -442,7 +468,8 @@ export class MyEvents {
   protected readonly unpaidOrders = computed(() =>
     this.orders().filter(
       (order) =>
-        order.status === 'PENDING' && !hasSubmittedPayment(order.order_id, order.created_at),
+        order.status === 'PENDING' &&
+        !hasSubmittedPayment(order.order_id, order.created_at),
     ),
   );
   protected readonly processingOrders = computed(() =>
@@ -470,9 +497,6 @@ export class MyEvents {
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
-    effect(() => {
-      console.log('unpaidOrders().length:', this.unpaidOrders().length);
-    });
     void this.load();
     timer(5_000, 5_000)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -558,7 +582,11 @@ export class MyEvents {
       );
       for (const order of visibleOrders) {
         if (order.status !== 'PENDING') {
-          clearPaymentProcessing(order.order_id);
+          try {
+            sessionStorage.removeItem(paymentProcessingKey(order.order_id));
+          } catch {
+            // Storage is optional; order state still comes from the backend.
+          }
         }
       }
       const withQr = await Promise.all(

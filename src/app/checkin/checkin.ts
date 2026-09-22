@@ -47,6 +47,8 @@ interface ScanResult {
 interface EventOption {
   readonly event_id: number;
   readonly title: string;
+  readonly starts_at?: string;
+  readonly event_start_datetime?: string;
 }
 
 interface EventsResponse {
@@ -572,11 +574,12 @@ export class Checkin implements OnDestroy {
   private async loadEvents(): Promise<void> {
     try {
       const result = await firstValueFrom(this.api.get<EventsResponse>('event', '/helper/shifts'));
-      this.events.set(result.events);
-      if (result.events.length > 0) {
+      const events = currentAndFutureEvents(result.events, new Date());
+      this.events.set(events);
+      if (events.length > 0) {
         const routeEventId = Number(this.route.snapshot.paramMap.get('eventId'));
-        const selectedEvent = result.events.find((event) => event.event_id === routeEventId);
-        this.selectEvent(selectedEvent?.event_id ?? result.events[0].event_id);
+        const selectedEvent = events.find((event) => event.event_id === routeEventId);
+        this.selectEvent(selectedEvent?.event_id ?? events[0].event_id);
       }
     } catch {
       this.events.set([]);
@@ -1065,6 +1068,23 @@ function thresholdQrCanvas(source: HTMLCanvasElement, threshold: number): HTMLCa
   }
   context.putImageData(image, 0, 0);
   return canvas;
+}
+
+/**
+ * Keeps the events a helper can still check people in to: anything starting today
+ * (even if it began hours ago — the door is still open) or later. Events from earlier
+ * days are dropped. An event with no readable start time is kept, since hiding an
+ * assigned event at the door is worse than listing one too many.
+ */
+export function currentAndFutureEvents(
+  events: readonly EventOption[],
+  now: Date,
+): readonly EventOption[] {
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return events.filter((event) => {
+    const startsAt = new Date(event.starts_at ?? event.event_start_datetime ?? '').getTime();
+    return Number.isNaN(startsAt) || startsAt >= startOfToday;
+  });
 }
 
 /** Ticket tokens are short base64url strings; the service rejects empty or over-long values. */
