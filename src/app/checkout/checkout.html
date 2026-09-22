@@ -34,6 +34,11 @@
                 <span class="demo-badge">DEMO ONLY</span>
               </div>
               <p class="intro">Use made-up details below. Do not enter a real credit card.</p>
+              @if (!unavailable() && !processing()) {
+                <p class="reservation-timer" role="status">
+                  Reservation expires in <strong>{{ reservationTimeLabel() }}</strong>
+                </p>
+              }
               @if (processing()) {
                 <div class="processing-state" role="status" aria-live="polite">
                   @if (!slow()) {
@@ -147,6 +152,14 @@
                         Mock payment
                       }
                     </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost cancel-button"
+                      [disabled]="paying() || cancelling()"
+                      (click)="cancelReservation()"
+                    >
+                      {{ cancelling() ? 'Cancelling reservationâ€¦' : 'Cancel reservation' }}
+                    </button>
                   </fieldset>
                 </form>
                 @if (paying()) {
@@ -200,8 +213,8 @@
                 }}</strong>
               </div>
               <p class="hint">
-                Your tickets are reserved for a limited time. Complete payment before your
-                reservation expires.
+                Your tickets are reserved for three minutes. Complete payment before your
+                reservation expires, or cancel to release them immediately.
               </p>
             </aside>
           </div>

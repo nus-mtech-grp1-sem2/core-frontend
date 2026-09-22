@@ -2,6 +2,51 @@
   <app-carousel [slides]="featuredSlides()" />
 
   @if (auth.isAuthenticated()) {
+    @if (unpaidOrders().length > 0 || processingOrders().length > 0) {
+      <section class="shell section active-reservations" aria-labelledby="reservations-heading">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">Checkout</p>
+            <h2 id="reservations-heading">Active reservations</h2>
+          </div>
+        </header>
+        @for (order of unpaidOrders(); track order.order_id) {
+          <article class="reservation-card">
+            <div>
+              <h3>{{ order.event_title }}</h3>
+              <p>
+                {{ order.ticket_count }} ticket(s) reserved · expires in
+                <strong>{{ reservationTimeLabel(order) }}</strong>
+              </p>
+            </div>
+            <div class="reservation-actions">
+              <a class="btn btn-primary btn-sm" [routerLink]="['/checkout', order.order_id]"
+                >Continue to payment</a
+              >
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm reservation-cancel"
+                [disabled]="isCancelling(order.order_id)"
+                (click)="cancelReservation(order)"
+              >
+                {{ isCancelling(order.order_id) ? 'Cancelling…' : 'Cancel reservation' }}
+              </button>
+            </div>
+          </article>
+        }
+        @for (order of processingOrders(); track order.order_id) {
+          <article class="reservation-card" role="status">
+            <div>
+              <h3>{{ order.event_title }}</h3>
+              <p>Payment is processing. This reservation can no longer be cancelled.</p>
+            </div>
+          </article>
+        }
+        @if (reservationError()) {
+          <p class="purchase-message error" role="alert">{{ reservationError() }}</p>
+        }
+      </section>
+    }
     <section class="shell section" aria-labelledby="orders-heading">
       <header class="section-head">
         <div>

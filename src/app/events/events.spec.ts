@@ -270,6 +270,7 @@ describe('Events', () => {
     httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
     httpMock.expectOne('/api/event/helper/shifts').flush({ events: [{ event_id: 1 }] });
     httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
+    httpMock.expectOne('/api/order/customers/me/orders').flush({ orders: [] });
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
     httpMock.expectOne('/api/event/events/2').flush({ event: MOCK_EVENTS[1] });
@@ -279,6 +280,51 @@ describe('Events', () => {
     expect(host.querySelectorAll('.event-card').length).toBe(1);
     expect(host.textContent).not.toContain('Neon Skyline Tour');
     expect(host.textContent).toContain('ASEAN Cup Final');
+    httpMock.verify();
+  });
+
+  it('shows an unpaid reservation with payment and cancellation controls', async () => {
+    const { fixture, httpMock, host } = await renderFor(user([]));
+
+    httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
+    httpMock.expectOne('/api/event/helper/shifts').flush({ events: [] });
+    httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
+    httpMock.expectOne('/api/order/customers/me/orders').flush({
+      orders: [
+        {
+          order_id: 42,
+          event_id: 1,
+          status: 'PENDING',
+          created_at: new Date(Date.now() - 1_000).toISOString(),
+          reservation_expires_at: new Date(Date.now() + 180_000).toISOString(),
+          event_title: 'Neon Skyline Tour',
+          ticket_count: 2,
+        },
+      ],
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    for (const event of MOCK_EVENTS) {
+      httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
+    }
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const reservations = host.querySelector('.active-reservations');
+    expect(reservations?.textContent).toContain('Neon Skyline Tour');
+    expect(reservations?.textContent).toContain('Continue to payment');
+    expect(reservations?.textContent).toContain('Cancel reservation');
+    expect(reservations?.querySelector('a')?.getAttribute('href')).toBe('/checkout/42');
+
+    reservations?.querySelector<HTMLButtonElement>('button')?.click();
+    const cancel = httpMock.expectOne('/api/order/orders/42/cancel');
+    expect(cancel.request.method).toBe('POST');
+    expect(cancel.request.body).toEqual({});
+    cancel.flush(null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(host.querySelector('.active-reservations')).toBeNull();
     httpMock.verify();
   });
 

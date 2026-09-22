@@ -4,18 +4,22 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { firstValueFrom, map } from 'rxjs';
+import { firstValueFrom, map, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
 import { isCompleted } from '../core/event-time';
+import { hasSubmittedPayment } from '../core/payment-processing';
+import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
@@ -78,6 +82,18 @@ interface Invitation {
 interface InvitationResponse {
   readonly invitations: readonly Invitation[];
 }
+interface CustomerOrder {
+  readonly order_id: number;
+  readonly event_id: number;
+  readonly status: 'PENDING' | 'PAID' | 'FAILED' | 'CANCELLED';
+  readonly created_at?: string;
+  readonly reservation_expires_at?: string;
+  readonly event_title: string;
+  readonly ticket_count: number;
+}
+interface CustomerOrdersResponse {
+  readonly orders: readonly CustomerOrder[];
+}
 
 @Component({
   selector: 'app-events',
@@ -96,8 +112,10 @@ interface InvitationResponse {
 export class Events {
   private readonly auth = inject(AuthService);
   private readonly api = inject(ApiService);
+  private readonly queue = inject(QueueService);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly organiserMode = this.route.snapshot.data['workspace'] === 'organiser';
   protected readonly searchTerm = toSignal(
     this.route.queryParamMap.pipe(map((params) => params.get('q')?.trim().toLowerCase() ?? '')),
@@ -134,6 +152,22 @@ export class Events {
   protected readonly userResults = signal<readonly CognitoUser[]>([]);
   protected readonly inviteRole = signal<'ORGANISER' | 'HELPER'>('HELPER');
   protected readonly invitations = signal<readonly Invitation[]>([]);
+  protected readonly customerOrders = signal<readonly CustomerOrder[]>([]);
+  protected readonly now = signal(Date.now());
+  protected readonly cancellingOrderIds = signal<ReadonlySet<number>>(new Set());
+  protected readonly reservationError = signal('');
+  protected readonly unpaidOrders = computed(() =>
+    this.customerOrders().filter(
+      (order) =>
+        order.status === 'PENDING' && !hasSubmittedPayment(order.order_id, order.created_at),
+    ),
+  );
+  protected readonly processingOrders = computed(() =>
+    this.customerOrders().filter(
+      (order) =>
+        order.status === 'PENDING' && hasSubmittedPayment(order.order_id, order.created_at),
+    ),
+  );
   protected readonly eventForm = this.fb.group({
     title: this.fb.control('', Validators.required),
     description: this.fb.control(''),
@@ -156,9 +190,68 @@ export class Events {
     effect(() => {
       if (this.auth.status() === 'unknown') return;
       void this.loadEvents(this.isAdmin());
-      if (this.auth.isAuthenticated()) void this.loadInvitations();
-      else this.invitations.set([]);
+      if (this.auth.isAuthenticated()) {
+        void this.loadInvitations();
+        if (!this.isAdmin()) void this.loadReservations();
+      } else {
+        this.invitations.set([]);
+        this.customerOrders.set([]);
+      }
     });
+    timer(0, 1_000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.now.set(Date.now());
+        for (const order of this.unpaidOrders()) {
+          if (this.reservationSeconds(order) === 0 && !this.isCancelling(order.order_id)) {
+            void this.cancelReservation(order, true);
+          }
+        }
+      });
+  }
+
+  protected reservationTimeLabel(order: CustomerOrder): string {
+    const seconds = this.reservationSeconds(order);
+    if (seconds === null) return 'soon';
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  protected isCancelling(orderId: number): boolean {
+    return this.cancellingOrderIds().has(orderId);
+  }
+
+  protected async cancelReservation(order: CustomerOrder, expired = false): Promise<void> {
+    if (this.isCancelling(order.order_id)) return;
+    if (hasSubmittedPayment(order.order_id, order.created_at)) {
+      this.reservationError.set(
+        'Payment has already been submitted, so this order can no longer be cancelled.',
+      );
+      return;
+    }
+    this.cancellingOrderIds.update((ids) => new Set(ids).add(order.order_id));
+    this.reservationError.set('');
+    try {
+      await firstValueFrom(
+        this.api.post<void>(
+          'order',
+          `/orders/${order.order_id}/cancel`,
+          expired ? { reason: 'expired' } : {},
+        ),
+      );
+      this.customerOrders.update((orders) =>
+        orders.filter((item) => item.order_id !== order.order_id),
+      );
+      this.queue.clear(order.event_id);
+    } catch {
+      if (expired) await this.loadReservations();
+      else this.reservationError.set('Unable to cancel this reservation. Please try again.');
+    } finally {
+      this.cancellingOrderIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(order.order_id);
+        return next;
+      });
+    }
   }
 
   protected toggleEventForm(): void {
@@ -339,6 +432,21 @@ export class Events {
     } catch {
       this.invitations.set([]);
     }
+  }
+  private async loadReservations(): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.api.get<CustomerOrdersResponse>('order', '/customers/me/orders'),
+      );
+      this.customerOrders.set(result.orders.filter((order) => order.status === 'PENDING'));
+    } catch {
+      this.customerOrders.set([]);
+    }
+  }
+  private reservationSeconds(order: CustomerOrder): number | null {
+    const expiresAt = Date.parse(order.reservation_expires_at ?? '');
+    if (!Number.isFinite(expiresAt)) return null;
+    return Math.max(0, Math.ceil((expiresAt - this.now()) / 1_000));
   }
   private resetForm(): void {
     this.editingEventId.set(null);

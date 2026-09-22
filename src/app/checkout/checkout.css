@@ -82,6 +82,14 @@
   margin-block: 1rem 1.5rem;
   color: var(--text-muted);
 }
+.reservation-timer {
+  margin-block: -0.5rem 1.25rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-variant-numeric: tabular-nums;
+}
 fieldset {
   min-width: 0;
   margin: 0;
@@ -135,6 +143,11 @@ input[aria-invalid='true'] {
   margin-top: 0.75rem;
   white-space: normal;
   line-height: 1.4;
+}
+.cancel-button {
+  width: 100%;
+  margin-top: 0.75rem;
+  color: #912018;
 }
 .privacy-note {
   margin-top: 1rem;

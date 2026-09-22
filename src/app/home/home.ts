@@ -2,17 +2,21 @@ import { DatePipe, NgOptimizedImage } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of } from 'rxjs';
+import { catchError, firstValueFrom, forkJoin, map, of, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
 import { EventCategory, FeaturedSlide, Venue } from '../core/catalog';
+import { hasSubmittedPayment } from '../core/payment-processing';
+import { QueueService } from '../core/queue';
 import { startsTodayOrLater } from '../core/event-dates';
 import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
 import { Carousel } from './carousel/carousel';
@@ -43,6 +47,8 @@ interface PaidOrder {
   readonly venue: string;
   readonly starts_at: string;
   readonly ticket_count: number;
+  readonly created_at?: string;
+  readonly reservation_expires_at?: string;
 }
 
 interface OrdersResponse {
@@ -98,10 +104,27 @@ const VENUE_IMAGES = [
 })
 export class Home {
   private readonly api = inject(ApiService);
+  private readonly queue = inject(QueueService);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly auth = inject(AuthService);
   protected readonly tickets = signal<readonly UpcomingTicket[]>([]);
   protected readonly orders = signal<readonly PaidOrder[]>([]);
   protected readonly purchaseStatus = signal<PurchaseLoadStatus>('loading');
+  protected readonly now = signal(Date.now());
+  protected readonly cancellingOrderIds = signal<ReadonlySet<number>>(new Set());
+  protected readonly reservationError = signal('');
+  protected readonly unpaidOrders = computed(() =>
+    this.orders().filter(
+      (order) =>
+        order.status === 'PENDING' && !hasSubmittedPayment(order.order_id, order.created_at),
+    ),
+  );
+  protected readonly processingOrders = computed(() =>
+    this.orders().filter(
+      (order) =>
+        order.status === 'PENDING' && hasSubmittedPayment(order.order_id, order.created_at),
+    ),
+  );
   protected readonly upcomingPurchases = computed<readonly UpcomingPurchase[]>(() => {
     const tickets = this.tickets();
     const issuedOrderIds = new Set(tickets.map((ticket) => ticket.order_id));
@@ -190,6 +213,67 @@ export class Home {
         this.purchaseStatus.set(tickets.ok || orders.ok ? 'ready' : 'error');
       });
     });
+    timer(0, 1_000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.now.set(Date.now());
+        for (const order of this.unpaidOrders()) {
+          if (this.reservationSeconds(order) === 0 && !this.isCancelling(order.order_id)) {
+            void this.cancelReservation(order, true);
+          }
+        }
+      });
+  }
+
+  protected reservationTimeLabel(order: PaidOrder): string {
+    const seconds = this.reservationSeconds(order);
+    if (seconds === null) return 'soon';
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  protected isCancelling(orderId: number): boolean {
+    return this.cancellingOrderIds().has(orderId);
+  }
+
+  protected async cancelReservation(order: PaidOrder, expired = false): Promise<void> {
+    if (this.isCancelling(order.order_id)) return;
+    if (hasSubmittedPayment(order.order_id, order.created_at)) {
+      this.reservationError.set(
+        'Payment has already been submitted, so this order can no longer be cancelled.',
+      );
+      return;
+    }
+    this.cancellingOrderIds.update((ids) => new Set(ids).add(order.order_id));
+    this.reservationError.set('');
+    try {
+      await firstValueFrom(
+        this.api.post<void>(
+          'order',
+          `/orders/${order.order_id}/cancel`,
+          expired ? { reason: 'expired' } : {},
+        ),
+      );
+      this.orders.update((orders) => orders.filter((item) => item.order_id !== order.order_id));
+      this.queue.clear(order.event_id);
+    } catch {
+      if (expired) {
+        this.orders.update((orders) => orders.filter((item) => item.order_id !== order.order_id));
+      } else {
+        this.reservationError.set('Unable to cancel this reservation. Please try again.');
+      }
+    } finally {
+      this.cancellingOrderIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(order.order_id);
+        return next;
+      });
+    }
+  }
+
+  private reservationSeconds(order: PaidOrder): number | null {
+    const expiresAt = Date.parse(order.reservation_expires_at ?? '');
+    if (!Number.isFinite(expiresAt)) return null;
+    return Math.max(0, Math.ceil((expiresAt - this.now()) / 1_000));
   }
 
   protected readonly assurances = [

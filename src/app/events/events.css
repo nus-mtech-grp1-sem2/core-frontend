@@ -87,6 +87,47 @@
   color: var(--danger, #b42318);
 }
 
+.active-reservations {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+}
+
+.active-reservations h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.reservation-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.reservation-card h3,
+.reservation-card p {
+  margin: 0;
+}
+
+.reservation-card p {
+  color: var(--text-muted);
+}
+
+.reservation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .invitations,
 .team {
   border: 1px solid var(--border);
@@ -116,12 +157,32 @@
   margin-top: 0.75rem;
 }
 
-.team { margin-top: 1rem; margin-bottom: 0; }
-.team label { display: block; font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.5rem; }
-.team-search input, .team-search select { min-width: 0; font: inherit; padding: 0.5rem 0.625rem; border: 1px solid var(--border); background: var(--bg); color: inherit; }
-.team-search input { flex: 1; }
-.user-result small { display: block; color: var(--text-muted); }
-
+.team {
+  margin-top: 1rem;
+  margin-bottom: 0;
+}
+.team label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.team-search input,
+.team-search select {
+  min-width: 0;
+  font: inherit;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: inherit;
+}
+.team-search input {
+  flex: 1;
+}
+.user-result small {
+  display: block;
+  color: var(--text-muted);
+}
 
 .event-grid {
   list-style: none;

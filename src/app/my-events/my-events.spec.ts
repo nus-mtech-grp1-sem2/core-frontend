@@ -170,7 +170,16 @@ describe('MyEvents tickets and orders', () => {
 });
 
 describe('MyEvents unpaid orders', () => {
-  it('offers a link to resume mock payment', async () => {
+  beforeEach(() => sessionStorage.clear());
+  afterEach(() => sessionStorage.clear());
+
+  async function renderPending(paymentState: 'none' | 'processing' | 'stale' = 'none') {
+    if (paymentState !== 'none') {
+      sessionStorage.setItem(
+        'onestage.acceptedPayment.42',
+        String(Date.now() - (paymentState === 'stale' ? 10 * 60_000 : 0)),
+      );
+    }
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/customers/me/tickets') return of({ tickets: [] });
       if (path === '/helper/shifts') return of({ events: [] });
@@ -185,11 +194,14 @@ describe('MyEvents unpaid orders', () => {
               ticket_count: 2,
               total_amount_cents: 4000,
               currency: 'SGD',
+              created_at: new Date(Date.now() - 1_000).toISOString(),
+              reservation_expires_at: new Date(Date.now() + 180_000).toISOString(),
             },
           ],
         });
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
+    const post = vi.fn(() => of(undefined));
     await TestBed.configureTestingModule({
       imports: [MyEvents],
       providers: [
@@ -198,7 +210,7 @@ describe('MyEvents unpaid orders', () => {
           provide: ActivatedRoute,
           useValue: { snapshot: { queryParamMap: convertToParamMap({}) } },
         },
-        { provide: ApiService, useValue: { get } },
+        { provide: ApiService, useValue: { get, post } },
       ],
     }).compileComponents();
     const fixture = TestBed.createComponent(MyEvents);
@@ -206,10 +218,53 @@ describe('MyEvents unpaid orders', () => {
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
+    return { fixture, host, post };
+  }
+
+  it('offers payment and cancellation controls when checkout was left before payment', async () => {
+    const { fixture, host, post } = await renderPending();
     expect(host.querySelector('a[href="/checkout/42"]')?.textContent).toContain(
       'Continue to payment',
     );
     expect(host.textContent).toContain('Payment pending');
+    expect(host.textContent).toMatch(/Reservation expires in\s+3:00/);
+    const cancel = host.querySelector<HTMLButtonElement>('.cancel-button');
+    expect(cancel?.textContent).toContain('Cancel reservation');
+    cancel?.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    expect(post).toHaveBeenCalledWith('order', '/orders/42/cancel', {});
+    expect(host.querySelector('[aria-label="Orders awaiting payment"]')).toBeNull();
+  });
+
+  it('ignores a processing marker created by the old checkout implementation', async () => {
+    sessionStorage.setItem('onestage.mockPayment.42', String(Date.now()));
+    const { host } = await renderPending();
+
+    expect(host.querySelector('[aria-label="Orders awaiting payment"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Orders processing payment"]')).toBeNull();
+    expect(sessionStorage.getItem('onestage.mockPayment.42')).toBeNull();
+  });
+
+  it('keeps a submitted order visible as payment processing without offering cancellation', async () => {
+    const { host, post } = await renderPending('processing');
+
+    const processing = host.querySelector('[aria-label="Orders processing payment"]');
+    expect(processing?.textContent).toContain('Payment is processing');
+    expect(processing?.textContent).toContain('can no longer be cancelled');
+    expect(host.querySelector('[aria-label="Orders awaiting payment"]')).toBeNull();
+    expect(host.querySelector('.cancel-button')).toBeNull();
+    expect(host.textContent).not.toContain('No tickets yet');
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('ignores a stale processing marker so a new reservation is not hidden', async () => {
+    const { host } = await renderPending('stale');
+
+    expect(host.querySelector('[aria-label="Orders awaiting payment"]')).not.toBeNull();
+    expect(host.querySelector('.cancel-button')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Orders processing payment"]')).toBeNull();
+    expect(sessionStorage.getItem('onestage.acceptedPayment.42')).toBeNull();
   });
 });
 

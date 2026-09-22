@@ -44,6 +44,46 @@
     @if (error()) {
       <p class="error" role="alert">{{ error() }}</p>
     }
+    @if (!isAdmin() && (unpaidOrders().length > 0 || processingOrders().length > 0)) {
+      <section class="active-reservations" aria-labelledby="active-reservations-heading">
+        <h2 id="active-reservations-heading">Active reservations</h2>
+        @for (order of unpaidOrders(); track order.order_id) {
+          <article class="reservation-card">
+            <div>
+              <h3>{{ order.event_title }}</h3>
+              <p>
+                {{ order.ticket_count }} ticket(s) reserved · expires in
+                <strong>{{ reservationTimeLabel(order) }}</strong>
+              </p>
+            </div>
+            <div class="reservation-actions">
+              <a class="btn btn-primary btn-sm" [routerLink]="['/checkout', order.order_id]"
+                >Continue to payment</a
+              >
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm delete"
+                [disabled]="isCancelling(order.order_id)"
+                (click)="cancelReservation(order)"
+              >
+                {{ isCancelling(order.order_id) ? 'Cancelling…' : 'Cancel reservation' }}
+              </button>
+            </div>
+          </article>
+        }
+        @for (order of processingOrders(); track order.order_id) {
+          <article class="reservation-card" role="status">
+            <div>
+              <h3>{{ order.event_title }}</h3>
+              <p>Payment is processing. This reservation can no longer be cancelled.</p>
+            </div>
+          </article>
+        }
+      </section>
+    }
+    @if (reservationError()) {
+      <p class="error" role="alert">{{ reservationError() }}</p>
+    }
     @if (invitations().length) {
       <section class="invitations" aria-labelledby="invitation-heading">
         <h2 id="invitation-heading">Event invitations</h2>
