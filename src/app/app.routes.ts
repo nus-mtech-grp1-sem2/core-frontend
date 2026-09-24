@@ -18,7 +18,8 @@ export const routes: Routes = [
     path: 'events/:id',
     title: 'Event — OneStage',
     data: { workspace: 'customer' },
-    loadComponent: () => import('./events/event-detail/event-detail').then((m) => m.EventDetail),
+    loadComponent: () =>
+      import('./events/components/event-detail/event-detail').then((m) => m.EventDetail),
   },
   {
     path: 'tickets',
@@ -29,7 +30,8 @@ export const routes: Routes = [
     title: 'Waiting room — OneStage',
     canActivate: [authGuard],
     data: { workspace: 'customer' },
-    loadComponent: () => import('./events/event-queue/event-queue').then((m) => m.EventQueue),
+    loadComponent: () =>
+      import('./events/components/event-queue/event-queue').then((m) => m.EventQueue),
   },
   {
     path: 'checkout/:orderId',
@@ -47,12 +49,12 @@ export const routes: Routes = [
   {
     path: 'login',
     title: 'Sign in — OneStage',
-    loadComponent: () => import('./auth/login/login').then((m) => m.Login),
+    loadComponent: () => import('./auth/components/login/login').then((m) => m.Login),
   },
   {
     path: 'register',
     title: 'Create an account — OneStage',
-    loadComponent: () => import('./auth/register/register').then((m) => m.Register),
+    loadComponent: () => import('./auth/components/register/register').then((m) => m.Register),
   },
   {
     path: 'organiser',
@@ -72,19 +74,21 @@ export const routes: Routes = [
     title: 'Manage event — OneStage',
     canActivate: [authGuard],
     data: { workspace: 'organiser' },
-    loadComponent: () => import('./events/event-detail/event-detail').then((m) => m.EventDetail),
+    loadComponent: () =>
+      import('./events/components/event-detail/event-detail').then((m) => m.EventDetail),
   },
   {
     path: 'organiser/sales',
     title: 'Sales — OneStage',
     canActivate: [authGuard],
-    loadComponent: () => import('./organiser/sales/sales').then((m) => m.Sales),
+    loadComponent: () => import('./organiser/components/sales/sales').then((m) => m.Sales),
   },
   {
     path: 'organiser/attendees',
     title: 'Attendees — OneStage',
     canActivate: [authGuard],
-    loadComponent: () => import('./organiser/attendees/attendees').then((m) => m.Attendees),
+    loadComponent: () =>
+      import('./organiser/components/attendees/attendees').then((m) => m.Attendees),
   },
   {
     path: 'helper',

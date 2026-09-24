@@ -1,0 +1,15 @@
+<app-auth-shell
+  heading="Welcome to OneStage"
+  lead="Sign in or create an account securely with Cognito."
+  image="images/hero-theatre.jpg"
+  alt="Silhouetted performers against a red stage curtain"
+  quote="Your seats are waiting."
+>
+  <app-auth-continue
+    destination="sign-in"
+    label="Continue to sign in"
+    [busy]="busy()"
+    [error]="error()"
+    (proceed)="continue()"
+  />
+</app-auth-shell>

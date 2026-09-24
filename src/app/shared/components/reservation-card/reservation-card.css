@@ -1,0 +1,44 @@
+:host {
+  display: block;
+}
+
+.reservation-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem var(--reservation-padding-inline, 1.25rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.reservation-card h3,
+.reservation-card p {
+  margin: 0;
+}
+
+.reservation-card h3 {
+  font-size: var(--reservation-heading-size, 1.17em);
+}
+
+.reservation-card p {
+  color: var(--text-muted);
+}
+
+.reservation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reservation-cancel {
+  color: var(--danger, #b42318);
+}
+
+@media (max-width: 700px) {
+  :host(.responsive) .reservation-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

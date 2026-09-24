@@ -1,0 +1,45 @@
+<app-workspace-shell workspace="customer">
+  <main class="shell body queue" aria-labelledby="queue-heading">
+    <p class="eyebrow">Waiting room</p>
+    <h1 id="queue-heading">{{ eventTitle() || 'Event waiting room' }}</h1>
+
+    @switch (state()) { @case ('joining') {
+    <div class="loader" aria-hidden="true"></div>
+    <p class="status-message" role="status">Checking your queue place…</p>
+    } @case ('waiting') {
+    <p class="position" aria-live="polite">
+      <span>Position</span>
+      <strong>{{ position() ?? '—' }}</strong>
+    </p>
+    <p>You can keep this page open. Your position refreshes automatically.</p>
+    <button type="button" class="btn btn-ghost" (click)="leave()">Leave queue</button>
+    } @case ('admitted') {
+    <p class="status-message success" role="status">It’s your turn. Opening seat selection…</p>
+    } @case ('leaving') {
+    <p class="status-message" role="status">Leaving the queue…</p>
+    } @case ('left') {
+    <h2>Your queue place is no longer active</h2>
+    <p>Rejoin to receive a new position.</p>
+    <button type="button" class="btn btn-primary" (click)="retry()">Rejoin queue</button>
+    } @case ('closed') {
+    <h2>The waiting room is not open yet</h2>
+    @if (summary()?.opensAt; as opensAt) {
+    <p>It opens {{ opensAt | date: 'EEE d MMM y, h:mm a' }}.</p>
+    }
+    <button type="button" class="btn btn-primary" (click)="retry()">Check again</button>
+    } @case ('sold-out') {
+    <h2>This queue has closed</h2>
+    <p>There is no ticket inventory available for another admission batch.</p>
+    } @case ('unavailable') {
+    <h2>The waiting room is unavailable</h2>
+    <p>{{ message() }}</p>
+    <a class="btn btn-primary" [routerLink]="['/events', eventId()]">View event</a>
+    } @case ('error') {
+    <h2>We couldn’t update your queue place</h2>
+    <p role="alert">{{ message() }}</p>
+    <button type="button" class="btn btn-primary" (click)="retry()">Try again</button>
+    } }
+
+    <a class="back" [routerLink]="['/events', eventId()]">Back to event details</a>
+  </main>
+</app-workspace-shell>

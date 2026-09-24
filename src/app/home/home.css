@@ -11,36 +11,6 @@
   margin-bottom: 0.25rem;
 }
 
-.reservation-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-}
-
-.reservation-card h3,
-.reservation-card p {
-  margin: 0;
-}
-
-.reservation-card p {
-  color: var(--text-muted);
-}
-
-.reservation-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.reservation-cancel {
-  color: var(--danger, #b42318);
-}
-
 /* Upcoming tickets for a signed-in customer */
 .orders {
   list-style: none;
@@ -118,11 +88,6 @@
 }
 
 @media (max-width: 700px) {
-  .reservation-card {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .orders li {
     grid-template-columns: 1fr auto;
   }

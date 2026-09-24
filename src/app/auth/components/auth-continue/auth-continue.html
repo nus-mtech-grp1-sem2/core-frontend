@@ -1,0 +1,12 @@
+@if (error()) {
+<p class="form-error-banner" role="alert">{{ error() }}</p>
+}
+
+<p class="security-note">
+  You will continue to the AWS Cognito {{ destination() }} page. OneStage never receives your
+  password.
+</p>
+
+<button class="btn btn-primary submit" type="button" (click)="proceed.emit()" [disabled]="busy()">
+  {{ busy() ? 'Redirecting…' : label() }}
+</button>

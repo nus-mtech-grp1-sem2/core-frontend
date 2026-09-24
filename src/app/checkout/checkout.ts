@@ -23,7 +23,7 @@ import { firstValueFrom, timeout, timer } from 'rxjs';
 import { ApiService } from '../core/api';
 import { hasSubmittedPayment, setPaymentProcessing } from '../core/payment-processing';
 import { QueueService } from '../core/queue';
-import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
+import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
 
 interface CheckoutOrder {
   readonly order_id: number;

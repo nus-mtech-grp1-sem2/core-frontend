@@ -1,0 +1,86 @@
+<app-workspace-shell workspace="event-helper">
+  <section class="page-head">
+    <div class="shell">
+      <p class="eyebrow">Event helper</p>
+      <h1>{{ greeting() }}</h1>
+      <p class="lead">
+        {{ today() ? 'You are on the door tonight. Open check-in when the queue starts moving.' :
+        'No shift today. Your next one is listed below.' }}
+      </p>
+    </div>
+  </section>
+
+  <section class="shell body">
+    @switch (status()) { @case ('loading') {
+    <p class="status-message" role="status">Loading your shifts…</p>
+    } @case ('error') {
+    <p class="status-message error" role="alert">
+      Couldn't load your shifts.
+      <button type="button" class="retry" (click)="loadShifts()">Try again</button>
+    </p>
+    } @case ('ready') { @if (today(); as shift) {
+    <article class="on-now">
+      <div class="on-now-head">
+        <span class="pill live">On tonight</span>
+        <span class="doors">Doors {{ shift.doorsOpen }}</span>
+      </div>
+      <h2>{{ shift.event }}</h2>
+      <p class="where">{{ shift.venue }} · {{ shift.gate }}</p>
+      <dl class="facts">
+        <div>
+          <dt>Date</dt>
+          <dd>{{ shift.date }}</dd>
+        </div>
+        <div>
+          <dt>Expected</dt>
+          <dd>{{ shift.expected.toLocaleString('en-SG') }} attendees</dd>
+        </div>
+      </dl>
+      <a class="btn btn-primary" [routerLink]="['/checkin', shift.id]">Open door check-in</a>
+    </article>
+    }
+
+    <h2 class="section-title">Upcoming shifts</h2>
+    <ul class="shifts">
+      @for (shift of upcoming(); track shift.id) {
+      <li>
+        <div class="when">
+          <span class="date">{{ shift.date }}</span>
+          <span class="time">Doors {{ shift.doorsOpen }}</span>
+        </div>
+        <div class="what">
+          <span class="event">{{ shift.event }}</span>
+          <span class="venue">{{ shift.venue }} · {{ shift.gate }}</span>
+        </div>
+        <span class="count">{{ shift.expected.toLocaleString('en-SG') }}</span>
+      </li>
+      } @empty {
+      <li class="empty">Nothing scheduled after tonight.</li>
+      }
+    </ul>
+
+    @if (completed().length > 0) {
+    <h2 class="section-title">Completed shifts</h2>
+    <ul class="shifts completed">
+      @for (shift of completed(); track shift.id) {
+      <li>
+        <div class="when">
+          <span class="date">{{ shift.date }}</span>
+          <span class="time">Doors {{ shift.doorsOpen }}</span>
+        </div>
+        <div class="what">
+          <span class="event">{{ shift.event }}</span>
+          <span class="venue">{{ shift.venue }} · {{ shift.gate }}</span>
+        </div>
+        <span class="count">{{ shift.expected.toLocaleString('en-SG') }}</span>
+      </li>
+      }
+    </ul>
+    }
+
+    <p class="note">
+      Scans are recorded against your account, so the log shows who admitted each ticket.
+    </p>
+    } }
+  </section>
+</app-workspace-shell>
