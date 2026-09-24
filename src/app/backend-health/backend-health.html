@@ -1,0 +1,14 @@
+<section class="panel">
+  <h2>Backend connectivity</h2>
+  <button type="button" (click)="check()">Re-check</button>
+  <ul aria-live="polite">
+    @for (probe of probes(); track probe.service) {
+    <li>
+      <span class="name">{{ probe.service }}</span>
+      <span class="state" [class.up]="probe.state === 'up'" [class.down]="probe.state === 'down'">
+        {{ probe.detail }}
+      </span>
+    </li>
+    }
+  </ul>
+</section>

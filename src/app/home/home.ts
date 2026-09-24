@@ -18,8 +18,9 @@ import { EventCategory, FeaturedSlide, Venue } from '../core/catalog';
 import { hasSubmittedPayment } from '../core/payment-processing';
 import { QueueService } from '../core/queue';
 import { startsTodayOrLater } from '../core/event-dates';
-import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
-import { Carousel } from './carousel/carousel';
+import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
+import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
+import { Carousel } from './components/carousel/carousel';
 
 type TicketStatus = 'ISSUED' | 'CHECKED_IN' | 'VOID';
 
@@ -98,7 +99,7 @@ const VENUE_IMAGES = [
 @Component({
   selector: 'app-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Carousel, DatePipe, NgOptimizedImage, RouterLink, WorkspaceShell],
+  imports: [ReservationCard, Carousel, DatePipe, NgOptimizedImage, RouterLink, WorkspaceShell],
   templateUrl: './home.html',
   styleUrl: './home.css',
 })

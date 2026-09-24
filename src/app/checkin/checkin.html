@@ -1,0 +1,144 @@
+<app-workspace-shell workspace="event-helper">
+  <section class="page-head">
+    <div class="shell">
+      <p class="eyebrow">Event helper</p>
+      <h1>Door check-in</h1>
+      <p class="lead">Signed in as {{ auth.user()?.email }}.</p>
+    </div>
+  </section>
+
+  <section class="shell body">
+    <div class="field">
+      <label for="event">Assigned event</label>
+      <select
+        id="event"
+        [value]="eventId()"
+        (change)="selectEvent(+$any($event.target).value)"
+        [disabled]="!events().length"
+      >
+        @for (event of events(); track event.event_id) {
+        <option [value]="event.event_id">{{ event.title }}</option>
+        }
+      </select>
+      @if (stats(); as stats) {
+      <p class="stats" role="status">{{ stats.checkedIn }} of {{ stats.total }} checked in</p>
+      }
+    </div>
+
+    <section class="camera" aria-labelledby="camera-heading">
+      <div class="camera-head">
+        <div>
+          <h2 id="camera-heading">Scan with camera</h2>
+          <p>Point the camera at the ticket QR code.</p>
+        </div>
+        <div class="camera-actions">
+          <label
+            class="btn btn-ghost upload"
+            [class.disabled]="eventId() === null || decodingImage() || checkingIn()"
+          >
+            {{ decodingImage() ? 'Reading…' : 'Upload QR image' }}
+            <input
+              type="file"
+              accept="image/*"
+              [disabled]="eventId() === null || decodingImage()"
+              (change)="scanImage($event)"
+            />
+          </label>
+          @if (cameraActive()) {
+          <button class="btn btn-ghost" type="button" (click)="stopCamera()">Stop camera</button>
+          } @else {
+          <button
+            class="btn btn-primary"
+            type="button"
+            [disabled]="eventId() === null || checkingIn()"
+            (click)="startCamera()"
+          >
+            Open camera
+          </button>
+          }
+        </div>
+      </div>
+      <div class="preview" [class.hidden]="!cameraActive()">
+        <video #cameraPreview autoplay muted playsinline aria-label="Camera preview"></video>
+        <span class="scan-guide" aria-hidden="true"></span>
+      </div>
+      @if (cameraError()) {
+      <p class="camera-error" role="alert">{{ cameraError() }}</p>
+      <button class="btn btn-ghost" type="button" (click)="startCamera()">Try camera again</button>
+      } @if (checkingIn()) {
+      <p class="camera-note" role="status">Checking ticket…</p>
+      }
+      <p class="camera-note">
+        Camera access requires HTTPS or localhost. You can upload a QR screenshot if camera access
+        is unavailable.
+      </p>
+    </section>
+
+    <div class="feedback-tools">
+      <p class="audio-state" role="status">{{ muted() ? 'Sound muted' : 'Sound on' }}</p>
+      <button class="btn btn-ghost" type="button" (click)="toggleMute()">
+        {{ muted() ? 'Unmute sounds' : 'Mute sounds' }}
+      </button>
+    </div>
+
+    @if (last(); as result) {
+    <p
+      class="verdict"
+      role="status"
+      [class.ok]="result.outcome === 'VALID'"
+      [class.warn]="result.outcome === 'ALREADY_USED' || result.outcome === 'WRONG_EVENT'"
+      [class.bad]="result.outcome === 'INVALID'"
+    >
+      <span aria-hidden="true">{{ outcomeIcon(result.outcome) }}</span>
+      {{ describe(result.outcome) }}
+    </p>
+    } @if (requestError()) {
+    <p class="request-error" role="alert">{{ requestError() }}</p>
+    <button class="btn btn-ghost" type="button" (click)="retryLast()">Try again</button>
+    }
+
+    <h2>This session</h2>
+    @if (scans().length) {
+    <ul class="log">
+      @for (scan of scans(); track scan.outcome + scan.at) {
+      <li>
+        <span class="code" aria-hidden="true">{{ outcomeIcon(scan.outcome) }}</span>
+        <span class="outcome">{{ describe(scan.outcome) }}</span>
+        <span class="at">{{ scan.at }}</span>
+      </li>
+      }
+    </ul>
+    } @else {
+    <p class="empty">No tickets scanned yet.</p>
+    }
+
+    <h2>Manual lookup</h2>
+    <form [formGroup]="searchForm" novalidate class="scan">
+      <div class="field">
+        <label for="query">Name, email or order ID</label>
+        <input id="query" type="text" formControlName="query" autocomplete="off" />
+      </div>
+      <span class="search-status" role="status">{{ searchStatus() }}</span>
+    </form>
+    @if (searchResults().length) {
+    <ul class="log">
+      @for (result of searchResults(); track result.ticket_id) {
+      <li>
+        <span class="code">{{ result.customer_name || result.customer_email }}</span>
+        <span class="outcome"
+          >{{ result.seat_id ? 'Reserved seat' : 'General admission' }} · {{ result.status }}</span
+        >
+        <button
+          class="btn btn-ghost"
+          type="button"
+          (click)="checkInSearchResult(result)"
+          [disabled]="checkingIn()"
+        >
+          Check in
+        </button>
+      </li>
+      }
+    </ul>
+    }
+  </section>
+</app-workspace-shell>

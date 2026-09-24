@@ -1,4 +1,4 @@
-import { DatePipe, LowerCasePipe, NgOptimizedImage } from '@angular/common';
+import { LowerCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom, map, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
@@ -20,23 +20,11 @@ import { AuthService } from '../core/auth';
 import { isCompleted } from '../core/event-time';
 import { hasSubmittedPayment } from '../core/payment-processing';
 import { QueueService } from '../core/queue';
-import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
+import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
+import { EventCard } from './components/event-card/event-card';
+import { EventStatus, EventTier, ManagedEvent } from './event.models';
+import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
 
-type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
-type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
-interface ManagedEvent {
-  readonly event_id: number;
-  readonly title: string;
-  readonly description: string | null;
-  readonly venue: string | null;
-  readonly starts_at: string;
-  readonly total_seats: number;
-  readonly available_buyers: number | null;
-  readonly tier: EventTier;
-  readonly status: EventStatus;
-  readonly price_cents: number | null;
-  readonly remaining_qty?: number;
-}
 interface EventApiRecord {
   readonly event_id: number;
   readonly title?: string;
@@ -98,14 +86,7 @@ interface CustomerOrdersResponse {
 @Component({
   selector: 'app-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    DatePipe,
-    LowerCasePipe,
-    NgOptimizedImage,
-    RouterLink,
-    ReactiveFormsModule,
-    WorkspaceShell,
-  ],
+  imports: [EventCard, ReservationCard, LowerCasePipe, ReactiveFormsModule, WorkspaceShell],
   templateUrl: './events.html',
   styleUrl: './events.css',
 })
@@ -359,21 +340,6 @@ export class Events {
   /** A completed event can still be opened, but nothing on it can be changed. */
   protected isEventCompleted(event: ManagedEvent): boolean {
     return isCompleted(event.starts_at);
-  }
-
-  protected statusFor(event: ManagedEvent): string {
-    if (this.isEventCompleted(event)) return 'Completed';
-    return event.status === 'PUBLISHED'
-      ? 'On sale'
-      : event.status === 'DRAFT'
-        ? 'Draft'
-        : 'Cancelled';
-  }
-  protected tierFor(event: ManagedEvent): string {
-    return event.tier === 'TIER1_GA' ? 'General admission' : 'Reserved seating';
-  }
-  protected priceFor(event: ManagedEvent): string {
-    return `$${((event.price_cents ?? 0) / 100).toFixed(2)}`;
   }
 
   private async performAction(path: string): Promise<void> {

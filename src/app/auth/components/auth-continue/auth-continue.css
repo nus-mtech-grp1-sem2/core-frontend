@@ -1,0 +1,13 @@
+:host {
+  display: block;
+}
+
+.security-note {
+  margin: 0 0 1.25rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.submit {
+  width: 100%;
+}

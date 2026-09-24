@@ -1,8 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { CognitoGateway } from '../core/cognito-gateway';
-import { Login } from './login/login';
-import { Register } from './register/register';
+import { Login } from './components/login/login';
+import { Register } from './components/register/register';
 
 class FakeGateway implements Partial<CognitoGateway> {
   failWith: Error | null = null;
