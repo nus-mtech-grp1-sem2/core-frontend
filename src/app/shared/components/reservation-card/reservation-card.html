@@ -19,7 +19,7 @@
       type="button"
       class="btn btn-ghost btn-sm reservation-cancel"
       [disabled]="cancelling()"
-      (click)="cancel.emit()"
+      (click)="cancelRequested.emit()"
     >
       {{ cancelling() ? 'Cancelling…' : 'Cancel reservation' }}
     </button>
