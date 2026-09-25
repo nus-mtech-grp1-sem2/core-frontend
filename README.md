@@ -46,13 +46,29 @@ ng test
 
 ## Running end-to-end tests
 
-For end-to-end (e2e) testing, run:
+End-to-end tests use [Playwright](https://playwright.dev/) and live in `e2e/`, named `*.e2e.ts`
+(not `.spec.ts`, which `ng test` would pick up). Playwright starts `npm start` itself, or reuses a
+dev server already running on port 4200. The port matters: the Cognito app client only allows
+`http://localhost:4200/` as a callback URL.
+
+One-time browser install (Chromium only for now):
 
 ```bash
-ng e2e
+npx playwright install chromium
+# On a fresh Linux machine or CI runner, also install system libraries:
+npx playwright install --with-deps chromium
 ```
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+Then:
+
+```bash
+npm run test:e2e        # headless
+npm run test:e2e:ui     # Playwright UI mode
+npx playwright show-report
+```
+
+Tests must not commit credentials, tokens or saved auth state. `test-results/`,
+`playwright-report/` and `e2e/.auth/` are gitignored.
 
 ## Additional Resources
 
