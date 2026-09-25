@@ -8,7 +8,12 @@ import { vi } from 'vitest';
 import { ApiService } from '../../../core/api';
 import { AuthService } from '../../../core/auth';
 import { QueueService } from '../../../core/queue';
-import { buyerCapacity, EventDetail, purchaseErrorMessage } from './event-detail';
+import {
+  buyerCapacity,
+  defaultSeatGridColumns,
+  EventDetail,
+  purchaseErrorMessage,
+} from './event-detail';
 
 describe('EventDetail checkout navigation', () => {
   it.each(['TIER1_GA', 'TIER2_SEATED'] as const)(
@@ -235,6 +240,16 @@ describe('EventDetail buyer capacity', () => {
   it('falls back to ten percent rounded up, with a minimum of one', () => {
     expect(buyerCapacity(104, null)).toBe(11);
     expect(buyerCapacity(5, null)).toBe(1);
+  });
+});
+
+describe('EventDetail default seat layout', () => {
+  it('uses a filled rectangle for 18 unconfigured seats', () => {
+    expect(defaultSeatGridColumns(18)).toBe(6);
+  });
+
+  it('keeps non-factor seat totals close to square', () => {
+    expect(defaultSeatGridColumns(14)).toBe(4);
   });
 });
 

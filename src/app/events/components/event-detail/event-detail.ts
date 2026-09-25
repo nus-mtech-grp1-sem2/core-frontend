@@ -189,11 +189,12 @@ export class EventDetail {
   protected readonly changingRoleFor = signal<string | null>(null);
   protected readonly error = signal('');
   protected readonly seats = signal<readonly SeatOption[]>([]);
-  protected readonly gridRows = computed(() => occupiedGridAxis(this.seats(), 'gridRow'));
-  protected readonly gridCols = computed(() => occupiedGridAxis(this.seats(), 'gridCol'));
+  protected readonly displaySeats = computed(() => seatsWithFallbackLayout(this.seats()));
+  protected readonly gridRows = computed(() => occupiedGridAxis(this.displaySeats(), 'gridRow'));
+  protected readonly gridCols = computed(() => occupiedGridAxis(this.displaySeats(), 'gridCol'));
   protected readonly seatsByKey = computed(() => {
     const map = new Map<string, SeatOption>();
-    for (const seat of this.seats()) map.set(seatKey(seat.gridRow, seat.gridCol), seat);
+    for (const seat of this.displaySeats()) map.set(seatKey(seat.gridRow, seat.gridCol), seat);
     return map;
   });
   protected readonly quantity = signal(1);
@@ -893,6 +894,53 @@ function occupiedGridAxis(
   coordinate: 'gridRow' | 'gridCol',
 ): readonly number[] {
   return [...new Set(seats.map((seat) => seat[coordinate]))].sort((a, b) => a - b);
+}
+
+/**
+ * A seated event created before its inventory is saved has purchasable seat
+ * rows with null coordinates. Only that case receives a compact fallback;
+ * configured events retain the organiser's exact placement.
+ */
+function seatsWithFallbackLayout(seats: readonly SeatOption[]): readonly SeatOption[] {
+  const configured = seats.every(
+    (seat) =>
+      Number.isInteger(seat.gridRow) &&
+      seat.gridRow >= 0 &&
+      Number.isInteger(seat.gridCol) &&
+      seat.gridCol >= 0,
+  );
+  if (configured || seats.length === 0) return seats;
+
+  const columns = defaultSeatGridColumns(seats.length);
+  return seats.map((seat, index) => ({
+    ...seat,
+    gridRow: Math.floor(index / columns),
+    gridCol: index % columns,
+  }));
+}
+
+/** Picks a compact landscape grid, preferring a fully filled rectangle. */
+export function defaultSeatGridColumns(seatCount: number): number {
+  const count = Math.max(0, Math.floor(seatCount));
+  if (count === 0) return 0;
+
+  const firstCandidate = Math.ceil(Math.sqrt(count));
+  const lastCandidate = Math.max(firstCandidate, Math.ceil(Math.sqrt(count * 2)));
+  let bestColumns = firstCandidate;
+  let bestEmptyCells = Number.POSITIVE_INFINITY;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let columns = firstCandidate; columns <= lastCandidate; columns += 1) {
+    const rows = Math.ceil(count / columns);
+    const emptyCells = rows * columns - count;
+    const score = emptyCells + Math.abs(columns - rows);
+    if (score < bestScore || (score === bestScore && emptyCells < bestEmptyCells)) {
+      bestColumns = columns;
+      bestEmptyCells = emptyCells;
+      bestScore = score;
+    }
+  }
+  return bestColumns;
 }
 
 export function buyerCapacity(totalSeats: number, configuredBuyers: number | null): number {
