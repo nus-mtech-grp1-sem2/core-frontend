@@ -1,0 +1,82 @@
+name: E2E (full stack, weekly)
+
+# Weekly and on demand only: never on push or pull request, and not a required check (#26).
+# Drives the real app against the real backend (started from backend-repo with a local MySQL) and
+# real Cognito sign-in. No AWS credentials are used anywhere: see e2e/full-stack/backend-env.sh.
+on:
+  schedule:
+    - cron: '0 2 * * 1' # Mondays 02:00 UTC
+  workflow_dispatch: {}
+
+permissions: {contents: read}
+
+concurrency:
+  group: e2e-full-stack
+  cancel-in-progress: false
+
+jobs:
+  full-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # backend-repo is private. A read-only deploy key on that repo, kept as a secret here, is
+      # the only credential this job has for it.
+      - name: Check out backend-repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: nus-mtech-grp1-sem2/backend-repo
+          ref: main
+          path: backend-repo
+          ssh-key: ${{ secrets.BACKEND_DEPLOY_KEY }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Generate the backend .env (random secrets, no AWS credentials)
+        run: bash e2e/full-stack/backend-env.sh backend-repo
+
+      - name: Start the backend
+        working-directory: backend-repo
+        run: |
+          compose="docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.override.yml --env-file .env"
+          $compose up -d --build
+          for _ in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/event/health || true)
+            [ "$code" = 200 ] && exit 0
+            sleep 5
+          done
+          echo "The backend did not become healthy in time." >&2
+          $compose ps >&2
+          exit 1
+
+      - name: Run the full-stack tests
+        env:
+          E2E_CUSTOMER_PASSWORD: ${{ secrets.E2E_CUSTOMER_PASSWORD }}
+          E2E_CUSTOMER2_PASSWORD: ${{ secrets.E2E_CUSTOMER2_PASSWORD }}
+          E2E_ORGANISER_PASSWORD: ${{ secrets.E2E_ORGANISER_PASSWORD }}
+          E2E_HELPER_PASSWORD: ${{ secrets.E2E_HELPER_PASSWORD }}
+        run: npm run test:e2e:full
+
+      # Screenshots and page snapshots only. The HTML report and traces are not uploaded: this
+      # tier signs in for real, and those can carry tokens.
+      - name: Upload failure screenshots
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: full-stack-failures
+          path: |
+            test-results/**/*.png
+            test-results/**/error-context.md
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Stop the backend
+        if: ${{ always() }}
+        working-directory: backend-repo
+        run: docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.override.yml --env-file .env down -v
