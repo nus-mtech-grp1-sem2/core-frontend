@@ -670,6 +670,9 @@ function describeSaveError(error: unknown): string {
     if (code === 'cannot_modify_committed_seat') {
       return "A zone with sold or held seats can't be resized or removed — its name, price, and colour are still editable.";
     }
+    if (code === 'zone_has_reservation_history') {
+      return "This zone can't be removed — it has past reservation history. Rename or resize it instead of deleting it.";
+    }
     if (code === 'duplicate_seat_label' || code === 'invalid_inventory_payload') {
       return 'Check that every zone has a name and colour, then try again.';
     }
