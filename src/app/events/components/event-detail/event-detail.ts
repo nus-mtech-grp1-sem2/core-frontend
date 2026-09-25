@@ -74,8 +74,9 @@ interface TeamResponse {
   readonly members: readonly TeamMember[];
 }
 
+/** Matches the `ticket` service's `/events/:eventId/checkin-stats` response shape. */
 interface CheckinStatsResponse {
-  readonly ticketsSold: number;
+  readonly issued: number;
   readonly checkedIn: number;
 }
 
@@ -659,7 +660,7 @@ export class EventDetail {
   protected checkinStatsLabel(): string {
     const stats = this.checkinStats();
     if (!stats) return 'Not available yet';
-    return `${stats.checkedIn} of ${stats.ticketsSold} checked in`;
+    return `${stats.checkedIn} of ${stats.issued} checked in`;
   }
 
   private async load(eventId: number): Promise<void> {
