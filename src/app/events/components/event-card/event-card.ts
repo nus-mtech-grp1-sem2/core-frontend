@@ -19,7 +19,7 @@ export class EventCard {
   readonly detailLink = input.required<string | readonly (string | number)[]>();
   readonly publish = output<number>();
   readonly delete = output<number>();
-  readonly cancel = output<number>();
+  readonly cancelRequested = output<number>();
 
   protected readonly statusLabel = computed(() => {
     if (this.completed()) return 'Completed';

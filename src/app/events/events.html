@@ -51,7 +51,7 @@
         [order]="order"
         [timeRemaining]="reservationTimeLabel(order)"
         [cancelling]="isCancelling(order.order_id)"
-        (cancel)="cancelReservation(order)"
+        (cancelRequested)="cancelReservation(order)"
       />
       } @for (order of processingOrders(); track order.order_id) {
       <app-reservation-card [order]="order" [processing]="true" />
@@ -176,7 +176,7 @@
         [detailLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'"
         (publish)="publishEvent($event)"
         (delete)="deleteEvent($event)"
-        (cancel)="cancelEvent($event)"
+        (cancelRequested)="cancelEvent($event)"
       ></li>
       } @empty {
       <li class="empty">
