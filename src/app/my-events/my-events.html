@@ -112,11 +112,13 @@
       @for (ticket of tickets(); track ticket.ticket_id) {
       <li>
         <article class="ticket-card">
+          <!-- eslint-disable @angular-eslint/template/prefer-ngsrc -- inline base64 QR; NgOptimizedImage does not support data URLs -->
           <img
             class="qr"
             [src]="ticket.qrDataUrl"
             [alt]="'QR code for ticket ' + ticket.ticket_id"
           />
+          <!-- eslint-enable @angular-eslint/template/prefer-ngsrc -->
           <div class="details">
             <h2>
               <a [routerLink]="['/events', ticket.event_id]">{{ ticket.event_title }}</a>

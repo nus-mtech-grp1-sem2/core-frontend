@@ -33,7 +33,6 @@ import { recoverSmallQr } from './qr-small-recovery';
 const qrDecodeHints = new Map<DecodeHintType, unknown>([[DecodeHintType.TRY_HARDER, true]]);
 
 /** A door scanner must fail visibly rather than hang, so every call is bounded. */
-const CHECKIN_REQUEST_TIMEOUT_MS = 15000;
 const STATS_REQUEST_TIMEOUT_MS = 8000;
 
 type ScanOutcome = 'VALID' | 'ALREADY_USED' | 'INVALID' | 'WRONG_EVENT';

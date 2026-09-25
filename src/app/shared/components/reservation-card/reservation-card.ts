@@ -19,5 +19,5 @@ export class ReservationCard {
   readonly timeRemaining = input('');
   readonly cancelling = input(false);
   readonly processing = input(false);
-  readonly cancel = output<void>();
+  readonly cancelRequested = output<void>();
 }
