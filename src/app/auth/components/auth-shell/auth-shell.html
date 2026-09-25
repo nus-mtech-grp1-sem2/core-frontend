@@ -1,0 +1,17 @@
+<section class="auth">
+  <div class="art">
+    <img [ngSrc]="image()" [alt]="alt()" fill sizes="(max-width: 900px) 100vw, 45vw" />
+    <div class="art-copy">
+      <p class="quote">{{ quote() }}</p>
+      <p class="attribution">OneStage</p>
+    </div>
+  </div>
+
+  <div class="pane">
+    <div class="card">
+      <h1>{{ heading() }}</h1>
+      <p class="lead">{{ lead() }}</p>
+      <ng-content />
+    </div>
+  </div>
+</section>

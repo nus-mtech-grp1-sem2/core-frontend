@@ -1,18 +1,33 @@
-import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { DatePipe, NgOptimizedImage } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { catchError, firstValueFrom, forkJoin, map, of, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
 import { EventCategory, FeaturedSlide, Venue } from '../core/catalog';
-import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
-import { Carousel } from './carousel/carousel';
+import { hasSubmittedPayment } from '../core/payment-processing';
+import { QueueService } from '../core/queue';
+import { startsTodayOrLater } from '../core/event-dates';
+import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
+import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
+import { Carousel } from './components/carousel/carousel';
 
 type TicketStatus = 'ISSUED' | 'CHECKED_IN' | 'VOID';
 
 /** One row of `GET /customers/me/tickets` — see `my-events.ts` for the full shape. */
 interface UpcomingTicket {
   readonly ticket_id: number;
+  readonly order_id: number;
   readonly event_id: number;
   readonly event_title: string;
   readonly venue: string;
@@ -24,6 +39,33 @@ interface UpcomingTicket {
 interface TicketsResponse {
   readonly tickets: readonly UpcomingTicket[];
 }
+
+interface PaidOrder {
+  readonly order_id: number;
+  readonly event_id: number;
+  readonly status: 'PENDING' | 'PAID' | 'FAILED' | 'CANCELLED';
+  readonly event_title: string;
+  readonly venue: string;
+  readonly starts_at: string;
+  readonly ticket_count: number;
+  readonly created_at?: string;
+  readonly reservation_expires_at?: string;
+}
+
+interface OrdersResponse {
+  readonly orders: readonly PaidOrder[];
+}
+
+interface UpcomingPurchase {
+  readonly key: string;
+  readonly eventTitle: string;
+  readonly venue: string;
+  readonly startsAt: string;
+  readonly detail: string;
+  readonly state: string;
+}
+
+type PurchaseLoadStatus = 'loading' | 'ready' | 'error';
 
 interface VenueResponse {
   readonly venues: readonly Venue[];
@@ -44,41 +86,105 @@ interface EventResponse {
   readonly events: readonly EventApiRecord[];
 }
 
+const VENUE_IMAGES = [
+  'images/venue-auditorium-v2.jpg',
+  'images/venue-sports-v2.jpg',
+  'images/venue-club-v2.jpg',
+  'images/venue-openair.jpg',
+  'images/venue-stadium.jpg',
+  'images/venue-arena.jpg',
+] as const;
+
 /** Landing page: featured carousel and venue grid. */
 @Component({
   selector: 'app-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Carousel, DatePipe, RouterLink, WorkspaceShell],
+  imports: [ReservationCard, Carousel, DatePipe, NgOptimizedImage, RouterLink, WorkspaceShell],
   templateUrl: './home.html',
   styleUrl: './home.css',
 })
 export class Home {
   private readonly api = inject(ApiService);
+  private readonly queue = inject(QueueService);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly auth = inject(AuthService);
   protected readonly tickets = signal<readonly UpcomingTicket[]>([]);
+  protected readonly orders = signal<readonly PaidOrder[]>([]);
+  protected readonly purchaseStatus = signal<PurchaseLoadStatus>('loading');
+  protected readonly now = signal(Date.now());
+  protected readonly cancellingOrderIds = signal<ReadonlySet<number>>(new Set());
+  protected readonly reservationError = signal('');
+  protected readonly unpaidOrders = computed(() =>
+    this.orders().filter(
+      (order) =>
+        order.status === 'PENDING' && !hasSubmittedPayment(order.order_id, order.created_at),
+    ),
+  );
+  protected readonly processingOrders = computed(() =>
+    this.orders().filter(
+      (order) =>
+        order.status === 'PENDING' && hasSubmittedPayment(order.order_id, order.created_at),
+    ),
+  );
+  protected readonly upcomingPurchases = computed<readonly UpcomingPurchase[]>(() => {
+    const tickets = this.tickets();
+    const issuedOrderIds = new Set(tickets.map((ticket) => ticket.order_id));
+    const ticketRows: UpcomingPurchase[] = tickets.map((ticket) => ({
+      key: `ticket-${ticket.ticket_id}`,
+      eventTitle: ticket.event_title,
+      venue: ticket.venue,
+      startsAt: ticket.starts_at,
+      detail: ticket.seat_label ?? 'General admission',
+      state: ticket.status === 'CHECKED_IN' ? 'Checked in' : 'Ready to scan',
+    }));
+    const paidOrderRows: UpcomingPurchase[] = this.orders()
+      .filter((order) => order.status === 'PAID' && !issuedOrderIds.has(order.order_id))
+      .map((order) => ({
+        key: `order-${order.order_id}`,
+        eventTitle: order.event_title,
+        venue: order.venue,
+        startsAt: order.starts_at,
+        detail: `${Number(order.ticket_count)} ticket${Number(order.ticket_count) === 1 ? '' : 's'}`,
+        state: 'Payment received · issuing ticket',
+      }));
+
+    // Only events happening today or later, and before the top-5 cut so that past
+    // tickets do not take up the slots.
+    const now = new Date();
+    return [...ticketRows, ...paidOrderRows]
+      .filter((purchase) => startsTodayOrLater(purchase.startsAt, now))
+      .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))
+      .slice(0, 5);
+  });
 
   /** First part of the email, which is the closest thing to a name we hold. */
   protected readonly firstName = computed(() => this.auth.user()?.email.split('@')[0] ?? '');
 
   protected readonly venues = signal<readonly Venue[]>([]);
+  protected readonly featuredVenues = computed(() => this.venues().slice(0, 6));
   protected readonly featuredSlides = signal<readonly FeaturedSlide[]>([]);
+
+  protected venueImage(index: number): string {
+    return VENUE_IMAGES[index % VENUE_IMAGES.length];
+  }
 
   constructor() {
     this.api.get<EventResponse>('event', '/events').subscribe({
-      next: (result) => this.featuredSlides.set(
-        result.events.slice(0, 3).map((event) => {
-          const title = event.title ?? event.event_name ?? '';
-          const startsAt = event.starts_at ?? event.event_start_datetime ?? '';
-          return {
-            id: event.event_id,
-            category: categoryFor(event, title),
-            title,
-            date: formatEventDate(startsAt),
-            image: this.api.url('event', `/events/${event.event_id}/image`),
-            alt: `${title} artwork`,
-          };
-        }),
-      ),
+      next: (result) =>
+        this.featuredSlides.set(
+          result.events.slice(0, 3).map((event) => {
+            const title = event.title ?? event.event_name ?? '';
+            const startsAt = event.starts_at ?? event.event_start_datetime ?? '';
+            return {
+              id: event.event_id,
+              category: categoryFor(event, title),
+              title,
+              date: formatEventDate(startsAt),
+              image: 'images/hero-concert.jpg',
+              alt: `${title} artwork`,
+            };
+          }),
+        ),
       error: () => this.featuredSlides.set([]),
     });
     this.api.get<VenueResponse>('event', '/venues').subscribe({
@@ -88,21 +194,87 @@ export class Home {
     effect(() => {
       if (!this.auth.isAuthenticated()) {
         this.tickets.set([]);
+        this.orders.set([]);
+        this.purchaseStatus.set('loading');
         return;
       }
-      this.api.get<TicketsResponse>('ticket', '/customers/me/tickets').subscribe({
-        next: (result) => this.tickets.set(result.tickets.slice(0, 5)),
-        error: () => this.tickets.set([]),
+      this.purchaseStatus.set('loading');
+      forkJoin({
+        tickets: this.api.get<TicketsResponse>('ticket', '/customers/me/tickets').pipe(
+          map((result) => ({ ok: true as const, result })),
+          catchError(() => of({ ok: false as const, result: { tickets: [] } })),
+        ),
+        orders: this.api.get<OrdersResponse>('order', '/customers/me/orders').pipe(
+          map((result) => ({ ok: true as const, result })),
+          catchError(() => of({ ok: false as const, result: { orders: [] } })),
+        ),
+      }).subscribe(({ tickets, orders }) => {
+        this.tickets.set(tickets.result.tickets);
+        this.orders.set(orders.result.orders);
+        this.purchaseStatus.set(tickets.ok || orders.ok ? 'ready' : 'error');
       });
     });
+    timer(0, 1_000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.now.set(Date.now());
+        for (const order of this.unpaidOrders()) {
+          if (this.reservationSeconds(order) === 0 && !this.isCancelling(order.order_id)) {
+            void this.cancelReservation(order, true);
+          }
+        }
+      });
   }
 
-  protected venueImageUrl(sampleEventId: number): string {
-    return this.api.url('event', `/events/${sampleEventId}/image`);
+  protected reservationTimeLabel(order: PaidOrder): string {
+    const seconds = this.reservationSeconds(order);
+    if (seconds === null) return 'soon';
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   }
 
-  protected useFallbackImage(target: EventTarget | null): void {
-    if (target instanceof HTMLImageElement) target.src = 'images/venue-arena.jpg';
+  protected isCancelling(orderId: number): boolean {
+    return this.cancellingOrderIds().has(orderId);
+  }
+
+  protected async cancelReservation(order: PaidOrder, expired = false): Promise<void> {
+    if (this.isCancelling(order.order_id)) return;
+    if (hasSubmittedPayment(order.order_id, order.created_at)) {
+      this.reservationError.set(
+        'Payment has already been submitted, so this order can no longer be cancelled.',
+      );
+      return;
+    }
+    this.cancellingOrderIds.update((ids) => new Set(ids).add(order.order_id));
+    this.reservationError.set('');
+    try {
+      await firstValueFrom(
+        this.api.post<void>(
+          'order',
+          `/orders/${order.order_id}/cancel`,
+          expired ? { reason: 'expired' } : {},
+        ),
+      );
+      this.orders.update((orders) => orders.filter((item) => item.order_id !== order.order_id));
+      this.queue.clear(order.event_id);
+    } catch {
+      if (expired) {
+        this.orders.update((orders) => orders.filter((item) => item.order_id !== order.order_id));
+      } else {
+        this.reservationError.set('Unable to cancel this reservation. Please try again.');
+      }
+    } finally {
+      this.cancellingOrderIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(order.order_id);
+        return next;
+      });
+    }
+  }
+
+  private reservationSeconds(order: PaidOrder): number | null {
+    const expiresAt = Date.parse(order.reservation_expires_at ?? '');
+    if (!Number.isFinite(expiresAt)) return null;
+    return Math.max(0, Math.ceil((expiresAt - this.now()) / 1_000));
   }
 
   protected readonly assurances = [

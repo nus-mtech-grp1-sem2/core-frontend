@@ -26,9 +26,8 @@ export interface FeaturedSlide {
  * A venue and how many published events are happening there, from
  * `GET /event/venues`. There is no venues table — a venue is just the free
  * text `events.venue` column, grouped and counted — so there is no id, city
- * or capacity to return. `sampleEventId` is one published event at that
- * venue, so the frontend can show that event's real uploaded artwork
- * (`GET /event/events/{id}/image`) rather than a placeholder.
+ * or capacity to return. `sampleEventId` identifies one published event at
+ * that venue and remains part of the service response for future artwork use.
  */
 export interface Venue {
   readonly venue: string;

@@ -1,0 +1,50 @@
+<footer class="footer">
+  <div class="shell top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
+          <path
+            d="M4 8.5A2.5 2.5 0 0 0 6.5 6h11A2.5 2.5 0 0 0 20 8.5v1a2.5 2.5 0 0 0 0 5v1A2.5 2.5 0 0 0 17.5 18h-11A2.5 2.5 0 0 0 4 15.5v-1a2.5 2.5 0 0 0 0-5v-1Z"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linejoin="round"
+          />
+          <path d="M12 7.5v9" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2 2.5" />
+        </svg>
+      </span>
+      <p class="name">OneStage</p>
+      <p class="tagline">Concerts, sports and theatre tickets across Singapore and the region.</p>
+      <p class="tagline">
+        ✉️ <a href="mailto:onestagecontacts@gmail.com">onestagecontacts@gmail.com</a>
+      </p>
+    </div>
+
+    <nav class="columns" aria-label="Footer">
+      @for (column of columns; track column.title) {
+      <div>
+        <h2>{{ column.title }}</h2>
+        <ul>
+          @for (item of column.items; track item.label) {
+          <li>
+            @if (item.path) {
+            <a [routerLink]="item.path">{{ item.label }}</a>
+            } @else {
+            <a href="#">{{ item.label }}</a>
+            }
+          </li>
+          }
+        </ul>
+      </div>
+      }
+    </nav>
+  </div>
+
+  <div class="shell bottom">
+    <p>© 2026 OneStage. Sample content for demonstration.</p>
+    <ul class="legal">
+      <li><a href="#">Privacy</a></li>
+      <li><a href="#">Terms</a></li>
+      <li><a href="#">Accessibility</a></li>
+    </ul>
+  </div>
+</footer>

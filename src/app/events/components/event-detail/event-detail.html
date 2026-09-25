@@ -1,0 +1,415 @@
+<app-workspace-shell [workspace]="shellWorkspace()">
+  @if (loading()) {
+  <section class="shell body"><p class="empty">Loading event...</p></section>
+  } @else if (event(); as event) {
+  <section class="page-head">
+    <div class="shell head-grid">
+      <div class="thumb">
+        <img
+          [src]="eventImageUrl(event.event_id)"
+          [alt]="event.title + ' artwork'"
+          (error)="useFallbackImage($event.target)"
+        />
+        <span class="pill category"
+          >{{ event.tier === 'TIER1_GA' ? 'General admission' : 'Reserved seating' }}</span
+        >
+      </div>
+      <div class="head-copy">
+        <a class="back" [routerLink]="backLink"
+          >{{ isOrganiser() ? 'Back to managed events' : 'Back to all events' }}</a
+        >
+        <h1>{{ event.title }}</h1>
+        <p class="where">{{ event.venue }}</p>
+        <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+        <p>{{ event.description }}</p>
+        <div class="event-facts">
+          <span
+            class="pill status"
+            [class.on-sale]="event.status === 'PUBLISHED' && !completed()"
+            [class.cancelled]="event.status === 'CANCELLED' && !completed()"
+            >{{ completed() ? 'Completed' : statusLabel(event.status) }}</span
+          >
+          <span>{{ event.total_seats }} seats</span>
+          <span>{{ priceLabel(event.price_cents) }} per ticket</span>
+          @if (event.tier === 'TIER2_SEATED') {
+          <span>
+            Up to {{ buyerCapacity(event.total_seats, event.available_buyers) }} {{
+            buyerCapacity(event.total_seats, event.available_buyers) === 1 ? 'buyer' : 'buyers' }}
+            at a time
+          </span>
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  @if (customerMode && completed()) {
+  <section class="shell body purchase" aria-label="Ticket sales closed">
+    <div class="owned" role="status">
+      <p>This event has already taken place, so tickets are no longer on sale.</p>
+      @if (ownership(); as owned) { @if (owned.tickets > 0) {
+      <a class="btn btn-primary" routerLink="/my-events">View my tickets</a>
+      } }
+    </div>
+  </section>
+  } @else if (customerMode && purchaseEligibility() === 'event-team') {
+  <section class="shell body purchase" aria-label="Ticket purchase unavailable">
+    <div class="owned" role="status">
+      <p>
+        You are part of this event's team. Organisers and event helpers cannot purchase tickets for
+        events they manage.
+      </p>
+    </div>
+  </section>
+  } @else if (canBuy()) {
+  <section class="shell body purchase" aria-label="Buy tickets">
+    @if (ownership(); as owned) {
+    <div class="owned" role="status">
+      <p>
+        @if (owned.checkedIn === owned.tickets && owned.tickets > 0) { You have checked in to this
+        event. } @else if (owned.tickets > 0) { You have {{ owned.tickets }} ticket{{ owned.tickets
+        === 1 ? '' : 's' }} for this event{{ owned.checkedIn ? ' (' + owned.checkedIn + ' checked
+        in)' : '' }}. } @else { Payment received. Your tickets are being issued. }
+      </p>
+      <div class="queue-actions">
+        <a class="btn btn-primary" routerLink="/my-events">View my tickets</a>
+        @if (!showPurchaseFlow()) {
+        <button type="button" class="btn btn-ghost" (click)="buyingMore.set(true)">
+          Buy more tickets
+        </button>
+        }
+      </div>
+    </div>
+    } @if (showPurchaseFlow()) { @if (purchaseError()) {
+    <p class="error" role="alert">{{ purchaseError() }}</p>
+    } @if (needsQueue()) { @switch (queueAccess()) { @case ('checking') {
+    <p role="status">Checking your waiting-room status...</p>
+    } @case ('waiting') {
+    <p>
+      You are in the waiting room at position
+      <strong>{{ queuePosition() ?? '—' }}</strong>.
+    </p>
+    <div class="queue-actions">
+      <button type="button" class="btn btn-primary" (click)="goToQueue()">
+        Return to waiting room
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost"
+        [disabled]="leavingQueue()"
+        (click)="leaveQueue()"
+      >
+        {{ leavingQueue() ? 'Leaving...' : 'Leave queue' }}
+      </button>
+    </div>
+    } @case ('expired') {
+    <p>Your previous queue place or admission has expired.</p>
+    <button type="button" class="btn btn-primary" (click)="goToQueue()">Rejoin the queue</button>
+    } @case ('checkout') {
+    <p>Your tickets are reserved for checkout. Continue your pending payment from My events.</p>
+    <a class="btn btn-primary" routerLink="/my-events">View pending payment</a>
+    } @case ('unavailable') {
+    <p role="alert">The waiting room cannot be reached right now. Please try again shortly.</p>
+    <button type="button" class="btn btn-primary" (click)="goToQueue()">Try waiting room</button>
+    } @default {
+    <p>Tickets for this event are released through the waiting room.</p>
+    <button type="button" class="btn btn-primary" (click)="goToQueue()">Join waiting room</button>
+    } } } @else { @if (event.tier === 'TIER2_SEATED') {
+    <div class="admission-window" role="status">
+      <p><strong>It is your turn.</strong> Complete checkout within {{ admissionTimeLabel() }}.</p>
+      <button
+        type="button"
+        class="btn btn-ghost"
+        [disabled]="leavingQueue()"
+        (click)="leaveQueue()"
+      >
+        {{ leavingQueue() ? 'Releasing...' : 'Release my place' }}
+      </button>
+    </div>
+    }
+    <div class="field">
+      <label for="quantity">Quantity</label>
+      <input
+        id="quantity"
+        type="number"
+        min="1"
+        [max]="event.total_seats"
+        [value]="quantity()"
+        (input)="quantity.set(+$any($event.target).value || 1)"
+      />
+    </div>
+    @if (event.tier === 'TIER2_SEATED') { @if (seats().length > 0) {
+    <div
+      class="seat-grid"
+      role="group"
+      aria-label="Choose your seats"
+      [style.grid-template-rows]="'repeat(' + gridRows().length + ', minmax(2.5rem, 1fr))'"
+      [style.grid-template-columns]="'repeat(' + gridCols().length + ', minmax(2.5rem, 1fr))'"
+    >
+      @for (row of gridRows(); track row) { @for (col of gridCols(); track col) { @let seat =
+      seatAt(row, col); @if (seat) {
+      <button
+        type="button"
+        class="seat"
+        [class.selected]="isSeatSelected(seat)"
+        [style.grid-row]="row + 1"
+        [style.grid-column]="col + 1"
+        [style.background]="seat.color"
+        [disabled]="seat.status !== 'AVAILABLE'"
+        [attr.aria-label]="
+                  seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)
+                "
+        [title]="seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)"
+        (click)="toggleSeat(seat)"
+      >
+        {{ seat.seatLabel }}
+      </button>
+      } @else {
+      <span class="seat-gap" [style.grid-row]="row + 1" [style.grid-column]="col + 1"></span>
+      } } }
+    </div>
+    } @else {
+    <p class="empty">No seats available.</p>
+    } }
+    <button type="button" class="btn btn-primary" [disabled]="purchasing()" (click)="buy()">
+      {{ purchasing() ? 'Processing…' : 'Buy tickets' }}
+    </button>
+    } }
+  </section>
+  } @if (isOrganiser()) {
+  <section class="shell body management" aria-label="Event management">
+    @if (error()) {
+    <p class="error" role="alert">{{ error() }}</p>
+    } @if (readOnly()) {
+    <p class="owner-note" role="status">
+      This event has completed. You can view it, but its details, team and waiting room can no
+      longer be changed.
+    </p>
+    }
+    <form class="edit-form" [formGroup]="form" (ngSubmit)="save()">
+      <h2>Edit event</h2>
+      <div class="field">
+        <label for="title">Title</label><input id="title" type="text" formControlName="title" />
+      </div>
+      <div class="field field-wide">
+        <label for="description">Description</label
+        ><textarea id="description" rows="4" formControlName="description"></textarea>
+      </div>
+      <div class="field">
+        <label for="venue">Venue</label><input id="venue" type="text" formControlName="venue" />
+      </div>
+      <div class="field">
+        <label for="starts-at">Date and time</label
+        ><input id="starts-at" type="datetime-local" formControlName="startsAt" />
+      </div>
+      <div class="field">
+        <label for="seats">Total seats</label
+        ><input id="seats" type="number" min="1" step="1" formControlName="totalSeats" />
+      </div>
+      <div class="field">
+        <label for="available-buyers">Available buyers</label
+        ><input
+          id="available-buyers"
+          type="number"
+          min="1"
+          [max]="form.controls.totalSeats.value"
+          step="1"
+          formControlName="availableBuyers"
+          aria-describedby="available-buyers-help"
+        /><small id="available-buyers-help"
+          >Concurrent buyers allowed from the waiting room. Leave blank to use 10% of total
+          seats.</small
+        >
+      </div>
+      <div class="field">
+        <label for="tier">Ticketing</label
+        ><select id="tier" formControlName="tier">
+          <option value="TIER1_GA">General admission</option>
+          <option value="TIER2_SEATED">Reserved seating</option>
+        </select>
+      </div>
+      <div class="field field-wide">
+        <label for="event-image">Event photo</label
+        ><input
+          id="event-image"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          (change)="onImageSelected($event)"
+        />
+        @if (imagePreviewUrl()) {
+        <img class="image-preview" [src]="imagePreviewUrl()" alt="Selected event photo preview" />
+        }
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" [disabled]="saving() || readOnly()">
+          {{ saving() ? 'Saving...' : 'Save changes' }}
+        </button>
+        @if (event.status === 'DRAFT') {
+        <button
+          type="button"
+          class="btn btn-ghost delete status-action"
+          [disabled]="deleting() || readOnly()"
+          (click)="deleteEvent()"
+        >
+          {{ deleting() ? 'Deleting...' : 'Delete draft' }}
+        </button>
+        } @else if (event.status === 'PUBLISHED') {
+        <button
+          type="button"
+          class="btn btn-ghost delete status-action"
+          [disabled]="updatingStatus() || readOnly()"
+          (click)="changeStatus('CANCELLED')"
+        >
+          {{ updatingStatus() ? 'Cancelling...' : 'Cancel event' }}
+        </button>
+        } @else {
+        <button
+          type="button"
+          class="btn btn-primary status-action"
+          [disabled]="updatingStatus() || readOnly()"
+          (click)="changeStatus('PUBLISHED')"
+        >
+          {{ updatingStatus() ? 'Re-publishing...' : 'Re-publish event' }}
+        </button>
+        }
+      </div>
+    </form>
+
+    <section class="team" aria-labelledby="inventory-heading">
+      <h2 id="inventory-heading">Inventory</h2>
+      <div class="inventory-summary">
+        <span class="pill status">{{ inventorySummaryLabel() }}</span>
+        <a
+          class="btn btn-primary btn-sm"
+          [routerLink]="['/organiser/events', event.event_id, 'inventory']"
+          >Configure inventory</a
+        >
+      </div>
+    </section>
+
+    @if (checkinStats()) {
+    <section class="team" aria-labelledby="checkin-heading">
+      <h2 id="checkin-heading">Check-in</h2>
+      <div class="inventory-summary">
+        <span class="pill status">{{ checkinStatsLabel() }}</span>
+      </div>
+    </section>
+    }
+
+    <section class="team" aria-labelledby="team-heading">
+      <h2 id="team-heading">Team</h2>
+      <form class="invite-form" [formGroup]="inviteForm" (ngSubmit)="invite()">
+        <div class="field">
+          <label for="member-email">Email</label
+          ><input
+            id="member-email"
+            type="email"
+            formControlName="email"
+            placeholder="member@example.com"
+          />
+        </div>
+        <div class="field">
+          <label for="member-role">Role</label
+          ><select id="member-role" formControlName="role">
+            <option value="HELPER">Helper</option>
+            <option value="ORGANISER">Organizer</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm" [disabled]="inviting() || readOnly()">
+          {{ inviting() ? 'Inviting...' : 'Invite' }}
+        </button>
+      </form>
+      <ul class="member-list">
+        @for (member of members(); track member.membership_id) {
+        <li>
+          <span
+            ><strong
+              >{{ member.name ? member.name + ' — ' + member.user_email : member.user_email
+              }}</strong
+            ><small
+              >{{ member.role === 'ORGANISER' ? 'Organizer' : 'Helper' }} · {{ member.invite_status
+              | lowercase }}</small
+            ></span
+          >
+          <div class="member-actions">
+            @if (canChangeRole(member)) {
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              [disabled]="changingRoleFor() === member.user_sub"
+              (click)="changeRole(member, member.role === 'ORGANISER' ? 'HELPER' : 'ORGANISER')"
+            >
+              {{ member.role === 'ORGANISER' ? 'Demote to helper' : 'Promote to organizer' }}
+            </button>
+            } @if (canRemove(member)) {
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm delete"
+              [disabled]="readOnly()"
+              (click)="remove(member)"
+            >
+              Remove
+            </button>
+            }
+          </div>
+        </li>
+        } @empty {
+        <li class="empty">No team members yet.</li>
+        }
+      </ul>
+      @if (isOwner()) {
+      <p class="owner-note">You own this event and can remove other organizers.</p>
+      }
+    </section>
+
+    @if (event.tier === 'TIER2_SEATED') {
+    <section class="team" aria-labelledby="queue-heading">
+      <h2 id="queue-heading">Waiting room</h2>
+      @if (queueManagement(); as queue) {
+      <p class="note" role="status">
+        {{ queue.status === 'OPEN' ? 'Open' : queue.status === 'CLOSED' ? 'Closed' : 'Drained' }} ·
+        {{ queue.waitingCount }} waiting · up to {{ queue.admissionBatchSize }} active buyers
+      </p>
+      } @else {
+      <p class="note">Open the waiting room before customers can join.</p>
+      } @if (queueActionMessage()) {
+      <p class="success" role="status">{{ queueActionMessage() }}</p>
+      } @if (queueActionError()) {
+      <p class="error" role="alert">{{ queueActionError() }}</p>
+      }
+      <div class="form-actions">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          [disabled]="queueActionBusy() || readOnly() || queueManagement()?.status === 'OPEN'"
+          (click)="openQueue()"
+        >
+          {{ queueManagement()?.status === 'OPEN' ? 'Waiting room open' : 'Open waiting room' }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm"
+          [disabled]="
+                  queueActionBusy() ||
+                  readOnly() ||
+                  queueManagement()?.status !== 'OPEN' ||
+                  !queueManagement()?.waitingCount
+                "
+          (click)="admitNext()"
+        >
+          @if (queueActionBusy()) { Working... } @else if (queueManagement()?.status !== 'OPEN') {
+          Open waiting room first } @else if (!queueManagement()?.waitingCount) { No customers
+          waiting } @else { Admit next customer }
+        </button>
+      </div>
+    </section>
+    }
+  </section>
+  } } @else {
+  <section class="shell body not-found">
+    <h1>Event not found</h1>
+    <p>{{ error() || 'It may have been removed or the link is out of date.' }}</p>
+    <a class="btn btn-primary" [routerLink]="backLink">Back to events</a>
+  </section>
+  }
+</app-workspace-shell>

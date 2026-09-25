@@ -5,7 +5,7 @@ import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/api';
-import { WorkspaceShell } from '../../layout/workspace-shell/workspace-shell';
+import { WorkspaceShell } from '../../layout/components/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 

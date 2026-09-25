@@ -24,8 +24,12 @@ export class ApiService {
     return `${this.baseUrl}/${service}${suffix}`;
   }
 
-  get<T>(service: BackendService, path: string): Observable<T> {
-    return this.http.get<T>(this.url(service, path));
+  get<T>(
+    service: BackendService,
+    path: string,
+    options?: { headers?: Record<string, string> },
+  ): Observable<T> {
+    return this.http.get<T>(this.url(service, path), options);
   }
 
   post<T>(

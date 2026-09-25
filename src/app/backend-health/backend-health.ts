@@ -24,60 +24,8 @@ const SERVICES: readonly BackendService[] = [
 @Component({
   selector: 'app-backend-health',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <section class="panel">
-      <h2>Backend connectivity</h2>
-      <button type="button" (click)="check()">Re-check</button>
-      <ul aria-live="polite">
-        @for (probe of probes(); track probe.service) {
-          <li>
-            <span class="name">{{ probe.service }}</span>
-            <span
-              class="state"
-              [class.up]="probe.state === 'up'"
-              [class.down]="probe.state === 'down'"
-            >
-              {{ probe.detail }}
-            </span>
-          </li>
-        }
-      </ul>
-    </section>
-  `,
-  styles: `
-    .panel {
-      max-width: 32rem;
-      margin: 1rem auto;
-      padding: 1rem;
-      border: 1px solid #767676;
-      border-radius: 0.5rem;
-      font-family: system-ui, sans-serif;
-    }
-    h2 {
-      margin: 0 0 0.5rem;
-      font-size: 1.125rem;
-    }
-    ul {
-      list-style: none;
-      margin: 0.75rem 0 0;
-      padding: 0;
-    }
-    li {
-      display: flex;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 0.25rem 0;
-    }
-    .name {
-      font-weight: 600;
-    }
-    .state.up {
-      color: #1a7f37;
-    }
-    .state.down {
-      color: #b3261e;
-    }
-  `,
+  templateUrl: './backend-health.html',
+  styleUrl: './backend-health.css',
 })
 export class BackendHealth {
   private readonly api = inject(ApiService);

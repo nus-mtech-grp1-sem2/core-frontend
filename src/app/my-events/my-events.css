@@ -1,0 +1,130 @@
+.body {
+  padding-block: clamp(2rem, 5vw, 3rem);
+}
+.issuance {
+  margin-bottom: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+.toast-region {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 1.5rem;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  padding-inline: 1rem;
+  pointer-events: none;
+}
+.toast {
+  margin: 0;
+  padding: 0.625rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--success-bg);
+  color: var(--success-fg);
+  box-shadow: var(--shadow-sm);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.ticket-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+.pending-list {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.ticket-card {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+.qr {
+  width: 6.5rem;
+  height: 6.5rem;
+  border-radius: var(--radius);
+}
+.ticket-placeholder {
+  display: grid;
+  place-items: center;
+  width: 6.5rem;
+  height: 6.5rem;
+  border-radius: var(--radius);
+  background: var(--success-bg);
+  color: var(--success-fg);
+  font-size: 2rem;
+  font-weight: 700;
+}
+h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+h2 a {
+  color: var(--text);
+  text-decoration: none;
+}
+h2 a:hover {
+  color: var(--brand-600);
+  text-decoration: underline;
+}
+.details > p {
+  margin: 0.1rem 0;
+  color: var(--text-muted);
+}
+.reservation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.cancel-button {
+  color: #912018;
+}
+dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  margin: 0;
+}
+dl div {
+  display: grid;
+  gap: 0.125rem;
+}
+dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+dd {
+  margin: 0;
+  font-size: 0.875rem;
+}
+.empty {
+  padding: 2rem;
+  text-align: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+.empty p {
+  color: var(--text-muted);
+}
+@media (max-width: 720px) {
+  .ticket-card {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+}

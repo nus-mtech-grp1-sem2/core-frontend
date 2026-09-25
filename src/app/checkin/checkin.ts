@@ -1,16 +1,45 @@
-import { ChangeDetectionStrategy, Component, ElementRef, inject, OnDestroy, signal, ViewChild } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  OnDestroy,
+  signal,
+  ViewChild,
+} from '@angular/core';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { BrowserQRCodeReader, IScannerControls } from '@zxing/browser';
-import { firstValueFrom } from 'rxjs';
+import { DecodeHintType } from '@zxing/library';
+import jsQR from 'jsqr';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  firstValueFrom,
+  map,
+  of,
+  switchMap,
+  timeout,
+  TimeoutError,
+} from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
 
 import { AuthService } from '../core/auth';
 import { ApiService } from '../core/api';
-import { WorkspaceShell } from '../layout/workspace-shell/workspace-shell';
+import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
+import { ActivatedRoute } from '@angular/router';
+import { recoverSmallQr } from './qr-small-recovery';
 
-type ScanOutcome = 'SUCCESS' | 'DUPLICATE' | 'INVALID' | 'WRONG_EVENT';
+const qrDecodeHints = new Map<DecodeHintType, unknown>([[DecodeHintType.TRY_HARDER, true]]);
+
+/** A door scanner must fail visibly rather than hang, so every call is bounded. */
+const CHECKIN_REQUEST_TIMEOUT_MS = 15000;
+const STATS_REQUEST_TIMEOUT_MS = 8000;
+
+type ScanOutcome = 'VALID' | 'ALREADY_USED' | 'INVALID' | 'WRONG_EVENT';
+type TicketOutcome = 'SUCCESS' | 'DUPLICATE' | 'INVALID' | 'WRONG_EVENT';
 
 interface ScanResult {
-  readonly code: string;
   readonly outcome: ScanOutcome;
   readonly at: string;
 }
@@ -18,6 +47,8 @@ interface ScanResult {
 interface EventOption {
   readonly event_id: number;
   readonly title: string;
+  readonly starts_at?: string;
+  readonly event_start_datetime?: string;
 }
 
 interface EventsResponse {
@@ -29,10 +60,15 @@ interface CheckinStats {
   readonly total: number;
 }
 
+interface ScannerSessionResponse {
+  readonly sessionToken: string;
+}
+
 interface SearchResult {
   readonly ticket_id: number;
+  readonly customer_name: string;
   readonly customer_email: string;
-  readonly seat_label: string | null;
+  readonly seat_id: number | null;
   readonly status: string;
 }
 
@@ -41,334 +77,33 @@ interface SearchResponse {
 }
 
 /**
- * Door workspace for event helpers: pick the event on the door, then scan or
- * search for a ticket. Validation and duplicate detection are the ticket
- * service's job — this page just calls it and shows the verdict.
+ * Door workspace for event helpers. The ticket service owns validity and the
+ * single-use transition; this component only submits opaque identifiers and
+ * renders stable outcomes.
  */
 @Component({
   selector: 'app-checkin',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, WorkspaceShell],
-  template: `
-    <app-workspace-shell workspace="event-helper">
-      <section class="page-head">
-        <div class="shell">
-          <p class="eyebrow">Event helper</p>
-          <h1>Door check-in</h1>
-          <p class="lead">Signed in as {{ auth.user()?.email }}.</p>
-        </div>
-      </section>
-
-      <section class="shell body">
-        <div class="field">
-          <label for="event">Event</label>
-          <select id="event" [value]="eventId()" (change)="selectEvent(+$any($event.target).value)">
-            @for (event of events(); track event.event_id) {
-              <option [value]="event.event_id">{{ event.title }}</option>
-            }
-          </select>
-          @if (stats(); as stats) {
-            <p class="stats">{{ stats.checkedIn }} of {{ stats.total }} checked in</p>
-          }
-        </div>
-
-        <section class="camera" aria-labelledby="camera-heading">
-          <div class="camera-head">
-            <div>
-              <h2 id="camera-heading">Scan with camera</h2>
-              <p>Point the camera at the ticket QR code.</p>
-            </div>
-            <div class="camera-actions">
-              <label class="btn btn-ghost upload" [class.disabled]="eventId() === null || decodingImage()">
-                {{ decodingImage() ? 'Reading…' : 'Upload QR image' }}
-                <input type="file" accept="image/*" capture="environment" [disabled]="eventId() === null || decodingImage()" (change)="scanImage($event)" />
-              </label>
-              @if (cameraActive()) {
-                <button class="btn btn-ghost" type="button" (click)="stopCamera()">Stop camera</button>
-              } @else {
-                <button class="btn btn-primary" type="button" [disabled]="eventId() === null || checkingIn()" (click)="startCamera()">Open camera</button>
-              }
-            </div>
-          </div>
-          <div class="preview" [class.hidden]="!cameraActive()">
-            <video #cameraPreview autoplay muted playsinline aria-label="Camera preview"></video>
-            <span class="scan-guide" aria-hidden="true"></span>
-          </div>
-          @if (cameraError()) {
-            <p class="camera-error" role="alert">{{ cameraError() }}</p>
-          }
-          <p class="camera-note">Camera access requires HTTPS or localhost. You can upload a QR screenshot if camera access is unavailable.</p>
-        </section>
-
-        @if (last(); as result) {
-          <p
-            class="verdict"
-            role="status"
-            [class.ok]="result.outcome === 'SUCCESS'"
-            [class.warn]="result.outcome === 'DUPLICATE' || result.outcome === 'WRONG_EVENT'"
-            [class.bad]="result.outcome === 'INVALID'"
-          >
-            {{ describe(result) }}
-          </p>
-        }
-
-        <h2>This session</h2>
-        @if (scans().length) {
-          <ul class="log">
-            @for (scan of scans(); track scan.code + scan.at) {
-              <li>
-                <span class="code">{{ scan.code }}</span>
-                <span class="outcome">{{ describe(scan) }}</span>
-                <span class="at">{{ scan.at }}</span>
-              </li>
-            }
-          </ul>
-        } @else {
-          <p class="empty">No tickets scanned yet.</p>
-        }
-
-        <h2>Manual lookup</h2>
-        <form [formGroup]="searchForm" (ngSubmit)="search()" novalidate class="scan">
-          <div class="field">
-            <label for="query">Name, email or order ID</label>
-            <input id="query" type="text" formControlName="query" autocomplete="off" />
-          </div>
-          <button class="btn btn-ghost" type="submit" [disabled]="eventId() === null">Search</button>
-        </form>
-        @if (searchResults().length) {
-          <ul class="log">
-            @for (result of searchResults(); track result.ticket_id) {
-              <li>
-                <span class="code">{{ result.customer_email }}</span>
-                <span class="outcome">{{ result.seat_label ?? 'General admission' }} · {{ result.status }}</span>
-              </li>
-            }
-          </ul>
-        }
-      </section>
-    </app-workspace-shell>
-  `,
-  styles: `
-    .body {
-      padding-block: clamp(2rem, 5vw, 3rem);
-      max-width: 44rem;
-    }
-
-    .field {
-      margin-bottom: 1rem;
-    }
-
-    .field label {
-      display: block;
-      font-size: 0.8125rem;
-      font-weight: 600;
-      margin-bottom: 0.375rem;
-    }
-
-    .field select,
-    .field input {
-      width: 100%;
-      font: inherit;
-      padding: 0.6875rem 0.875rem;
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius-sm);
-      background: var(--bg);
-      color: inherit;
-    }
-
-    .stats {
-      margin: 0.375rem 0 0;
-      font-size: 0.8125rem;
-      color: var(--text-muted);
-    }
-
-    .scan {
-      display: flex;
-      align-items: flex-end;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-    }
-
-    .camera {
-      margin-block: 1.5rem;
-      padding: 1rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      background: var(--bg);
-    }
-
-    .camera-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-    }
-
-    .camera-actions {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .upload {
-      position: relative;
-      cursor: pointer;
-    }
-
-    .upload input {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .upload.disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-
-    .camera h2 {
-      margin: 0;
-    }
-
-    .camera-head p,
-    .camera-note,
-    .camera-error {
-      margin: 0.25rem 0 0;
-      font-size: 0.8125rem;
-      color: var(--text-muted);
-    }
-
-    .camera-error {
-      color: #8c1d18;
-    }
-
-    .preview {
-      position: relative;
-      overflow: hidden;
-      margin-top: 1rem;
-      border-radius: var(--radius);
-      background: #050508;
-      aspect-ratio: 4 / 3;
-    }
-
-    .preview.hidden {
-      display: none;
-    }
-
-    .preview video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .scan-guide {
-      position: absolute;
-      inset: 16%;
-      border: 3px solid rgba(255, 255, 255, 0.9);
-      border-radius: 1rem;
-      box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.18);
-      pointer-events: none;
-    }
-
-    .scan .field {
-      flex: 1 1 14rem;
-      margin-bottom: 0;
-    }
-
-    .verdict {
-      margin-top: 1rem;
-      padding: 0.75rem 1rem;
-      border-radius: var(--radius-sm);
-      font-size: 0.9375rem;
-    }
-
-    .verdict.ok {
-      background: var(--success-bg);
-      color: var(--success-fg);
-    }
-
-    .verdict.warn {
-      background: var(--warn-bg);
-      color: var(--warn-fg);
-    }
-
-    .verdict.bad {
-      background: #fdeceb;
-      color: #8c1d18;
-    }
-
-    h2 {
-      margin-top: 2rem;
-      font-size: 1.125rem;
-    }
-
-    .log {
-      list-style: none;
-      margin: 0.75rem 0 0;
-      padding: 0;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-    }
-
-    .log li {
-      display: flex;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 0.75rem 1rem;
-      font-size: 0.875rem;
-    }
-
-    .log li + li {
-      border-top: 1px solid var(--border);
-    }
-
-    .code {
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .at,
-    .empty {
-      color: var(--text-muted);
-    }
-
-    .empty {
-      margin-top: 0.75rem;
-      font-size: 0.875rem;
-    }
-
-    @media (max-width: 700px) {
-      .camera-head {
-        align-items: stretch;
-        flex-direction: column;
-      }
-
-      .camera-actions {
-        justify-content: stretch;
-      }
-
-      .camera-actions .btn {
-        flex: 1;
-        text-align: center;
-      }
-    }
-  `,
+  templateUrl: './checkin.html',
+  styleUrl: './checkin.css',
 })
 export class Checkin implements OnDestroy {
-  @ViewChild('cameraPreview', { static: true }) private readonly cameraPreview!: ElementRef<HTMLVideoElement>;
+  @ViewChild('cameraPreview', { static: true })
+  private readonly cameraPreview!: ElementRef<HTMLVideoElement>;
 
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(ApiService);
-  private readonly qrReader = new BrowserQRCodeReader(undefined, {
+  private readonly route = inject(ActivatedRoute);
+  private readonly qrReader = new BrowserQRCodeReader(qrDecodeHints, {
     delayBetweenScanAttempts: 200,
     delayBetweenScanSuccess: 1000,
   });
   private scannerControls: IScannerControls | null = null;
+  private scannerSessionToken = '';
   private acceptingCameraResult = false;
+  private statsTimer: number | null = null;
+  private lastSubmission: { readonly qrToken?: string; readonly ticketId?: number } | null = null;
   protected readonly auth = inject(AuthService);
 
   protected readonly events = signal<readonly EventOption[]>([]);
@@ -381,10 +116,9 @@ export class Checkin implements OnDestroy {
   protected readonly cameraError = signal('');
   protected readonly checkingIn = signal(false);
   protected readonly decodingImage = signal(false);
-
-  protected readonly form = this.fb.nonNullable.group({
-    code: ['', [Validators.required]],
-  });
+  protected readonly requestError = signal('');
+  protected readonly searchStatus = signal('');
+  protected readonly muted = signal(false);
 
   protected readonly searchForm = this.fb.nonNullable.group({
     query: [''],
@@ -392,22 +126,37 @@ export class Checkin implements OnDestroy {
 
   constructor() {
     void this.loadEvents();
+    this.searchForm.controls.query.valueChanges
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        switchMap((query) => this.searchTickets(query.trim())),
+      )
+      .subscribe(({ tickets, status }) => {
+        this.searchResults.set(tickets);
+        this.searchStatus.set(status);
+      });
   }
 
   ngOnDestroy(): void {
     this.stopCamera();
+    if (this.statsTimer !== null) window.clearInterval(this.statsTimer);
   }
 
   protected selectEvent(eventId: number): void {
     this.stopCamera();
     this.eventId.set(eventId);
-    void this.loadStats(eventId);
+    this.scannerSessionToken = '';
+    void this.startScannerSession(eventId);
+    this.startStatsPolling();
   }
 
   protected async startCamera(): Promise<void> {
     if (this.eventId() === null) return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      this.cameraError.set('Camera scanning is not supported by this browser. Enter the QR token manually.');
+      this.cameraError.set(
+        'Camera scanning is not supported by this browser. Enter the QR token manually.',
+      );
       return;
     }
 
@@ -441,76 +190,78 @@ export class Checkin implements OnDestroy {
     if (image) void this.decodeImage(image);
   }
 
-  protected async scan(): Promise<void> {
-    const eventId = this.eventId();
-    const code = this.form.controls.code.value.trim();
-    if (!code || eventId === null) {
-      return;
-    }
-
-    this.checkingIn.set(true);
-    try {
-      const response = await firstValueFrom(
-        this.api.post<{ result: ScanOutcome }>('ticket', '/tickets/validate', { eventId, qrToken: code }),
-      );
-      this.record({ code, outcome: response.result, at: timestamp() });
-    } catch {
-      this.record({ code, outcome: 'INVALID', at: timestamp() });
-    } finally {
-      this.checkingIn.set(false);
-    }
-    void this.loadStats(eventId);
+  protected async checkInSearchResult(result: SearchResult): Promise<void> {
+    if (this.checkingIn() || !window.confirm('Check in this ticket?')) return;
+    await this.submit({ ticketId: result.ticket_id });
   }
 
-  protected async search(): Promise<void> {
-    const eventId = this.eventId();
-    const query = this.searchForm.controls.query.value.trim();
-    if (!query || eventId === null) {
-      this.searchResults.set([]);
-      return;
-    }
-
-    try {
-      const result = await firstValueFrom(
-        this.api.get<SearchResponse>('ticket', `/tickets/search?eventId=${eventId}&query=${encodeURIComponent(query)}`),
-      );
-      this.searchResults.set(result.tickets);
-    } catch {
-      this.searchResults.set([]);
-    }
+  protected describe(outcome: ScanOutcome): string {
+    return outcomeDescription(outcome);
   }
 
-  protected describe(result: ScanResult): string {
-    switch (result.outcome) {
-      case 'SUCCESS':
-        return `${result.code} admitted`;
-      case 'DUPLICATE':
-        return `${result.code} was already scanned`;
-      case 'WRONG_EVENT':
-        return `${result.code} is for a different event`;
-      default:
-        return `${result.code} is not a valid ticket`;
-    }
+  protected outcomeIcon(outcome: ScanOutcome): string {
+    return outcomeIcon(outcome);
+  }
+
+  protected toggleMute(): void {
+    this.muted.update((muted) => !muted);
+  }
+
+  protected retryLast(): void {
+    if (this.lastSubmission) void this.submit(this.lastSubmission);
   }
 
   private async loadEvents(): Promise<void> {
     try {
-      const result = await firstValueFrom(this.api.get<EventsResponse>('event', '/events'));
-      this.events.set(result.events);
-      if (result.events.length > 0) {
-        this.selectEvent(result.events[0].event_id);
+      const result = await firstValueFrom(this.api.get<EventsResponse>('event', '/helper/shifts'));
+      const events = currentAndFutureEvents(result.events, new Date());
+      this.events.set(events);
+      if (events.length > 0) {
+        const routeEventId = Number(this.route.snapshot.paramMap.get('eventId'));
+        const selectedEvent = events.find((event) => event.event_id === routeEventId);
+        this.selectEvent(selectedEvent?.event_id ?? events[0].event_id);
       }
     } catch {
       this.events.set([]);
     }
   }
 
+  private async startScannerSession(eventId: number): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.api.post<ScannerSessionResponse>('ticket', '/scanner/sessions', { eventId }),
+      );
+      this.scannerSessionToken = result.sessionToken;
+      await this.loadStats(eventId);
+    } catch (error) {
+      this.requestError.set(
+        error instanceof HttpErrorResponse && error.status === 403
+          ? 'This event is not assigned to your helper account.'
+          : 'The check-in service is unavailable. Try again.',
+      );
+    }
+  }
+
   private async acceptCameraResult(code: string): Promise<void> {
+    if (this.checkingIn()) return;
+    const token = code.trim();
+    if (!isTicketToken(token)) {
+      this.stopCamera();
+      console.warn('QR decoded to an unusable ticket token', {
+        length: token.length,
+        preview: token.slice(0, 80),
+      });
+      this.cameraError.set(
+        token
+          ? `That QR code holds ${token.length} characters, which is not a ticket token.`
+          : 'No ticket QR code could be read. Try a clearer image or scan again.',
+      );
+      return;
+    }
     this.acceptingCameraResult = true;
     this.stopCamera();
-    this.form.controls.code.setValue(code);
     try {
-      await this.scan();
+      await this.submit({ qrToken: token });
     } finally {
       this.acceptingCameraResult = false;
     }
@@ -518,34 +269,504 @@ export class Checkin implements OnDestroy {
 
   private async decodeImage(image: File): Promise<void> {
     if (this.eventId() === null || this.decodingImage()) return;
+    if (image.size > 12 * 1024 * 1024) {
+      this.cameraError.set('That image is too large. Upload a QR image smaller than 12 MB.');
+      return;
+    }
     this.stopCamera();
     this.decodingImage.set(true);
     this.cameraError.set('');
-    const imageUrl = URL.createObjectURL(image);
     try {
-      const result = await this.qrReader.decodeFromImageUrl(imageUrl);
-      await this.acceptCameraResult(result.getText());
-    } catch {
-      this.cameraError.set('No readable QR code was found in that image. Try a sharper image or paste the token text.');
+      const code = await decodeUploadedQr(image, this.qrReader);
+      await this.acceptCameraResult(code);
+    } catch (error) {
+      const trace = error instanceof QrDecodeError ? error.trace : [describeError(error)];
+      console.warn('QR decode failed', {
+        file: image.name,
+        type: image.type,
+        bytes: image.size,
+        trace,
+      });
+      this.cameraError.set(
+        'No QR code could be read from that image. Details are in the browser console.',
+      );
     } finally {
-      URL.revokeObjectURL(imageUrl);
       this.decodingImage.set(false);
     }
   }
 
   private async loadStats(eventId: number): Promise<void> {
+    if (!this.scannerSessionToken) return;
     try {
-      this.stats.set(await firstValueFrom(this.api.get<CheckinStats>('ticket', `/events/${eventId}/checkin-stats`)));
+      const result = await firstValueFrom(
+        this.api
+          .get<{ checkedIn: number; issued: number }>(
+            'ticket',
+            `/events/${eventId}/checkin-stats`,
+            { headers: { Authorization: `Bearer ${this.scannerSessionToken}` } },
+          )
+          .pipe(timeout(STATS_REQUEST_TIMEOUT_MS)),
+      );
+      this.stats.set({ checkedIn: result.checkedIn, total: result.issued });
     } catch {
       this.stats.set(null);
     }
   }
 
+  private searchTickets(query: string) {
+    const eventId = this.eventId();
+    if (eventId === null || query.length < 2)
+      return of({ tickets: [] as readonly SearchResult[], status: '' });
+    this.searchStatus.set('Searching…');
+    return this.api
+      .get<SearchResponse>('ticket', `/tickets/search?q=${encodeURIComponent(query)}`, {
+        headers: { Authorization: `Bearer ${this.scannerSessionToken}` },
+      })
+      .pipe(
+        map((result) => ({
+          tickets: result.tickets,
+          status: `${result.tickets.length} result${result.tickets.length === 1 ? '' : 's'}`,
+        })),
+        catchError(() =>
+          of({ tickets: [] as readonly SearchResult[], status: 'Search unavailable. Try again.' }),
+        ),
+      );
+  }
+
+  private async submit(input: {
+    readonly qrToken?: string;
+    readonly ticketId?: number;
+  }): Promise<void> {
+    const eventId = this.eventId();
+    if (this.checkingIn() || eventId === null) return;
+    this.lastSubmission = input;
+    this.checkingIn.set(true);
+    this.requestError.set('');
+    try {
+      const response = await firstValueFrom(
+        this.api
+          .post<{ outcome: TicketOutcome }>('ticket', '/tickets/validate', input, {
+            headers: { Authorization: `Bearer ${this.scannerSessionToken}` },
+          })
+          .pipe(timeout(STATS_REQUEST_TIMEOUT_MS)),
+      );
+      const outcome = mapTicketOutcome(response.outcome);
+      this.record({ outcome, at: timestamp() });
+      this.playTone(outcome);
+    } catch (error) {
+      this.requestError.set(checkinErrorMessage(error));
+    } finally {
+      this.checkingIn.set(false);
+      void this.loadStats(eventId);
+    }
+  }
+
+  private startStatsPolling(): void {
+    if (this.statsTimer !== null) window.clearInterval(this.statsTimer);
+    this.statsTimer = window.setInterval(() => {
+      const eventId = this.eventId();
+      if (eventId !== null && document.visibilityState === 'visible') void this.loadStats(eventId);
+    }, 10000);
+  }
+
+  private playTone(outcome: ScanOutcome): void {
+    if (this.muted()) return;
+    const context = new AudioContext();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.frequency.value = outcome === 'VALID' ? 880 : 220;
+    oscillator.type = outcome === 'VALID' ? 'sine' : 'square';
+    gain.gain.setValueAtTime(0.06, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.16);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.16);
+    void context.close();
+  }
+
   private record(result: ScanResult): void {
     this.scans.update((scans) => [result, ...scans]);
     this.last.set(result);
-    this.form.reset();
   }
+}
+
+interface BarcodeDetectorResult {
+  readonly rawValue: string;
+}
+
+interface BarcodeDetectorInstance {
+  detect(source: CanvasImageSource): Promise<readonly BarcodeDetectorResult[]>;
+}
+
+type BarcodeDetectorConstructor = new (options: {
+  formats: readonly string[];
+}) => BarcodeDetectorInstance;
+
+interface QrImageSource {
+  readonly image: CanvasImageSource;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Longest edge a decode canvas is allowed to reach before the image is scaled down. */
+const QR_MAX_DECODE_EDGE = 2400;
+/** Longest edge of the base canvas the window sweep reads from. */
+const QR_SWEEP_EDGE = 1600;
+/** Upper bound on sweep time so a large photo cannot freeze the check-in screen. */
+const QR_SWEEP_BUDGET_MS = 4000;
+/** Images at or below this edge are too small for decoders and get grid recovery. */
+const QR_SMALL_RECOVERY_EDGE = 400;
+
+/** Carries the per-stage notes explaining why an uploaded image produced no QR text. */
+class QrDecodeError extends Error {
+  constructor(readonly trace: readonly string[]) {
+    super('qr_not_found');
+  }
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+async function decodeUploadedQr(file: File, reader: BrowserQRCodeReader): Promise<string> {
+  const trace: string[] = [];
+  let source: QrImageSource;
+  try {
+    source = await loadQrSource(file);
+  } catch (error) {
+    throw new QrDecodeError([`load image: ${describeError(error)}`]);
+  }
+  trace.push(`image ${source.width}x${source.height}`);
+  try {
+    const text = await readQrSource(source, reader, trace);
+    if (!text) throw new QrDecodeError(trace);
+    return text;
+  } finally {
+    if (typeof ImageBitmap !== 'undefined' && source.image instanceof ImageBitmap) {
+      source.image.close();
+    }
+  }
+}
+
+async function readQrSource(
+  source: QrImageSource,
+  reader: BrowserQRCodeReader,
+  trace: string[],
+): Promise<string> {
+  const NativeBarcodeDetector = (
+    globalThis as typeof globalThis & { BarcodeDetector?: BarcodeDetectorConstructor }
+  ).BarcodeDetector;
+  if (NativeBarcodeDetector) {
+    try {
+      const results = await new NativeBarcodeDetector({ formats: ['qr_code'] }).detect(
+        source.image,
+      );
+      const value = results[0]?.rawValue.trim();
+      if (value) return value;
+      trace.push(`BarcodeDetector: ${results.length} code(s), no text`);
+    } catch (error) {
+      // Browser support varies; ZXing below remains the cross-browser fallback.
+      trace.push(`BarcodeDetector: ${describeError(error)}`);
+    }
+  } else {
+    trace.push('BarcodeDetector: not supported by this browser');
+  }
+
+  const canvas = createQrDecodeCanvas(source);
+  const pixelResult = decodeQrCanvasPixels(canvas);
+  if (pixelResult) return pixelResult;
+  trace.push(`jsQR full frame (${canvas.width}x${canvas.height}): no match`);
+
+  // Tiny screenshots blur modules into grey; rebuild the grid from the pixels instead.
+  if (Math.max(source.width, source.height) <= QR_SMALL_RECOVERY_EDGE) {
+    const recovered = recoverSmallQrSource(source);
+    if (recovered) return recovered;
+    trace.push('small-QR grid recovery: no match');
+  }
+
+  // A QR that fills only a small part of a screenshot is invisible to a whole-frame
+  // pass, so re-read the image window by window at a few zoom levels.
+  const sweptResult = sweepQrImage(source, trace);
+  if (sweptResult) return sweptResult;
+
+  try {
+    return reader.decodeFromCanvas(canvas).getText();
+  } catch (error) {
+    trace.push(`ZXing full frame: ${describeError(error)}`);
+    for (const threshold of [112, 160, 208]) {
+      try {
+        return reader.decodeFromCanvas(thresholdQrCanvas(canvas, threshold)).getText();
+      } catch (thresholdError) {
+        // Try the next contrast level before reporting the image as unreadable.
+        trace.push(`ZXing threshold ${threshold}: ${describeError(thresholdError)}`);
+      }
+    }
+  }
+  return '';
+}
+
+/**
+ * Decodes the picked file to drawable pixels. `createImageBitmap` reads the file
+ * directly, which avoids the blob-URL `<img>` path that can resolve with a
+ * zero-sized image and leave every decoder staring at a blank canvas.
+ */
+async function loadQrSource(file: File): Promise<QrImageSource> {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file);
+      if (bitmap.width > 0 && bitmap.height > 0) {
+        return { image: bitmap, width: bitmap.width, height: bitmap.height };
+      }
+      bitmap.close();
+    } catch {
+      // Fall back to the <img> loader for formats createImageBitmap rejects.
+    }
+  }
+
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadQrImage(imageUrl);
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    if (!width || !height) throw new Error('qr_image_empty');
+    return { image, width, height };
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
+function loadQrImage(imageUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = 'sync';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('qr_image_load_failed'));
+    image.src = imageUrl;
+  });
+}
+
+export function qrCanvasPlan(
+  width: number,
+  height: number,
+): {
+  readonly scale: number;
+  readonly padding: number;
+  readonly width: number;
+  readonly height: number;
+} {
+  const longestEdge = Math.max(width, height);
+  const shortestEdge = Math.min(width, height);
+  const scale = Math.max(1, Math.min(8, Math.floor(960 / longestEdge)));
+  const padding = Math.max(32, Math.round(shortestEdge * scale * 0.08));
+  return {
+    scale,
+    padding,
+    width: width * scale + padding * 2,
+    height: height * scale + padding * 2,
+  };
+}
+
+function createQrDecodeCanvas(source: QrImageSource): HTMLCanvasElement {
+  const capped = capQrSource(source, QR_MAX_DECODE_EDGE);
+  const plan = qrCanvasPlan(capped.width, capped.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = plan.width;
+  canvas.height = plan.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('qr_canvas_unavailable');
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = false;
+  context.drawImage(
+    capped.image,
+    plan.padding,
+    plan.padding,
+    capped.width * plan.scale,
+    capped.height * plan.scale,
+  );
+  return canvas;
+}
+
+/**
+ * Scales an oversized photo down onto a canvas. Phone cameras routinely produce
+ * images larger than any decoder wants to binarise in one pass.
+ */
+function capQrSource(source: QrImageSource, maxEdge: number): QrImageSource {
+  const longestEdge = Math.max(source.width, source.height);
+  if (longestEdge <= maxEdge) return source;
+  const ratio = maxEdge / longestEdge;
+  const width = Math.max(1, Math.round(source.width * ratio));
+  const height = Math.max(1, Math.round(source.height * ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('qr_canvas_unavailable');
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, width, height);
+  context.imageSmoothingEnabled = true;
+  context.drawImage(source.image, 0, 0, width, height);
+  return { image: canvas, width, height };
+}
+
+/**
+ * Slides a window across the image at a few zoom levels, enlarging each window
+ * before decoding. This is what finds a ticket QR that occupies a small corner
+ * of a full-page screenshot, where a whole-frame pass sees too few pixels per
+ * module to lock on.
+ */
+function sweepQrImage(source: QrImageSource, trace: string[]): string | null {
+  const base = capQrSource(source, QR_SWEEP_EDGE);
+  const baseCanvas = document.createElement('canvas');
+  baseCanvas.width = base.width;
+  baseCanvas.height = base.height;
+  const baseContext = baseCanvas.getContext('2d', { willReadFrequently: true });
+  if (!baseContext) {
+    trace.push('sweep: canvas unavailable');
+    return null;
+  }
+  baseContext.fillStyle = '#fff';
+  baseContext.fillRect(0, 0, base.width, base.height);
+  baseContext.drawImage(base.image, 0, 0, base.width, base.height);
+
+  const tile = document.createElement('canvas');
+  const tileContext = tile.getContext('2d', { willReadFrequently: true });
+  if (!tileContext) {
+    trace.push('sweep: canvas unavailable');
+    return null;
+  }
+
+  const deadline = Date.now() + QR_SWEEP_BUDGET_MS;
+  const shortestEdge = Math.min(base.width, base.height);
+
+  let tiles = 0;
+  for (const divisor of [2, 4]) {
+    const window = Math.round(shortestEdge / divisor);
+    if (window < 48) continue;
+    const step = Math.max(1, Math.round(window * 0.6));
+    const target = Math.min(640, window * 3);
+    tile.width = target;
+    tile.height = target;
+    const lastLeft = Math.max(0, base.width - window);
+    const lastTop = Math.max(0, base.height - window);
+
+    for (let top = 0; ; top += step) {
+      const y = Math.min(top, lastTop);
+      for (let left = 0; ; left += step) {
+        const x = Math.min(left, lastLeft);
+        if (Date.now() > deadline) {
+          trace.push(`sweep: gave up after ${QR_SWEEP_BUDGET_MS}ms (${tiles} tiles)`);
+          return null;
+        }
+        tiles++;
+        tileContext.fillStyle = '#fff';
+        tileContext.fillRect(0, 0, target, target);
+        tileContext.imageSmoothingEnabled = false;
+        tileContext.drawImage(baseCanvas, x, y, window, window, 0, 0, target, target);
+        const pixels = tileContext.getImageData(0, 0, target, target);
+        const found = decodeQrPixels(pixels.data, pixels.width, pixels.height);
+        if (found) return found;
+        if (x >= lastLeft) break;
+      }
+      if (y >= lastTop) break;
+    }
+  }
+  trace.push(`sweep (${base.width}x${base.height}): no match in ${tiles} tiles`);
+  return null;
+}
+
+function recoverSmallQrSource(source: QrImageSource): string | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return null;
+  context.drawImage(source.image, 0, 0);
+  const image = context.getImageData(0, 0, source.width, source.height);
+  return recoverSmallQr(image.data, image.width, image.height);
+}
+
+function decodeQrCanvasPixels(canvas: HTMLCanvasElement): string | null {
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return null;
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  return decodeQrPixels(image.data, image.width, image.height);
+}
+
+export function decodeQrPixels(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+): string | null {
+  return jsQR(pixels, width, height, { inversionAttempts: 'attemptBoth' })?.data.trim() || null;
+}
+
+function thresholdQrCanvas(source: HTMLCanvasElement, threshold: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('qr_canvas_unavailable');
+  context.drawImage(source, 0, 0);
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let offset = 0; offset < image.data.length; offset += 4) {
+    const luminance =
+      image.data[offset] * 0.299 + image.data[offset + 1] * 0.587 + image.data[offset + 2] * 0.114;
+    const value = luminance < threshold ? 0 : 255;
+    image.data[offset] = value;
+    image.data[offset + 1] = value;
+    image.data[offset + 2] = value;
+    image.data[offset + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
+/**
+ * Keeps the events a helper can still check people in to: anything starting today
+ * (even if it began hours ago — the door is still open) or later. Events from earlier
+ * days are dropped. An event with no readable start time is kept, since hiding an
+ * assigned event at the door is worse than listing one too many.
+ */
+export function currentAndFutureEvents(
+  events: readonly EventOption[],
+  now: Date,
+): readonly EventOption[] {
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return events.filter((event) => {
+    const startsAt = new Date(event.starts_at ?? event.event_start_datetime ?? '').getTime();
+    return Number.isNaN(startsAt) || startsAt >= startOfToday;
+  });
+}
+
+/** Ticket tokens are short base64url strings; the service rejects empty or over-long values. */
+export function isTicketToken(value: string): boolean {
+  return value.length > 0 && value.length <= 255;
+}
+
+export function checkinErrorMessage(error: unknown): string {
+  if (error instanceof TimeoutError) {
+    return 'The check-in service did not respond. Check the connection and scan again.';
+  }
+  if (!(error instanceof HttpErrorResponse)) {
+    return 'The check-in service is unavailable. Try again.';
+  }
+  if (error.status === 403) return 'This event is not assigned to your helper account.';
+  const detail: unknown = error.error?.detail;
+  if (error.status === 422 && typeof detail === 'string')
+    return `Invalid check-in request: ${detail}`;
+  return 'The check-in service is unavailable. Try again.';
+}
+
+export function uploadErrorMessage(error: unknown): string {
+  const reason = error instanceof Error ? error.message : '';
+  if (reason === 'qr_image_load_failed' || reason === 'qr_image_empty') {
+    return 'That file could not be opened as an image. Save the ticket QR as a PNG or JPG and upload that.';
+  }
+  if (reason === 'qr_canvas_unavailable') {
+    return 'This browser blocked image decoding. Use the camera or enter the QR token manually.';
+  }
+  return 'No readable QR code was found. Upload the original image or a crop with a clear white border around the whole QR code.';
 }
 
 function timestamp(): string {
@@ -561,4 +782,40 @@ function cameraErrorMessage(error: unknown): string {
     return 'No usable camera was found on this device.';
   }
   return 'The camera could not be started. Close other camera apps or enter the QR token manually.';
+}
+
+export function outcomeDescription(outcome: ScanOutcome): string {
+  switch (outcome) {
+    case 'VALID':
+      return 'Valid ticket. Check-in accepted.';
+    case 'ALREADY_USED':
+      return 'Already used. This ticket was checked in earlier.';
+    case 'WRONG_EVENT':
+      return 'Wrong event. This ticket is not assigned to this event.';
+    default:
+      return 'Invalid ticket. It could not be checked in.';
+  }
+}
+
+export function outcomeIcon(outcome: ScanOutcome): string {
+  return outcome === 'VALID'
+    ? '✓'
+    : outcome === 'ALREADY_USED'
+      ? '↺'
+      : outcome === 'WRONG_EVENT'
+        ? '!'
+        : '×';
+}
+
+function mapTicketOutcome(outcome: TicketOutcome): ScanOutcome {
+  switch (outcome) {
+    case 'SUCCESS':
+      return 'VALID';
+    case 'DUPLICATE':
+      return 'ALREADY_USED';
+    case 'WRONG_EVENT':
+      return 'WRONG_EVENT';
+    default:
+      return 'INVALID';
+  }
 }

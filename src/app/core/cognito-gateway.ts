@@ -5,6 +5,7 @@ import { fetchAuthSession, signInWithRedirect, signOut } from 'aws-amplify/auth'
 export interface AuthenticatedUser {
   readonly sub: string;
   readonly email: string;
+  readonly name: string;
   readonly groups: readonly string[];
 }
 
@@ -62,6 +63,7 @@ export class CognitoGateway {
     return {
       sub: claims['sub'],
       email: typeof claims['email'] === 'string' ? claims['email'] : '',
+      name: [claims['given_name'], claims['family_name']].filter((value): value is string => typeof value === 'string' && value.length > 0).join(' '),
       groups: Array.isArray(groups) ? groups.map(String) : [],
     };
   }
