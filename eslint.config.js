@@ -41,9 +41,10 @@ module.exports = defineConfig([
     files: ['**/*.html'],
     extends: [angular.configs.templateRecommended, angular.configs.templateAccessibility],
     rules: {
-      // Repository conventions (AGENTS.md): NgOptimizedImage for static images and
-      // class bindings instead of ngClass.
-      '@angular-eslint/template/prefer-ngsrc': 'error',
+      // Repository conventions (AGENTS.md): class bindings instead of ngClass.
+      // `prefer-ngsrc` is deliberately not enabled: NgOptimizedImage is reserved for bundled
+      // static images, while event artwork from the API and blob/data-URL previews cannot use
+      // it, and the rule cannot tell the two apart. Reviewers enforce it for static images.
       '@angular-eslint/template/prefer-class-binding': 'error',
     },
   },
