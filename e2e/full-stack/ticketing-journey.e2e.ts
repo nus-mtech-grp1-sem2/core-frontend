@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { toBuffer } from 'qrcode';
 
 import { accessToken, useSession, userSub } from './support/auth';
+import { configureInventory, createEvent, publishEvent, signedInPage } from './support/events';
+import { buyGaTicket, callAs, createPublishedGaEvent } from './support/orders';
 import { assertLocalStack, sql } from './support/stack';
 import { credentials } from './support/users';
 
@@ -16,79 +19,42 @@ const BLANK_PNG = Buffer.from(
 );
 const VALID = 'Valid ticket. Check-in accepted.';
 
+// A ticket bought under another name and email, and one for a different event.
+const NAMED = { name: 'Nora Namesake', email: 'nora.namesake@example.com' };
+const OTHER = { name: 'Wendy Wrongevent', email: 'wendy.wrongevent@example.com' };
+
 let eventId = 0;
+let namedOrderId = 0;
+let otherOrderId = 0;
 let qrPng: Buffer; // a screenshot of the first ticket's QR code, as a helper would be shown it
+let otherEventQr: Buffer; // the QR code of a valid ticket for a different event
 
 test.describe.configure({ mode: 'serial' });
-test.beforeAll(() => assertLocalStack());
-
-/** `YYYY-MM-DDTHH:mm` in local time, `days` from now, as a datetime-local input expects. */
-function startsAt(days: number): string {
-  const date = new Date(Date.now() + days * 24 * 3600 * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
+test.beforeAll(() => {
+  assertLocalStack();
+  // The door's manual lookup ignores searches shorter than two characters, so make sure order
+  // ids have at least two digits even on a fresh database. (A value below the current maximum
+  // is ignored, so this never lowers the counter.)
+  sql('ALTER TABLE checkout.orders AUTO_INCREMENT = 100');
+});
 
 test('organiser creates a general-admission event, sets inventory and publishes it', async ({
   browser,
 }) => {
-  const context = await browser.newContext();
-  await useSession(context, 'organiser');
-  const page = await context.newPage();
-
-  await page.goto('/organiser/events');
-  await page.getByRole('button', { name: 'New event' }).click();
-  await page.getByLabel('Title').fill(TITLE);
-  await page.getByLabel('Description').fill('Created by the full-stack e2e suite');
-  await page.getByLabel('Venue').fill('E2E Test Hall');
-  await page.getByLabel('Starts at').fill(startsAt(7));
-  await page.getByLabel('Total seats').fill('10');
-  await page.getByLabel('Available buyers').fill('10');
-
-  const created = page.waitForResponse(
-    (response) =>
-      response.url().endsWith('/api/event/events') && response.request().method() === 'POST',
-  );
-  await page.getByRole('button', { name: 'Create event' }).click();
-  const response = await created;
-  expect(response.status()).toBe(201);
-  eventId = ((await response.json()) as { eventId: number }).eventId;
-  expect(eventId).toBeGreaterThan(0);
-
-  // The inventory editor is a drag-to-draw seat map; configure it through the same call it makes.
-  const inventory = await page.request.put(`/api/inventory/events/${eventId}/inventory`, {
-    headers: { Authorization: `Bearer ${accessToken('organiser')}` },
-    data: {
-      zones: [
-        {
-          inventoryItemId: null,
-          name: 'General admission',
-          price: 5,
-          color: '#2563eb',
-          gridRow: 0,
-          gridCol: 0,
-          gridRowSpan: 1,
-          gridColSpan: 10,
-        },
-      ],
-      gridRows: 1,
-      gridCols: 10,
-    },
+  const page = await signedInPage(browser, 'organiser');
+  eventId = await createEvent(page, {
+    title: TITLE,
+    tier: 'TIER1_GA',
+    totalSeats: 10,
+    availableBuyers: 10,
   });
-  expect(inventory.ok(), `inventory PUT -> ${inventory.status()} ${await inventory.text()}`).toBe(
-    true,
-  );
-
-  await page.reload();
-  const card = page.getByRole('listitem').filter({ hasText: TITLE });
-  // Publishing asks for confirmation; Playwright dismisses dialogs unless one is accepted.
-  page.once('dialog', async (dialog) => {
-    expect(dialog.message()).toContain('publish this event');
-    await dialog.accept();
+  await configureInventory(page.request, eventId, {
+    name: 'General admission',
+    price: 5,
+    cols: 10,
   });
-  await card.getByRole('button', { name: 'Publish' }).click();
-  await expect(card).toContainText('On sale');
-  await context.close();
+  await publishEvent(page, TITLE);
+  await page.context().close();
 });
 
 test('customer buys two tickets and sees each with a QR code', async ({ browser }) => {
@@ -117,6 +83,19 @@ test('customer buys two tickets and sees each with a QR code', async ({ browser 
   await expect(qr).toBeVisible();
   qrPng = await qr.screenshot();
   await context.close();
+});
+
+test('a differently named ticket and a ticket for another event are issued', async ({
+  request,
+}) => {
+  const otherEventId = await createPublishedGaEvent(request, `E2E Other Event ${runId}`, 5);
+  const [named, other] = await Promise.all([
+    buyGaTicket(request, 'customer2', eventId, NAMED),
+    buyGaTicket(request, 'customer', otherEventId, OTHER),
+  ]);
+  namedOrderId = named.orderId;
+  otherOrderId = other.orderId;
+  otherEventQr = await toBuffer(other.qrToken, { width: 320, margin: 4 });
 });
 
 test('a helper who is not on the event team is refused by the backend', async ({ request }) => {
@@ -149,11 +128,11 @@ test.describe('door check-in', () => {
         .setInputFiles({ name: 'ticket.png', mimeType: 'image/png', buffer: image });
 
     await page.goto(`/checkin/${eventId}`);
-    await expect(page.getByRole('status').filter({ hasText: '0 of 2 checked in' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: '0 of 3 checked in' })).toBeVisible();
 
     await upload(qrPng);
     await expect(page.getByRole('status').filter({ hasText: VALID })).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: '1 of 2 checked in' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: '1 of 3 checked in' })).toBeVisible();
 
     await upload(qrPng);
     await expect(
@@ -184,9 +163,105 @@ test.describe('door check-in', () => {
     });
     await results.filter({ hasText: 'ISSUED' }).getByRole('button', { name: 'Check in' }).click();
     await expect(page.getByRole('status').filter({ hasText: VALID })).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: '2 of 2 checked in' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: '2 of 3 checked in' })).toBeVisible();
     await context.close();
   });
+
+  test('finds a ticket by name, email or order id, only within this event', async ({ browser }) => {
+    // The app never stores an attendee name today: the ticket service builds it from
+    // given_name/family_name on the *access* token, which Cognito does not put there. So seed
+    // one to check the lookup itself; the door otherwise shows the email in its place.
+    sql(
+      `UPDATE ticketing.tickets SET customer_name = '${NAMED.name}' WHERE order_id = ${namedOrderId}`,
+    );
+
+    const context = await browser.newContext();
+    await useSession(context, 'helper');
+    const page = await context.newPage();
+    await page.goto(`/checkin/${eventId}`);
+
+    const search = page.getByLabel('Name, email or order ID');
+    const results = page.getByRole('listitem').filter({ hasText: 'General admission' });
+    for (const query of [NAMED.name.split(' ')[1], NAMED.email, String(namedOrderId)]) {
+      await search.fill(query);
+      await expect(page.getByRole('status').filter({ hasText: '1 result' })).toBeVisible();
+      await expect(results).toHaveCount(1);
+      await expect(results.first()).toContainText(NAMED.name);
+    }
+
+    // The other event's ticket exists, but this event's lookup must not reveal it.
+    for (const query of [OTHER.name, OTHER.email, String(otherOrderId)]) {
+      await search.fill(query);
+      await expect(page.getByRole('status').filter({ hasText: '0 results' })).toBeVisible();
+      await expect(results).toHaveCount(0);
+    }
+
+    await search.fill(NAMED.name);
+    await expect(results).toHaveCount(1);
+    page.once('dialog', (dialog) => void dialog.accept());
+    await results.first().getByRole('button', { name: 'Check in' }).click();
+    await expect(page.getByRole('status').filter({ hasText: VALID })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: '3 of 3 checked in' })).toBeVisible();
+    await context.close();
+  });
+
+  test('a valid ticket for a different event is refused as the wrong event', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    await useSession(context, 'helper');
+    const page = await context.newPage();
+    await page.goto(`/checkin/${eventId}`);
+    await expect(page.getByRole('status').filter({ hasText: '3 of 3 checked in' })).toBeVisible();
+
+    await page
+      .getByLabel('Upload QR image')
+      .setInputFiles({ name: 'other.png', mimeType: 'image/png', buffer: otherEventQr });
+    await expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: 'Wrong event. This ticket is not assigned to this event.' }),
+    ).toBeVisible();
+    // Nothing was checked in by it.
+    await page.reload();
+    await expect(page.getByRole('status').filter({ hasText: '3 of 3 checked in' })).toBeVisible();
+    await context.close();
+  });
+});
+
+test('only the event organisers can manage the event', async ({ request }) => {
+  const managing = (path: string, data: unknown = {}) => ({ path: `${path}`, data });
+  const actions = [
+    { method: 'post', ...managing(`/api/event/events/${eventId}/publish`) },
+    { method: 'post', ...managing(`/api/event/events/${eventId}/cancel`) },
+    {
+      method: 'put',
+      ...managing(`/api/queue/events/${eventId}/queue/config`, {
+        opensAt: new Date().toISOString(),
+        admissionBatchSize: 1,
+        admissionIntervalSec: 60,
+      }),
+    },
+    { method: 'post', ...managing(`/api/queue/events/${eventId}/queue/admit-next`) },
+  ] as const;
+
+  // A customer and a helper (who is on this event's team, but as a helper) are both refused.
+  for (const role of ['customer', 'helper'] as const) {
+    for (const action of actions) {
+      const response = await callAs(request, role, action.method, action.path, action.data);
+      expect(response.status(), `${role} ${action.path}`).toBe(403);
+      expect(((await response.json()) as { error: string }).error).toBe('event_organiser_required');
+    }
+  }
+
+  const anonymous = await request.post(`/api/event/events/${eventId}/cancel`, { data: {} });
+  expect(anonymous.status()).toBe(401);
+  expect(((await anonymous.json()) as { error: string }).error).toBe('unauthenticated');
+
+  // Nothing above changed the event: it is still on sale.
+  expect(sql(`SELECT status FROM event_inventory.events WHERE event_id = ${Number(eventId)}`)).toBe(
+    'PUBLISHED',
+  );
 });
 
 test('organiser sees the sales and the attendees', async ({ browser }) => {
@@ -197,12 +272,22 @@ test('organiser sees the sales and the attendees', async ({ browser }) => {
   await page.goto('/organiser/sales');
   const row = page.getByRole('row').filter({ hasText: TITLE });
   await expect(row).toContainText('On sale');
-  await expect(row).toContainText('2');
+  await expect(row).toContainText('3');
 
   await page.goto('/organiser/attendees');
   await page.getByLabel('Filter by event').selectOption({ label: TITLE });
   await expect(
     page.getByRole('row').filter({ hasText: credentials('customer').email }),
   ).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: NAMED.email })).toBeVisible();
+
+  // The event page shows the team roster and how far check-in has got.
+  await page.goto(`/organiser/events/${eventId}`);
+  await expect(
+    page.getByRole('listitem').filter({ hasText: credentials('helper').email }),
+  ).toContainText('Helper · accepted');
+  await expect(page.locator('#checkin-heading + .inventory-summary')).toContainText(
+    '3 of 3 checked in',
+  );
   await context.close();
 });

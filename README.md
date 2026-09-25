@@ -105,6 +105,36 @@ membership row into the local database (the normal invitation needs AWS access t
 The event's inventory is set through the API the seat-map editor calls, since that editor is a
 drag-to-draw canvas.
 
+What it covers (`e2e/full-stack/`):
+
+- **Ticketing journey:** organiser creates and publishes an event through the UI; a customer buys
+  tickets; the door scans a QR image (valid, already used, unreadable, and a valid ticket for a
+  _different_ event is refused as the wrong event); manual lookup by name, email and order id, scoped
+  to the event; the organiser's sales, attendees, team roster and check-in progress; only an event's
+  organisers can manage it (customers and helpers get 403, no token gets 401).
+- **Reserved seating:** waiting room positions, rejoining keeps one place, the organiser admits
+  customers, a genuine race for one seat (exactly one wins, the other picks another), checkout, and
+  no seat is issued twice.
+- **Backend rules, checked at the API:** an admission token buys once and an expired one is refused;
+  malformed orders create nothing; the last ticket cannot be sold twice; paying twice at once charges
+  and issues once; a payment made while the ticket service is down is recovered by paying again;
+  the same ticket scanned at the same moment is accepted once.
+
+Choices worth knowing about:
+
+- `backend-env.sh` turns **automatic waiting-room admission off** so the tests decide when customers
+  are admitted. With it on, a scheduler admits a customer about a second after they join, so the
+  organiser's "Admit next customer" and the queue position could not be tested reliably. The
+  scheduler itself is therefore not covered here.
+- The outage test **stops and restarts the `ticket-service` container** of the local stack.
+- The suite bumps the local order counter so order ids have at least two digits: the door's search
+  ignores queries shorter than two characters.
+- Attendee names are seeded by the lookup test. The ticket service builds a name from
+  `given_name`/`family_name` on the access token, which Cognito does not include, so no ticket has a
+  name today and the door shows the email instead.
+- Not covered: the helper invitation and acceptance flow (the invitation looks the user up in
+  Cognito and needs AWS access), the camera scanner, and QR images that are cropped or low contrast.
+
 The local database keeps data between runs (each run creates its own uniquely named event). To
 reset it, run the backend's `docker compose ... down -v` and start it again. Confirmation prompts
 (`window.confirm`) are part of the real flows: Playwright dismisses dialogs unless a test accepts
