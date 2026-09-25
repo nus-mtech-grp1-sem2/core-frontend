@@ -55,3 +55,28 @@ export function sql(statement: string): string {
     statement,
   );
 }
+
+/**
+ * Stops a service container of the local stack for the duration of `body`, then starts it again
+ * and waits for it to be healthy, even if `body` throws. Used to test recovery from an outage.
+ * A failure in `body` is rethrown after the service is back, so it is never swallowed.
+ */
+export async function withServiceDown(container: string, body: () => Promise<void>): Promise<void> {
+  docker('stop', container);
+  let failure: unknown;
+  try {
+    await body();
+  } catch (error) {
+    failure = error;
+  }
+
+  docker('start', container);
+  let healthy = false;
+  for (let attempt = 0; attempt < 60 && !healthy; attempt += 1) {
+    healthy = docker('inspect', '-f', '{{.State.Health.Status}}', container) === 'healthy';
+    if (!healthy) await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  if (failure !== undefined) throw failure;
+  if (!healthy) throw new Error(`${container} did not become healthy again.`);
+}

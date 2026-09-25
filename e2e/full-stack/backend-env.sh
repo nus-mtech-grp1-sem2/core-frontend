@@ -6,7 +6,10 @@
 # Everything is generated or non-secret: random service secrets, the public Cognito pool ids, the
 # local MySQL container, empty queue URLs (payment and ticket issuance then run in-process) and an
 # empty AWS config directory, so no AWS credentials ever reach the containers. SMTP uses dummy
-# values so nothing touches the real Gmail sender. An existing .env is never overwritten.
+# values so nothing touches the real Gmail sender. Automatic waiting-room admission is switched
+# off so the tests decide when customers are admitted (through the organiser's "Admit next
+# customer"); with it on, a scheduler would admit them about a second after they join.
+# An existing .env is never overwritten.
 set -euo pipefail
 
 backend_dir="${1:?usage: backend-env.sh <path to backend-repo>}"
@@ -29,6 +32,7 @@ sed \
   -e 's/^DB_PASSWORD=.*/DB_PASSWORD=rootpassword/' \
   -e 's/^MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=rootpassword/' \
   -e 's/^DB_SSL=.*/DB_SSL=false/' \
+  -e 's/^AUTO_ADMISSION_ENABLED=.*/AUTO_ADMISSION_ENABLED=false/' \
   -e "s/^SCANNER_SESSION_SECRET=.*/SCANNER_SESSION_SECRET=$(openssl rand -hex 24)/" \
   -e "s/^TICKET_INTERNAL_SHARED_SECRET=.*/TICKET_INTERNAL_SHARED_SECRET=$(openssl rand -hex 24)/" \
   -e "s/^INTERNAL_API_TOKEN=.*/INTERNAL_API_TOKEN=$(openssl rand -hex 24)/" \
