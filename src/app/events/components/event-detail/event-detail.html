@@ -185,6 +185,11 @@
       This event has completed. You can view it, but its details, team and waiting room can no
       longer be changed.
     </p>
+    } @else if (detailsLocked()) {
+    <p class="owner-note" role="status">
+      This event has already been published — its details can no longer be edited. Cancel or
+      re-publish it, or manage its team, below.
+    </p>
     }
     <form class="edit-form" [formGroup]="form" (ngSubmit)="save()">
       <h2>Edit event</h2>
@@ -241,7 +246,11 @@
         }
       </div>
       <div class="form-actions">
-        <button type="submit" class="btn btn-primary" [disabled]="saving() || readOnly()">
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [disabled]="saving() || readOnly() || detailsLocked()"
+        >
           {{ saving() ? 'Saving...' : 'Save changes' }}
         </button>
         @if (event.status === 'DRAFT') {

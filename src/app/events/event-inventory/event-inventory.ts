@@ -8,11 +8,13 @@ import { ApiService } from '../../core/api';
 import { WorkspaceShell } from '../../layout/components/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
+type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
 
 interface EventSummary {
   readonly event_id: number;
   readonly title: string;
   readonly tier: EventTier;
+  readonly status: EventStatus;
 }
 
 interface EventSummaryResponse {
@@ -277,6 +279,12 @@ export class EventInventory {
 
   protected readonly hasCommittedSeats = computed(() => this.committedZoneIds().size > 0);
   protected readonly isSeatedTier = computed(() => this.event()?.tier === 'TIER2_SEATED');
+  /** Zones/seats are configured before publishing; once an event is no longer
+   * a DRAFT (published, or cancelled), the backend rejects any inventory
+   * change (see the inventory service's `event_already_published` /
+   * `event_cancelled` guards) — mirror that here so the UI doesn't invite an
+   * edit that's guaranteed to be rejected. */
+  protected readonly locked = computed(() => this.event()?.status !== 'DRAFT');
 
   protected readonly dragStart = signal<GridCell | null>(null);
   protected readonly dragCurrent = signal<GridCell | null>(null);
@@ -405,6 +413,7 @@ export class EventInventory {
 
   protected onCellPointerDown(row: number, col: number, event: MouseEvent): void {
     event.preventDefault();
+    if (this.locked()) return;
     this.dragMoved.set(false);
     const owner = this.zoneAt(row, col);
     if (owner) {
@@ -488,6 +497,7 @@ export class EventInventory {
   }
 
   protected removeZone(index: number): void {
+    if (this.locked()) return;
     if (this.zoneHasCommitted(index)) {
       this.error.set('This zone has sold or held seats and cannot be removed.');
       return;
@@ -600,7 +610,7 @@ export class EventInventory {
 
   protected async save(): Promise<void> {
     const event = this.event();
-    if (!event || this.saving()) return;
+    if (!event || this.saving() || this.locked()) return;
 
     if (this.zones.invalid) {
       this.zones.markAllAsTouched();
@@ -696,6 +706,12 @@ function describeSaveError(error: unknown): string {
     }
     if (code === 'duplicate_seat_label' || code === 'invalid_inventory_payload') {
       return 'Check that every zone has a name and colour, then try again.';
+    }
+    if (code === 'event_already_published') {
+      return "This event has already been published — its inventory can no longer be edited.";
+    }
+    if (code === 'event_cancelled') {
+      return 'This event has been cancelled — its inventory can no longer be edited.';
     }
     if (error.status === 401) return 'Please sign in again before configuring inventory.';
     if (error.status === 403) return 'You do not have permission to configure this event.';

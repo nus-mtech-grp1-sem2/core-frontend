@@ -330,7 +330,10 @@ describe('EventDetail waiting-room controls', () => {
 });
 
 describe('EventDetail completed events for an organiser', () => {
-  async function renderOrganiser(startsAt: string) {
+  async function renderOrganiser(
+    startsAt: string,
+    status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED' = 'PUBLISHED',
+  ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172') {
         return of({
@@ -344,7 +347,7 @@ describe('EventDetail completed events for an organiser', () => {
             total_seats: 10,
             available_buyers: 2,
             tier: 'TIER1_GA',
-            status: 'PUBLISHED',
+            status,
             price_cents: 2_000,
           },
         });
@@ -435,16 +438,38 @@ describe('EventDetail completed events for an organiser', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
-  it('stays fully editable while the event is still upcoming', async () => {
-    const { host, button } = await renderOrganiser('2099-01-01 20:00:00');
+  it('stays fully editable while a draft event is still upcoming', async () => {
+    const { host, button } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
 
     expect(host.textContent).not.toContain('This event has completed');
-    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('On sale');
+    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('Draft');
     expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(false);
     expect(host.querySelector<HTMLInputElement>('#member-email')?.disabled).toBe(false);
-    for (const label of ['Save changes', 'Cancel event', 'Invite', 'Remove']) {
+    for (const label of ['Save changes', 'Delete draft', 'Invite', 'Remove']) {
       expect(button(label)?.disabled, label).toBe(false);
     }
+  });
+
+  it("locks the event's own details once published, but leaves team management and lifecycle actions available", async () => {
+    const { host, button, put } = await renderOrganiser('2099-01-01 20:00:00', 'PUBLISHED');
+
+    // Still on sale and upcoming — not the "completed" lock.
+    expect(host.textContent).not.toContain('This event has completed');
+    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('On sale');
+    expect(host.textContent).toContain('already been published');
+
+    expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(true);
+    expect(button('Save changes')?.disabled).toBe(true);
+
+    // Team management and the event's own lifecycle actions are unaffected —
+    // only its own details (title/venue/etc.) and inventory are locked.
+    expect(host.querySelector<HTMLInputElement>('#member-email')?.disabled).toBe(false);
+    expect(button('Cancel event')?.disabled).toBe(false);
+    expect(button('Invite')?.disabled).toBe(false);
+    expect(button('Remove')?.disabled).toBe(false);
+
+    button('Save changes')?.click();
+    expect(put).not.toHaveBeenCalled();
   });
 });
 

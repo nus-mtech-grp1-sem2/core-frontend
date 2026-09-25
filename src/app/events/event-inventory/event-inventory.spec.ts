@@ -10,10 +10,15 @@ interface EventFixture {
   readonly event_id: number;
   readonly title: string;
   readonly tier: 'TIER1_GA' | 'TIER2_SEATED';
+  readonly status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
 }
 
-const SEATED_EVENT: EventFixture = { event_id: 1, title: 'ASEAN Cup Final', tier: 'TIER2_SEATED' };
-const GA_EVENT: EventFixture = { event_id: 2, title: 'Neon Skyline Tour', tier: 'TIER1_GA' };
+// Configuring zones/seats happens before publishing, so the default fixtures
+// are DRAFT — matching the real pre-publish flow and every existing test
+// below, which exercises normal editing.
+const SEATED_EVENT: EventFixture = { event_id: 1, title: 'ASEAN Cup Final', tier: 'TIER2_SEATED', status: 'DRAFT' };
+const GA_EVENT: EventFixture = { event_id: 2, title: 'Neon Skyline Tour', tier: 'TIER1_GA', status: 'DRAFT' };
+const PUBLISHED_EVENT: EventFixture = { event_id: 3, title: 'Sold Out Show', tier: 'TIER1_GA', status: 'PUBLISHED' };
 
 const EMPTY_INVENTORY = { gridRows: 6, gridCols: 8, zones: [], seats: [] };
 
@@ -543,6 +548,29 @@ describe('EventInventory', () => {
 
     // No zone should appear from a click alone — only an actual drag draws one.
     expect(host.querySelectorAll('.zone-card').length).toBe(0);
+  });
+
+  it('locks a published event: shows a notice, blocks drawing new zones, and disables Save', async () => {
+    const { fixture, httpMock, host } = await renderFor(PUBLISHED_EVENT);
+
+    expect(host.querySelector('.lock-note')?.textContent).toContain('published');
+
+    // Dragging over the empty grid must not create a zone once locked.
+    dragRectangle(host, 0, 0, 1, 2);
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.zone-card').length).toBe(0);
+
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.trim().startsWith('Save'),
+    );
+    expect(saveButton?.disabled).toBe(true);
+
+    saveButton?.click();
+    fixture.detectChanges();
+
+    // No PUT is ever issued for a locked event.
+    httpMock.expectNone(`/api/inventory/events/${PUBLISHED_EVENT.event_id}/inventory`);
+    httpMock.verify();
   });
 
   it('no longer offers a "Tag seats" mode for a seated event — deferred to a later cycle', async () => {

@@ -265,6 +265,17 @@ export class EventDetail {
   });
   /** A completed event stays viewable to its organisers, but nothing on it can be changed. */
   protected readonly readOnly = computed(() => this.organiserMode && this.completed());
+  /** Once an event is no longer a DRAFT (published, or cancelled), the event
+   * service rejects any edit to its own details (see PUT /events/:eventId's
+   * `event_not_editable` guard) — mirror that here. Deliberately narrower
+   * than `readOnly()`: it only locks this event's own detail form and
+   * inventory, not team management, the waiting room, or the status-change
+   * actions that are how an organiser gets a published event back to DRAFT-like
+   * flexibility in the first place. */
+  protected readonly detailsLocked = computed(() => {
+    const event = this.event();
+    return !!event && event.status !== 'DRAFT';
+  });
   protected readonly form = this.fb.group({
     title: this.fb.control('', Validators.required),
     description: this.fb.control(''),
@@ -318,7 +329,7 @@ export class EventDetail {
 
   protected async save(): Promise<void> {
     const event = this.event();
-    if (!event || this.readOnly() || this.form.invalid || this.saving()) {
+    if (!event || this.readOnly() || this.detailsLocked() || this.form.invalid || this.saving()) {
       this.form.markAllAsTouched();
       return;
     }
@@ -682,11 +693,14 @@ export class EventDetail {
         availableBuyers: result.event.available_buyers,
         tier: result.event.tier,
       });
-      if (this.readOnly()) {
+      if (this.readOnly() || this.detailsLocked()) {
         this.form.disable();
-        this.inviteForm.disable();
       } else {
         this.form.enable();
+      }
+      if (this.readOnly()) {
+        this.inviteForm.disable();
+      } else {
         this.inviteForm.enable();
       }
       if (this.organiserMode) {
@@ -953,6 +967,9 @@ function describeError(error: unknown, action: string): string {
     }
     if ((error.error as { error?: string } | null)?.error === 'queue_admission_required') {
       return 'Your waiting-room admission has expired. Rejoin the queue to continue.';
+    }
+    if ((error.error as { error?: string } | null)?.error === 'event_not_editable') {
+      return 'This event has already been published — its details can no longer be edited.';
     }
     if (error.status === 401) return 'Please sign in again before managing this event.';
     if (error.status === 403) return 'You do not have permission to manage this event.';

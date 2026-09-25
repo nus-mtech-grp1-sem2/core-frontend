@@ -10,7 +10,15 @@
         Drag across an empty area of the map to draw a zone — row 0 is closest to the stage. The zone's capacity is
         the size of the rectangle you draw. Zones can't overlap.
       </p>
-      @if (hasCommittedSeats()) {
+      @if (locked()) {
+        <p class="pill status lock-note">
+          {{
+            event.status === 'CANCELLED'
+              ? 'This event has been cancelled — its inventory can no longer be edited.'
+              : 'This event has already been published — its inventory can no longer be edited.'
+          }}
+        </p>
+      } @else if (hasCommittedSeats()) {
         <p class="pill status lock-note">Some zones have sold or held seats — those zones can't be resized or removed. Everything else stays editable.</p>
       }
     </div>
@@ -169,7 +177,7 @@
     </div>
 
     <div class="form-actions">
-      <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">{{ saving() ? 'Saving...' : 'Save inventory' }}</button>
+      <button type="button" class="btn btn-primary" [disabled]="saving() || locked()" (click)="save()">{{ saving() ? 'Saving...' : 'Save inventory' }}</button>
     </div>
   </section>
 } @else {
