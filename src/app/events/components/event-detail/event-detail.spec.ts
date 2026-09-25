@@ -143,18 +143,29 @@ describe('EventDetail seat map sizing', () => {
       if (path === '/customers/me/orders') return of({ orders: [] });
       if (path === '/customers/me/tickets') return of({ tickets: [] });
       if (path === '/events/172/seats')
-        // A wide venue (10 columns) — wide enough that fixed-size cells no
-        // longer fit inside the purchase panel's ~24rem width, which is
-        // exactly the case that used to make the seat map spill out of it.
+        // The saved canvas is much larger than its two occupied cells. The
+        // customer view should not render its unused rows and columns.
         return of({
-          gridRows: 2,
-          gridCols: 10,
+          gridRows: 20,
+          gridCols: 20,
           seats: [
             {
               seatId: 8,
               seatLabel: 'A8',
-              gridRow: 0,
-              gridCol: 0,
+              gridRow: 4,
+              gridCol: 6,
+              inventoryItemId: 1,
+              sectionName: 'Floor',
+              priceCents: 2000,
+              color: '#000000',
+              status: 'AVAILABLE',
+              tag: 'NONE',
+            },
+            {
+              seatId: 9,
+              seatLabel: 'B9',
+              gridRow: 5,
+              gridCol: 15,
               inventoryItemId: 1,
               sectionName: 'Floor',
               priceCents: 2000,
@@ -202,12 +213,14 @@ describe('EventDetail seat map sizing', () => {
 
     const host = fixture.nativeElement as HTMLElement;
     const seatGrid = host.querySelector<HTMLElement>('.seat-grid');
-    // Same fixed cinema-style cell size the organiser drew the zones with
-    // (event-inventory.css's `.grid-cell`/`.seat-cell`), not a stretchy
-    // `minmax(_, 1fr)` track that grows cells to fill a narrow panel and
-    // then overflows it once there are enough columns.
-    expect(seatGrid?.style.gridTemplateColumns).toBe('repeat(10, 1.75rem)');
+    // Both completely empty rows/columns are removed from the customer view.
+    expect(seatGrid?.style.gridTemplateColumns).toBe('repeat(2, 1.75rem)');
     expect(seatGrid?.style.gridTemplateRows).toBe('repeat(2, 1.75rem)');
+    const renderedSeats = host.querySelectorAll<HTMLElement>('.seat');
+    expect(renderedSeats[0]?.style.gridRow).toBe('1');
+    expect(renderedSeats[0]?.style.gridColumn).toBe('1');
+    expect(renderedSeats[1]?.style.gridRow).toBe('2');
+    expect(renderedSeats[1]?.style.gridColumn).toBe('2');
     // The grid must sit inside a container that can scroll instead of
     // visually spilling out of the purchase panel's rounded border.
     expect(seatGrid?.closest('.seat-map')).not.toBeNull();
@@ -235,18 +248,10 @@ describe('EventDetail purchase errors', () => {
     expect(purchaseErrorMessage(error)).toContain('unavailable or sold out');
   });
 
-  it('explains that an event-team member cannot purchase', () => {
-    const error = new HttpErrorResponse({
-      status: 403,
-      error: { error: 'event_team_cannot_purchase' },
-    });
-
-    expect(purchaseErrorMessage(error)).toContain('Organisers and event helpers cannot purchase');
-  });
 });
 
-describe('EventDetail event-team purchase restriction', () => {
-  it('does not render purchase controls for an accepted event helper', async () => {
+describe('EventDetail event-team purchases', () => {
+  it('renders customer purchase controls for an accepted event helper', async () => {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172') {
         return of({
@@ -265,7 +270,8 @@ describe('EventDetail event-team purchase restriction', () => {
           },
         });
       }
-      if (path === '/helper/shifts') return of({ events: [{ event_id: 172 }] });
+      if (path === '/customers/me/orders') return of({ orders: [] });
+      if (path === '/customers/me/tickets') return of({ tickets: [] });
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
 
@@ -309,12 +315,12 @@ describe('EventDetail event-team purchase restriction', () => {
     fixture.detectChanges();
 
     const host = fixture.nativeElement as HTMLElement;
-    expect(host.textContent).toContain('cannot purchase tickets for events they manage');
     expect(
       Array.from(host.querySelectorAll('button')).some(
         (button) => button.textContent?.trim() === 'Buy tickets',
       ),
-    ).toBe(false);
+    ).toBe(true);
+    expect(get).not.toHaveBeenCalledWith('event', '/helper/shifts');
   });
 });
 

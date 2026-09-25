@@ -112,10 +112,6 @@ interface OrdersResponse {
   readonly orders: readonly PaidOrder[];
 }
 
-interface TeamEventsResponse {
-  readonly events: readonly { readonly event_id: number }[];
-}
-
 interface TicketWithQr extends Ticket {
   readonly qrDataUrl: string;
 }
@@ -247,21 +243,11 @@ export class MyEvents {
     this.requestRunning = true;
     if (!silent) this.status.set('loading');
     try {
-      const [result, orderResult, teamResult] = await Promise.all([
+      const [result, orderResult] = await Promise.all([
         firstValueFrom(this.api.get<TicketsResponse>('ticket', '/customers/me/tickets')),
         firstValueFrom(this.api.get<OrdersResponse>('order', '/customers/me/orders')),
-        firstValueFrom(this.api.get<TeamEventsResponse>('event', '/helper/shifts')).catch(
-          () => ({ events: [] }) as TeamEventsResponse,
-        ),
       ]);
-      const teamEventIds = new Set(teamResult.events.map((event) => Number(event.event_id)));
-      const visibleTickets = result.tickets.filter(
-        (ticket) => !teamEventIds.has(Number(ticket.event_id)),
-      );
-      const visibleOrders = orderResult.orders.filter(
-        (order) => !teamEventIds.has(Number(order.event_id)),
-      );
-      for (const order of visibleOrders) {
+      for (const order of orderResult.orders) {
         if (order.status !== 'PENDING') {
           try {
             sessionStorage.removeItem(paymentProcessingKey(order.order_id));
@@ -271,7 +257,7 @@ export class MyEvents {
         }
       }
       const withQr = await Promise.all(
-        visibleTickets.map(async (ticket) => ({
+        result.tickets.map(async (ticket) => ({
           ...ticket,
           qrDataUrl: await toDataURL(ticket.qr_token, {
             width: 360,
@@ -281,7 +267,7 @@ export class MyEvents {
         })),
       );
       this.tickets.set(withQr);
-      this.orders.set(visibleOrders);
+      this.orders.set(orderResult.orders);
       this.status.set('ready');
     } catch {
       if (!silent || this.tickets().length === 0) this.status.set('error');

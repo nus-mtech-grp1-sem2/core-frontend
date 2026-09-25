@@ -269,7 +269,7 @@ describe('MyEvents unpaid orders', () => {
 });
 
 describe('MyEvents', () => {
-  it('excludes tickets and orders for events where the account is on the event team', async () => {
+  it('shows tickets and orders for events where the account is on the event team', async () => {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/customers/me/tickets') {
         return of({
@@ -306,7 +306,6 @@ describe('MyEvents', () => {
           ],
         });
       }
-      if (path === '/helper/shifts') return of({ events: [{ event_id: 172 }] });
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
 
@@ -328,9 +327,9 @@ describe('MyEvents', () => {
     fixture.detectChanges();
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(text).not.toContain('Team event');
-    expect(text).toContain('No tickets yet');
-    expect(get).toHaveBeenCalledWith('event', '/helper/shifts');
+    expect(text).toContain('Team event');
+    expect(text).not.toContain('No tickets yet');
+    expect(get).not.toHaveBeenCalledWith('event', '/helper/shifts');
   });
 });
 

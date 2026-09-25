@@ -264,21 +264,22 @@ describe('Events', () => {
     });
   });
 
-  it('excludes events where the signed-in customer is an organiser or helper', async () => {
+  it('shows team-managed events in the signed-in customer catalogue', async () => {
     const { fixture, httpMock, host } = await renderFor(user([]));
 
     httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
-    httpMock.expectOne('/api/event/helper/shifts').flush({ events: [{ event_id: 1 }] });
     httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
     httpMock.expectOne('/api/order/customers/me/orders').flush({ orders: [] });
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
-    httpMock.expectOne('/api/event/events/2').flush({ event: MOCK_EVENTS[1] });
+    for (const event of MOCK_EVENTS) {
+      httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
+    }
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
 
-    expect(host.querySelectorAll('.event-card').length).toBe(1);
-    expect(host.textContent).not.toContain('Neon Skyline Tour');
+    expect(host.querySelectorAll('.event-card').length).toBe(2);
+    expect(host.textContent).toContain('Neon Skyline Tour');
     expect(host.textContent).toContain('ASEAN Cup Final');
     httpMock.verify();
   });
@@ -287,7 +288,6 @@ describe('Events', () => {
     const { fixture, httpMock, host } = await renderFor(user([]));
 
     httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
-    httpMock.expectOne('/api/event/helper/shifts').flush({ events: [] });
     httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
     httpMock.expectOne('/api/order/customers/me/orders').flush({
       orders: [

@@ -171,18 +171,12 @@
   justify-self: start;
 }
 
-/* Same cinema-style fixed-size cells as the organiser's zone-drawing view
- * (event-inventory.css's `.grid-cell`/`.seat-cell`, also 1.75rem with a
- * 0.25rem gap) — a `minmax(_, 1fr)` track used to stretch every seat to fill
- * this panel's width, which both looked inconsistent with how the organiser
- * laid the venue out and, for wide venues, made the seat map spill out past
- * the panel's rounded border since the panel itself was width-capped. This
- * wrapper lets the (now fixed-size) grid scroll horizontally instead, so it
- * always stays contained within the panel. */
+/* Keep the customer map aligned with the compact organiser inventory grid.
+ * Wide venues scroll inside the purchase card without clipping the left edge. */
 .seat-map {
   overflow-x: auto;
   display: flex;
-  justify-content: center;
+  justify-content: safe center;
   padding-block: 0.125rem;
 }
 
