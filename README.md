@@ -67,6 +67,20 @@ npm run test:e2e:ui     # Playwright UI mode
 npx playwright show-report
 ```
 
+### Writing tests
+
+Import `test`/`expect` from `e2e/support/fixtures`, not from `@playwright/test`:
+
+- `signInAs(page, customer | helper | organiser)` (`support/session`) fakes a signed-in session
+  with an unsigned test token, before `page.goto`. It never contacts Cognito and is useless
+  against a real backend.
+- `api.on('GET', 'event/events', { json: ... })` stubs a gateway call (path after `/api/`).
+  Any API call you did not stub fails the test, so a test can never silently hit a real backend.
+  `api.requests(...)` lets you assert what the app did (or did not) send.
+- `expectAccessible(page)` (`support/a11y`) runs axe against WCAG 2.x A/AA; call it once the
+  page shows real content.
+- Build responses with the factories in `support/data`.
+
 Tests must not commit credentials, tokens or saved auth state. `test-results/`,
 `playwright-report/` and `e2e/.auth/` are gitignored.
 
