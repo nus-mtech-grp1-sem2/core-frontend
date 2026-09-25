@@ -10,7 +10,7 @@ permissions: {contents: read}
 jobs:
   quality:
     # Central reusable workflow, pinned to a reviewed full commit SHA.
-    uses: nus-mtech-grp1-sem2/onestage-ai-engineering/.github/workflows/angular-quality.yml@7dc8ac91aa68cee4cabac1720377814580603496
+    uses: nus-mtech-grp1-sem2/onestage-ai-engineering/.github/workflows/angular-quality.yml@40750a1ce98c3325994019eaca696d9e3adcf9ea
     with:
       node-version: '24'
       install-command: npm ci
@@ -21,3 +21,6 @@ jobs:
       test-command: npm test -- --watch=false
       build-command: npm run build
       audit-command: npm audit --omit=dev
+      # Keep going after a failed check so one red step (e.g. format) does not hide the others.
+      # The job still fails if any step fails.
+      run-all-steps: true
