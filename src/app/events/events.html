@@ -88,6 +88,18 @@
     </section>
     } @if (isAdmin() && showEventForm()) {
     <form class="new-event-form" [formGroup]="eventForm" (ngSubmit)="saveEvent()">
+      <div class="field field-wide">
+        <label for="event-image">Event photo</label>
+        <input
+          id="event-image"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          (change)="onImageSelected($event)"
+        />
+        @if (imagePreviewUrl()) {
+        <img class="image-preview" [src]="imagePreviewUrl()" alt="Selected event photo preview" />
+        }
+      </div>
       <div class="field">
         <label for="event-title">Title</label
         ><input id="event-title" type="text" formControlName="title" required />
@@ -98,7 +110,19 @@
       </div>
       <div class="field">
         <label for="event-venue">Venue</label
-        ><input id="event-venue" type="text" formControlName="venue" required />
+        ><input
+          id="event-venue"
+          type="text"
+          formControlName="venue"
+          list="venue-options"
+          placeholder="Type or pick a venue"
+          required
+        />
+        <datalist id="venue-options">
+          @for (venue of savedVenues(); track venue) {
+          <option [value]="venue"></option>
+          }
+        </datalist>
       </div>
       <div class="field">
         <label for="event-start">Starts at</label
@@ -138,17 +162,6 @@
         }
       </div>
       <div class="field">
-        <label for="event-price">Price</label
-        ><input
-          id="event-price"
-          type="number"
-          formControlName="price"
-          min="0"
-          step="0.01"
-          required
-        />
-      </div>
-      <div class="field">
         <label for="event-tier">Ticketing</label
         ><select id="event-tier" formControlName="tier">
           <option value="TIER1_GA">General admission</option>
@@ -173,6 +186,7 @@
         [event]="event"
         [isAdmin]="isAdmin()"
         [completed]="isEventCompleted(event)"
+        [imageUrl]="eventImageUrl(event.event_id)"
         [detailLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'"
         (publish)="publishEvent($event)"
         (delete)="deleteEvent($event)"

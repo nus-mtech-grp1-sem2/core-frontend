@@ -35,7 +35,24 @@ describe('EventDetail checkout navigation', () => {
         if (path === '/customers/me/orders') return of({ orders: [] });
         if (path === '/customers/me/tickets') return of({ tickets: [] });
         if (path === '/events/172/seats')
-          return of({ seats: [{ seat_id: 8, seat_label: 'A8', status: 'AVAILABLE' }] });
+          return of({
+            gridRows: 1,
+            gridCols: 1,
+            seats: [
+              {
+                seatId: 8,
+                seatLabel: 'A8',
+                gridRow: 0,
+                gridCol: 0,
+                inventoryItemId: 1,
+                sectionName: 'Floor',
+                priceCents: 2000,
+                color: '#000000',
+                status: 'AVAILABLE',
+                tag: 'NONE',
+              },
+            ],
+          });
         return throwError(() => new Error(`Unexpected GET ${path}`));
       });
       const post = vi.fn(() => of({ order: { order_id: 42 } }));
@@ -45,7 +62,7 @@ describe('EventDetail checkout navigation', () => {
         providers: [
           provideRouter([]),
           { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
-          { provide: ApiService, useValue: { get, post } },
+          { provide: ApiService, useValue: { get, post, url: vi.fn(() => 'mock-image-url') } },
           {
             provide: AuthService,
             useValue: {
@@ -101,6 +118,100 @@ describe('EventDetail checkout navigation', () => {
       expect(clear).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('EventDetail seat map sizing', () => {
+  it("sizes seat cells the same fixed size as the organiser's zone-drawing view, instead of stretching to fill the purchase panel", async () => {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172')
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner',
+            title: 'Test event',
+            description: '',
+            venue: 'Test Hall',
+            starts_at: '2099-01-01 20:00:00',
+            total_seats: 10,
+            available_buyers: 2,
+            tier: 'TIER2_SEATED',
+            status: 'PUBLISHED',
+            price_cents: 2000,
+          },
+        });
+      if (path === '/helper/shifts') return of({ events: [] });
+      if (path === '/customers/me/orders') return of({ orders: [] });
+      if (path === '/customers/me/tickets') return of({ tickets: [] });
+      if (path === '/events/172/seats')
+        // A wide venue (10 columns) — wide enough that fixed-size cells no
+        // longer fit inside the purchase panel's ~24rem width, which is
+        // exactly the case that used to make the seat map spill out of it.
+        return of({
+          gridRows: 2,
+          gridCols: 10,
+          seats: [
+            {
+              seatId: 8,
+              seatLabel: 'A8',
+              gridRow: 0,
+              gridCol: 0,
+              inventoryItemId: 1,
+              sectionName: 'Floor',
+              priceCents: 2000,
+              color: '#000000',
+              status: 'AVAILABLE',
+              tag: 'NONE',
+            },
+          ],
+        });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
+        { provide: ApiService, useValue: { get, post: vi.fn(), url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => true,
+            user: signal({ sub: 'customer', email: 'test@example.com', name: 'Test', groups: [] }),
+          },
+        },
+        {
+          provide: QueueService,
+          useValue: {
+            status: vi.fn().mockResolvedValue({
+              status: 'ADMITTED',
+              admissionToken: 'test-admission',
+              tokenExpiresAt: '2099-01-01T20:00:00Z',
+            }),
+            admissionTokenFor: () => 'test-admission',
+            clear: vi.fn(),
+          },
+        },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const seatGrid = host.querySelector<HTMLElement>('.seat-grid');
+    // Same fixed cinema-style cell size the organiser drew the zones with
+    // (event-inventory.css's `.grid-cell`/`.seat-cell`), not a stretchy
+    // `minmax(_, 1fr)` track that grows cells to fill a narrow panel and
+    // then overflows it once there are enough columns.
+    expect(seatGrid?.style.gridTemplateColumns).toBe('repeat(10, 1.75rem)');
+    expect(seatGrid?.style.gridTemplateRows).toBe('repeat(2, 1.75rem)');
+    // The grid must sit inside a container that can scroll instead of
+    // visually spilling out of the purchase panel's rounded border.
+    expect(seatGrid?.closest('.seat-map')).not.toBeNull();
+  });
 });
 
 describe('EventDetail buyer capacity', () => {
@@ -178,7 +289,16 @@ describe('EventDetail event-team purchase restriction', () => {
             isAuthenticated: () => true,
           },
         },
-        { provide: ApiService, useValue: { get, put: vi.fn(), post: vi.fn(), delete: vi.fn() } },
+        {
+          provide: ApiService,
+          useValue: {
+            get,
+            put: vi.fn(),
+            post: vi.fn(),
+            delete: vi.fn(),
+            url: vi.fn(() => 'mock-image-url'),
+          },
+        },
       ],
     }).compileComponents();
 
@@ -260,7 +380,10 @@ describe('EventDetail waiting-room controls', () => {
             isAuthenticated: () => true,
           },
         },
-        { provide: ApiService, useValue: { get, put, post, delete: vi.fn() } },
+        {
+          provide: ApiService,
+          useValue: { get, put, post, delete: vi.fn(), url: vi.fn(() => 'mock-image-url') },
+        },
       ],
     }).compileComponents();
 
@@ -301,7 +424,10 @@ describe('EventDetail waiting-room controls', () => {
 });
 
 describe('EventDetail completed events for an organiser', () => {
-  async function renderOrganiser(startsAt: string) {
+  async function renderOrganiser(
+    startsAt: string,
+    status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED' = 'PUBLISHED',
+  ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172') {
         return of({
@@ -315,7 +441,7 @@ describe('EventDetail completed events for an organiser', () => {
             total_seats: 10,
             available_buyers: 2,
             tier: 'TIER1_GA',
-            status: 'PUBLISHED',
+            status,
             price_cents: 2_000,
           },
         });
@@ -356,7 +482,10 @@ describe('EventDetail completed events for an organiser', () => {
             isAuthenticated: () => true,
           },
         },
-        { provide: ApiService, useValue: { get, put, post, delete: remove } },
+        {
+          provide: ApiService,
+          useValue: { get, put, post, delete: remove, url: vi.fn(() => 'mock-image-url') },
+        },
       ],
     }).compileComponents();
 
@@ -379,7 +508,15 @@ describe('EventDetail completed events for an organiser', () => {
 
     expect(host.textContent).toContain('This event has completed');
     expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('Completed');
-    for (const field of ['title', 'description', 'venue', 'starts-at', 'seats', 'price', 'tier']) {
+    for (const field of [
+      'title',
+      'description',
+      'venue',
+      'starts-at',
+      'seats',
+      'available-buyers',
+      'tier',
+    ]) {
       expect(host.querySelector<HTMLInputElement>(`#${field}`)?.disabled).toBe(true);
     }
     expect(host.querySelector<HTMLInputElement>('#member-email')?.disabled).toBe(true);
@@ -395,16 +532,38 @@ describe('EventDetail completed events for an organiser', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
-  it('stays fully editable while the event is still upcoming', async () => {
-    const { host, button } = await renderOrganiser('2099-01-01 20:00:00');
+  it('stays fully editable while a draft event is still upcoming', async () => {
+    const { host, button } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
 
     expect(host.textContent).not.toContain('This event has completed');
-    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('On sale');
+    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('Draft');
     expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(false);
     expect(host.querySelector<HTMLInputElement>('#member-email')?.disabled).toBe(false);
-    for (const label of ['Save changes', 'Cancel event', 'Invite', 'Remove']) {
+    for (const label of ['Save changes', 'Delete draft', 'Invite', 'Remove']) {
       expect(button(label)?.disabled, label).toBe(false);
     }
+  });
+
+  it("locks the event's own details once published, but leaves team management and lifecycle actions available", async () => {
+    const { host, button, put } = await renderOrganiser('2099-01-01 20:00:00', 'PUBLISHED');
+
+    // Still on sale and upcoming — not the "completed" lock.
+    expect(host.textContent).not.toContain('This event has completed');
+    expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('On sale');
+    expect(host.textContent).toContain('already been published');
+
+    expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(true);
+    expect(button('Save changes')?.disabled).toBe(true);
+
+    // Team management and the event's own lifecycle actions are unaffected —
+    // only its own details (title/venue/etc.) and inventory are locked.
+    expect(host.querySelector<HTMLInputElement>('#member-email')?.disabled).toBe(false);
+    expect(button('Cancel event')?.disabled).toBe(false);
+    expect(button('Invite')?.disabled).toBe(false);
+    expect(button('Remove')?.disabled).toBe(false);
+
+    button('Save changes')?.click();
+    expect(put).not.toHaveBeenCalled();
   });
 });
 
@@ -467,7 +626,10 @@ describe('EventDetail completed events for a customer', () => {
             isAuthenticated: () => true,
           },
         },
-        { provide: ApiService, useValue: { get, put: vi.fn(), post, delete: vi.fn() } },
+        {
+          provide: ApiService,
+          useValue: { get, put: vi.fn(), post, delete: vi.fn(), url: vi.fn(() => 'mock-image-url') },
+        },
       ],
     }).compileComponents();
 

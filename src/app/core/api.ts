@@ -45,6 +45,10 @@ export class ApiService {
     return this.http.put<T>(this.url(service, path), body);
   }
 
+  patch<T>(service: BackendService, path: string, body: unknown): Observable<T> {
+    return this.http.patch<T>(this.url(service, path), body);
+  }
+
   delete<T>(service: BackendService, path: string): Observable<T> {
     return this.http.delete<T>(this.url(service, path));
   }

@@ -25,6 +25,18 @@ import { EventCard } from './components/event-card/event-card';
 import { EventStatus, EventTier, ManagedEvent } from './event.models';
 import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
 
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 interface EventApiRecord {
   readonly event_id: number;
   readonly title?: string;
@@ -133,6 +145,14 @@ export class Events {
   protected readonly userResults = signal<readonly CognitoUser[]>([]);
   protected readonly inviteRole = signal<'ORGANISER' | 'HELPER'>('HELPER');
   protected readonly invitations = signal<readonly Invitation[]>([]);
+  protected readonly imagePreviewUrl = signal<string | null>(null);
+  private selectedImageBase64: string | null = null;
+  private selectedImageMimeType: string | null = null;
+  protected readonly savedVenues = computed(() => {
+    const venues = new Set<string>();
+    for (const event of this.allEvents()) { if (event.venue) venues.add(event.venue); }
+    return Array.from(venues).sort((a, b) => a.localeCompare(b));
+  });
   protected readonly customerOrders = signal<readonly CustomerOrder[]>([]);
   protected readonly now = signal(Date.now());
   protected readonly cancellingOrderIds = signal<ReadonlySet<number>>(new Set());
@@ -163,7 +183,6 @@ export class Events {
       Validators.min(1),
       Validators.max(1_000_000),
     ]),
-    price: this.fb.control(0, [Validators.required, Validators.min(0)]),
     tier: this.fb.control<EventTier>('TIER1_GA', Validators.required),
   });
 
@@ -240,6 +259,18 @@ export class Events {
     this.showEventForm.update((open) => !open);
   }
 
+  protected async onImageSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) { this.error.set('Please choose a JPEG, PNG or WebP image.'); input.value = ''; return; }
+    if (file.size > MAX_IMAGE_BYTES) { this.error.set('Image must be 5MB or smaller.'); input.value = ''; return; }
+    const dataUrl = await readFileAsDataUrl(file);
+    this.selectedImageMimeType = file.type;
+    this.selectedImageBase64 = dataUrl;
+    this.imagePreviewUrl.set(dataUrl);
+  }
+
   protected async saveEvent(): Promise<void> {
     if (this.eventForm.invalid || this.submitting()) {
       this.eventForm.markAllAsTouched();
@@ -250,16 +281,22 @@ export class Events {
     try {
       const eventId = this.editingEventId();
       const body = this.eventForm.getRawValue();
-      if (eventId === null) await firstValueFrom(this.api.post('event', '/events', body));
-      else await firstValueFrom(this.api.put('event', `/events/${eventId}`, body));
-      this.resetForm();
-      this.showEventForm.set(false);
-      await this.loadEvents(this.isAdmin());
-    } catch (error) {
-      this.error.set(describeEventError(error, 'save the event'));
-    } finally {
-      this.submitting.set(false);
-    }
+      let targetEventId = eventId;
+      if (eventId === null) {
+        const created = await firstValueFrom(this.api.post<{ eventId: number }>('event', '/events', body));
+        targetEventId = created.eventId;
+      } else {
+        await firstValueFrom(this.api.put('event', `/events/${eventId}`, body));
+      }
+      if (targetEventId !== null && this.selectedImageBase64 && this.selectedImageMimeType) {
+        await firstValueFrom(this.api.put('event', `/events/${targetEventId}/image`, {
+          imageBase64: this.selectedImageBase64,
+          mimeType: this.selectedImageMimeType,
+        }));
+      }
+      this.resetForm(); this.showEventForm.set(false); await this.loadEvents(this.isAdmin());
+    } catch (error) { this.error.set(describeEventError(error, 'save the event')); }
+    finally { this.submitting.set(false); }
   }
 
   protected async publishEvent(eventId: number): Promise<void> {
@@ -335,6 +372,14 @@ export class Events {
   }
   protected eventDetailLink(eventId: number): readonly (string | number)[] {
     return this.organiserMode ? ['/organiser/events', eventId] : ['/events', eventId];
+  }
+
+  /** Built from the `event` service's own image endpoint (not a static asset), so
+   * `EventCard` falls back to the placeholder on 404 rather than going through
+   * NgOptimizedImage, which only covers bundled static images per this repo's
+   * Angular conventions. */
+  protected eventImageUrl(eventId: number): string {
+    return this.api.url('event', `/events/${eventId}/image`);
   }
 
   /** A completed event can still be opened, but nothing on it can be changed. */
@@ -423,9 +468,11 @@ export class Events {
       startsAt: '',
       totalSeats: 1,
       availableBuyers: null,
-      price: 0,
       tier: 'TIER1_GA',
     });
+    this.selectedImageBase64 = null;
+    this.selectedImageMimeType = null;
+    this.imagePreviewUrl.set(null);
   }
 }
 

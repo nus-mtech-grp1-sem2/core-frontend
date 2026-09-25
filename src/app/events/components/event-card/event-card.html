@@ -1,9 +1,11 @@
 <a class="thumb" [routerLink]="detailLink()"
   ><img
-    ngSrc="images/hero-concert.jpg"
+    [src]="imageUrl()"
     width="640"
     height="320"
     [alt]="event().title + ' artwork'"
+    loading="lazy"
+    (error)="useFallbackImage($event.target)"
   /><span class="pill category">{{ tierLabel() }}</span></a
 >
 <div class="body">

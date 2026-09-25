@@ -1,4 +1,4 @@
-import { DatePipe, LowerCasePipe, NgOptimizedImage } from '@angular/common';
+import { DatePipe, LowerCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
@@ -23,6 +23,18 @@ import { WorkspaceShell } from '../../../layout/components/workspace-shell/works
 
 const EVENT_COMPLETED_MESSAGE =
   'This event has already taken place, so tickets are no longer on sale.';
+
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
@@ -54,24 +66,62 @@ interface TeamMember {
   readonly user_email: string;
   readonly role: 'ORGANISER' | 'HELPER';
   readonly invite_status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  /** Cognito display name; blank if the lookup failed or is still loading. */
+  readonly name?: string;
 }
 
 interface TeamResponse {
   readonly members: readonly TeamMember[];
 }
 
+/** Matches the `ticket` service's `/events/:eventId/checkin-stats` response shape. */
+interface CheckinStatsResponse {
+  readonly issued: number;
+  readonly checkedIn: number;
+}
+
+/** A single bookable seat within the organiser's zone/grid layout (inventory domain). */
 interface SeatOption {
-  readonly seat_id: number;
-  readonly seat_label: string;
-  readonly status: 'AVAILABLE' | 'HELD' | 'SOLD';
+  readonly seatId: number;
+  readonly seatLabel: string;
+  readonly gridRow: number;
+  readonly gridCol: number;
+  readonly inventoryItemId: number;
+  readonly sectionName: string;
+  readonly priceCents: number;
+  readonly color: string;
+  readonly status: 'AVAILABLE' | 'HELD' | 'SOLD' | 'BLOCKED';
+  readonly tag: 'NONE' | 'ACCESSIBLE' | 'MAINTENANCE';
 }
 
 interface SeatResponse {
+  readonly gridRows: number;
+  readonly gridCols: number;
   readonly seats: readonly SeatOption[];
 }
 
 interface OrderResponse {
   readonly order: { readonly order_id: number };
+}
+
+interface ZoneSummary {
+  readonly seatCount: number;
+  readonly soldCount: number;
+}
+
+interface InventoryResponse {
+  readonly zones: readonly ZoneSummary[];
+  readonly seats: readonly unknown[];
+}
+
+interface InventorySummary {
+  readonly zoneCount: number;
+  readonly totalSeats: number;
+  readonly soldCount: number;
+}
+
+function seatKey(row: number, col: number): string {
+  return `${row},${col}`;
 }
 
 interface QueueManagementResponse {
@@ -119,14 +169,7 @@ interface AdmissionResponse {
 @Component({
   selector: 'app-event-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    DatePipe,
-    LowerCasePipe,
-    NgOptimizedImage,
-    ReactiveFormsModule,
-    RouterLink,
-    WorkspaceShell,
-  ],
+  imports: [DatePipe, LowerCasePipe, ReactiveFormsModule, RouterLink, WorkspaceShell],
   templateUrl: './event-detail.html',
   styleUrl: './event-detail.css',
 })
@@ -148,8 +191,22 @@ export class EventDetail {
   protected readonly deleting = signal(false);
   protected readonly updatingStatus = signal(false);
   protected readonly inviting = signal(false);
+  protected readonly changingRoleFor = signal<string | null>(null);
   protected readonly error = signal('');
   protected readonly seats = signal<readonly SeatOption[]>([]);
+  protected readonly gridRowCount = signal(0);
+  protected readonly gridColCount = signal(0);
+  protected readonly gridRows = computed(() =>
+    Array.from({ length: this.gridRowCount() }, (_, i) => i),
+  );
+  protected readonly gridCols = computed(() =>
+    Array.from({ length: this.gridColCount() }, (_, i) => i),
+  );
+  protected readonly seatsByKey = computed(() => {
+    const map = new Map<string, SeatOption>();
+    for (const seat of this.seats()) map.set(seatKey(seat.gridRow, seat.gridCol), seat);
+    return map;
+  });
   protected readonly quantity = signal(1);
   protected readonly selectedSeatIds = signal<readonly number[]>([]);
   protected readonly purchasing = signal(false);
@@ -190,6 +247,11 @@ export class EventDetail {
    * event's organisers.
    */
   protected readonly isOrganiser = signal(false);
+  protected readonly inventorySummary = signal<InventorySummary | null>(null);
+  protected readonly checkinStats = signal<CheckinStatsResponse | null>(null);
+  protected readonly imagePreviewUrl = signal<string | null>(null);
+  private selectedImageBase64: string | null = null;
+  private selectedImageMimeType: string | null = null;
   protected readonly customerMode = !this.organiserMode;
   protected readonly shellWorkspace = () =>
     this.organiserMode ? ('organiser' as const) : ('customer' as const);
@@ -203,6 +265,17 @@ export class EventDetail {
   });
   /** A completed event stays viewable to its organisers, but nothing on it can be changed. */
   protected readonly readOnly = computed(() => this.organiserMode && this.completed());
+  /** Once an event is no longer a DRAFT (published, or cancelled), the event
+   * service rejects any edit to its own details (see PUT /events/:eventId's
+   * `event_not_editable` guard) — mirror that here. Deliberately narrower
+   * than `readOnly()`: it only locks this event's own detail form and
+   * inventory, not team management, the waiting room, or the status-change
+   * actions that are how an organiser gets a published event back to DRAFT-like
+   * flexibility in the first place. */
+  protected readonly detailsLocked = computed(() => {
+    const event = this.event();
+    return !!event && event.status !== 'DRAFT';
+  });
   protected readonly form = this.fb.group({
     title: this.fb.control('', Validators.required),
     description: this.fb.control(''),
@@ -217,7 +290,6 @@ export class EventDetail {
       Validators.min(1),
       Validators.max(1_000_000),
     ]),
-    price: this.fb.control(0, [Validators.required, Validators.min(0)]),
     tier: this.fb.control<EventTier>('TIER1_GA', Validators.required),
   });
   protected readonly inviteForm = this.fb.group({
@@ -235,9 +307,29 @@ export class EventDetail {
       .subscribe(() => this.updateAdmissionCountdown());
   }
 
+  protected async onImageSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      this.error.set('Please choose a JPEG, PNG or WebP image.');
+      input.value = '';
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      this.error.set('Image must be 5MB or smaller.');
+      input.value = '';
+      return;
+    }
+    const dataUrl = await readFileAsDataUrl(file);
+    this.selectedImageMimeType = file.type;
+    this.selectedImageBase64 = dataUrl;
+    this.imagePreviewUrl.set(dataUrl);
+  }
+
   protected async save(): Promise<void> {
     const event = this.event();
-    if (!event || this.readOnly() || this.form.invalid || this.saving()) {
+    if (!event || this.readOnly() || this.detailsLocked() || this.form.invalid || this.saving()) {
       this.form.markAllAsTouched();
       return;
     }
@@ -247,6 +339,17 @@ export class EventDetail {
       await firstValueFrom(
         this.api.put('event', `/events/${event.event_id}`, this.form.getRawValue()),
       );
+      if (this.selectedImageBase64 && this.selectedImageMimeType) {
+        await firstValueFrom(
+          this.api.put('event', `/events/${event.event_id}/image`, {
+            imageBase64: this.selectedImageBase64,
+            mimeType: this.selectedImageMimeType,
+          }),
+        );
+        this.selectedImageBase64 = null;
+        this.selectedImageMimeType = null;
+        this.imagePreviewUrl.set(null);
+      }
       await this.load(event.event_id);
     } catch (error) {
       this.error.set(describeError(error, 'save changes'));
@@ -345,6 +448,50 @@ export class EventDetail {
     }
   }
 
+  protected async changeRole(member: TeamMember, role: 'ORGANISER' | 'HELPER'): Promise<void> {
+    const event = this.event();
+    if (!event || this.readOnly() || role === member.role || this.changingRoleFor()) return;
+    const action = role === 'ORGANISER' ? 'promote' : 'demote';
+    if (
+      !window.confirm(
+        `${action === 'promote' ? 'Promote' : 'Demote'} ${member.user_email} to ${role === 'ORGANISER' ? 'Organizer' : 'Helper'}?`,
+      )
+    )
+      return;
+    this.changingRoleFor.set(member.user_sub);
+    this.error.set('');
+    try {
+      await firstValueFrom(
+        this.api.patch(
+          'event',
+          `/events/${event.event_id}/team-members/${encodeURIComponent(member.user_sub)}`,
+          { role },
+        ),
+      );
+      await this.loadMembers(event.event_id);
+    } catch (error) {
+      this.error.set(describeError(error, `${action} this team member`));
+    } finally {
+      this.changingRoleFor.set(null);
+    }
+  }
+
+  protected canChangeRole(member: TeamMember): boolean {
+    return this.isOwner() && member.user_sub !== this.auth.user()?.sub && !this.readOnly();
+  }
+
+  /** Built from the `event` service's own image endpoint (not a static asset), so
+   * this falls back to the placeholder on 404 rather than going through
+   * NgOptimizedImage, which only covers bundled static images per this repo's
+   * Angular conventions. */
+  protected eventImageUrl(eventId: number): string {
+    return this.api.url('event', `/events/${eventId}/image`);
+  }
+
+  protected useFallbackImage(target: EventTarget | null): void {
+    if (target instanceof HTMLImageElement) target.src = 'images/hero-concert.jpg';
+  }
+
   protected async openQueue(): Promise<void> {
     const event = this.event();
     if (!event || this.readOnly() || this.queueActionBusy()) return;
@@ -405,12 +552,20 @@ export class EventDetail {
     );
   }
 
+  protected seatAt(row: number, col: number): SeatOption | undefined {
+    return this.seatsByKey().get(seatKey(row, col));
+  }
+
+  protected isSeatSelected(seat: SeatOption): boolean {
+    return this.selectedSeatIds().includes(seat.seatId);
+  }
+
   protected toggleSeat(seat: SeatOption): void {
     if (seat.status !== 'AVAILABLE') return;
     this.selectedSeatIds.update((ids) => {
-      if (ids.includes(seat.seat_id)) return ids.filter((id) => id !== seat.seat_id);
+      if (ids.includes(seat.seatId)) return ids.filter((id) => id !== seat.seatId);
       if (ids.length >= this.quantity()) return ids;
-      return [...ids, seat.seat_id];
+      return [...ids, seat.seatId];
     });
   }
 
@@ -506,6 +661,19 @@ export class EventDetail {
     return `$${((priceCents ?? 0) / 100).toFixed(2)}`;
   }
 
+  protected inventorySummaryLabel(): string {
+    const summary = this.inventorySummary();
+    if (!summary) return 'Not configured yet';
+    const label = `${summary.zoneCount} zone${summary.zoneCount === 1 ? '' : 's'} · ${summary.totalSeats} seats`;
+    return summary.soldCount > 0 ? `${label}, ${summary.soldCount} sold` : label;
+  }
+
+  protected checkinStatsLabel(): string {
+    const stats = this.checkinStats();
+    if (!stats) return 'Not available yet';
+    return `${stats.checkedIn} of ${stats.issued} checked in`;
+  }
+
   private async load(eventId: number): Promise<void> {
     this.loading.set(true);
     this.error.set('');
@@ -523,17 +691,23 @@ export class EventDetail {
         startsAt: result.event.starts_at.replace(' ', 'T').slice(0, 16),
         totalSeats: result.event.total_seats,
         availableBuyers: result.event.available_buyers,
-        price: (result.event.price_cents ?? 0) / 100,
         tier: result.event.tier,
       });
-      if (this.readOnly()) {
+      if (this.readOnly() || this.detailsLocked()) {
         this.form.disable();
-        this.inviteForm.disable();
       } else {
         this.form.enable();
+      }
+      if (this.readOnly()) {
+        this.inviteForm.disable();
+      } else {
         this.inviteForm.enable();
       }
-      if (this.organiserMode) await this.loadMembers(eventId);
+      if (this.organiserMode) {
+        await this.loadMembers(eventId);
+        await this.loadInventorySummary(eventId);
+        await this.loadCheckinStats(eventId);
+      }
       if (this.wantsSeatMap(result.event)) await this.loadSeats(eventId);
       if (this.organiserMode && result.event.tier === 'TIER2_SEATED') {
         await this.loadQueueManagement(eventId);
@@ -606,13 +780,52 @@ export class EventDetail {
     }
   }
 
+  private async loadInventorySummary(eventId: number): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.api.get<InventoryResponse>('inventory', `/events/${eventId}/inventory`),
+      );
+      this.inventorySummary.set({
+        zoneCount: result.zones.length,
+        totalSeats: result.seats.length,
+        // `sold_count` is a MySQL SUM()/COALESCE() aggregate, which mysql2 returns
+        // as a string — without Number(), `sum + zone.soldCount` silently degrades
+        // into string concatenation (e.g. "0" + "2" + "0" -> "020" instead of 2).
+        soldCount: result.zones.reduce((sum, zone) => sum + Number(zone.soldCount), 0),
+      });
+    } catch {
+      this.inventorySummary.set(null);
+    }
+  }
+
+  /**
+   * Check-in progress on event day (OR-09) — lets the organiser see this
+   * without asking door staff. Not every organiser account is granted
+   * this route (it's the same event-team-membership check as the roster),
+   * so a failed load just hides the section rather than showing an error.
+   */
+  private async loadCheckinStats(eventId: number): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.api.get<CheckinStatsResponse>('ticket', `/events/${eventId}/checkin-stats`),
+      );
+      this.checkinStats.set(result);
+    } catch {
+      this.checkinStats.set(null);
+    }
+  }
+
   private async loadSeats(eventId: number): Promise<void> {
     try {
       const result = await firstValueFrom(
-        this.api.get<SeatResponse>('event', `/events/${eventId}/seats`),
+        this.api.get<SeatResponse>('inventory', `/events/${eventId}/seats`),
       );
+      this.gridRowCount.set(result.gridRows || 0);
+      this.gridColCount.set(result.gridCols || 0);
       this.seats.set(result.seats);
     } catch {
+      this.gridRowCount.set(0);
+      this.gridColCount.set(0);
       this.seats.set([]);
     }
   }
@@ -754,6 +967,9 @@ function describeError(error: unknown, action: string): string {
     }
     if ((error.error as { error?: string } | null)?.error === 'queue_admission_required') {
       return 'Your waiting-room admission has expired. Rejoin the queue to continue.';
+    }
+    if ((error.error as { error?: string } | null)?.error === 'event_not_editable') {
+      return 'This event has already been published — its details can no longer be edited.';
     }
     if (error.status === 401) return 'Please sign in again before managing this event.';
     if (error.status === 403) return 'You do not have permission to manage this event.';
