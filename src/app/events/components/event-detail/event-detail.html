@@ -146,7 +146,7 @@
           [class.selected]="isSeatSelected(seat)"
           [style.grid-row]="rowIndex + 1"
           [style.grid-column]="colIndex + 1"
-          [style.background]="seat.color"
+          [style.background]="seatBackground(seat)"
           [disabled]="seat.status !== 'AVAILABLE'"
           [attr.aria-label]="
                     seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)

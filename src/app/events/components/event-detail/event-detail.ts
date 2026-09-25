@@ -548,11 +548,15 @@ export class EventDetail {
     return this.selectedSeatIds().includes(seat.seatId);
   }
 
+  protected seatBackground(seat: SeatOption): string {
+    return this.isSeatSelected(seat) ? 'var(--brand-600)' : seat.color;
+  }
+
   protected toggleSeat(seat: SeatOption): void {
     if (seat.status !== 'AVAILABLE') return;
     this.selectedSeatIds.update((ids) => {
       if (ids.includes(seat.seatId)) return ids.filter((id) => id !== seat.seatId);
-      if (ids.length >= this.quantity()) return ids;
+      if (ids.length >= this.quantity()) return [...ids.slice(1), seat.seatId];
       return [...ids, seat.seatId];
     });
   }
@@ -901,7 +905,7 @@ function occupiedGridAxis(
  * rows with null coordinates. Only that case receives a compact fallback;
  * configured events retain the organiser's exact placement.
  */
-function seatsWithFallbackLayout(seats: readonly SeatOption[]): readonly SeatOption[] {
+export function seatsWithFallbackLayout(seats: readonly SeatOption[]): readonly SeatOption[] {
   const configured = seats.every(
     (seat) =>
       Number.isInteger(seat.gridRow) &&
@@ -912,8 +916,16 @@ function seatsWithFallbackLayout(seats: readonly SeatOption[]): readonly SeatOpt
   if (configured || seats.length === 0) return seats;
 
   const columns = defaultSeatGridColumns(seats.length);
-  return seats.map((seat, index) => ({
+  const orderedSeats = [...seats].sort(
+    (left, right) =>
+      left.seatLabel.localeCompare(right.seatLabel, undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      }) || left.seatId - right.seatId,
+  );
+  return orderedSeats.map((seat, index) => ({
     ...seat,
+    color: seat.color || '#059669',
     gridRow: Math.floor(index / columns),
     gridCol: index % columns,
   }));

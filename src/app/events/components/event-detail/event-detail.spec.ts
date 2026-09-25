@@ -13,6 +13,7 @@ import {
   defaultSeatGridColumns,
   EventDetail,
   purchaseErrorMessage,
+  seatsWithFallbackLayout,
 } from './event-detail';
 
 describe('EventDetail checkout navigation', () => {
@@ -226,6 +227,13 @@ describe('EventDetail seat map sizing', () => {
     expect(renderedSeats[0]?.style.gridColumn).toBe('1');
     expect(renderedSeats[1]?.style.gridRow).toBe('2');
     expect(renderedSeats[1]?.style.gridColumn).toBe('2');
+    renderedSeats[0]?.click();
+    fixture.detectChanges();
+    expect(renderedSeats[0]?.classList.contains('selected')).toBe(true);
+    renderedSeats[1]?.click();
+    fixture.detectChanges();
+    expect(renderedSeats[0]?.classList.contains('selected')).toBe(false);
+    expect(renderedSeats[1]?.classList.contains('selected')).toBe(true);
     // The grid must sit inside a container that can scroll instead of
     // visually spilling out of the purchase panel's rounded border.
     expect(seatGrid?.closest('.seat-map')).not.toBeNull();
@@ -250,6 +258,25 @@ describe('EventDetail default seat layout', () => {
 
   it('keeps non-factor seat totals close to square', () => {
     expect(defaultSeatGridColumns(14)).toBe(4);
+  });
+
+  it('naturally orders and colours seats that have no configured coordinates', () => {
+    const seats = ['S1', 'S10', 'S2'].map((seatLabel, index) => ({
+      seatId: index + 1,
+      seatLabel,
+      gridRow: null as unknown as number,
+      gridCol: null as unknown as number,
+      inventoryItemId: 1,
+      sectionName: 'General Admission',
+      priceCents: 2_000,
+      color: null as unknown as string,
+      status: 'AVAILABLE' as const,
+      tag: 'NONE' as const,
+    }));
+
+    const arranged = seatsWithFallbackLayout(seats);
+    expect(arranged.map((seat) => seat.seatLabel)).toEqual(['S1', 'S2', 'S10']);
+    expect(arranged.map((seat) => seat.color)).toEqual(['#059669', '#059669', '#059669']);
   });
 });
 

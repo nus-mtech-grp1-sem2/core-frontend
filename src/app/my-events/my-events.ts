@@ -14,6 +14,7 @@ import { exhaustMap, firstValueFrom, from, take, takeWhile, timer } from 'rxjs';
 import { toDataURL } from 'qrcode';
 
 import { ApiService } from '../core/api';
+import { startsTodayOrLater } from '../core/event-dates';
 import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
 
@@ -256,8 +257,15 @@ export class MyEvents {
           }
         }
       }
+      const today = new Date();
+      const visibleTickets = result.tickets.filter((ticket) =>
+        startsTodayOrLater(ticket.starts_at, today),
+      );
+      const visibleOrders = orderResult.orders.filter((order) =>
+        startsTodayOrLater(order.starts_at, today),
+      );
       const withQr = await Promise.all(
-        result.tickets.map(async (ticket) => ({
+        visibleTickets.map(async (ticket) => ({
           ...ticket,
           qrDataUrl: await toDataURL(ticket.qr_token, {
             width: 360,
@@ -267,7 +275,7 @@ export class MyEvents {
         })),
       );
       this.tickets.set(withQr);
-      this.orders.set(orderResult.orders);
+      this.orders.set(visibleOrders);
       this.status.set('ready');
     } catch {
       if (!silent || this.tickets().length === 0) this.status.set('error');
