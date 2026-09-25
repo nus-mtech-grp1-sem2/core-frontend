@@ -23,7 +23,30 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    // Hermetic tier: the API is stubbed, nothing external is needed. This is what CI runs.
+    {
+      name: 'mocked',
+      testIgnore: '**/full-stack/**',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // Full-stack tier: real Cognito sign-in and the local backend (see README). Signs each
+    // test account in once, then the journey tests reuse those sessions.
+    {
+      name: 'full-stack-setup',
+      testMatch: '**/full-stack/auth.setup.e2e.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'full-stack',
+      testMatch: '**/full-stack/**/*.e2e.ts',
+      testIgnore: '**/full-stack/auth.setup.e2e.ts',
+      dependencies: ['full-stack-setup'],
+      fullyParallel: false,
+      timeout: 120_000,
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
   webServer: {
     command: 'npm start',
     url: baseURL,
