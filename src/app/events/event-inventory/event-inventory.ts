@@ -289,6 +289,14 @@ export class EventInventory {
    * zone's top-left corner, so the zone tracks the pointer naturally instead
    * of snapping its corner to the cursor. */
   protected readonly moveState = signal<{ index: number; original: GridRect; grabRow: number; grabCol: number } | null>(null);
+  /** True once the pointer has actually crossed into another tracked cell
+   * during the current gesture. A real single click never fires a second
+   * `mouseenter` on the cell it's already sitting on, so this stays `false`
+   * for a plain click — letting `finishDrag()` tell "drew a 1-cell zone on
+   * purpose" apart from "just clicked the grid" (which must not create a
+   * zone at all: it silently produced an unnamed stray zone that failed
+   * validation and blocked Save). */
+  protected readonly dragMoved = signal(false);
 
   protected readonly dragRect = computed<GridRect | null>(() => {
     const current = this.dragCurrent();
@@ -396,6 +404,7 @@ export class EventInventory {
 
   protected onCellPointerDown(row: number, col: number, event: MouseEvent): void {
     event.preventDefault();
+    this.dragMoved.set(false);
     const owner = this.zoneAt(row, col);
     if (owner) {
       // Cells already claimed by a zone can't start a new zone — but a
@@ -418,6 +427,7 @@ export class EventInventory {
 
   protected onCellPointerEnter(row: number, col: number): void {
     if (this.dragStart() === null && this.resizeState() === null && this.moveState() === null) return;
+    this.dragMoved.set(true);
     this.dragCurrent.set({ row, col });
   }
 
@@ -425,10 +435,12 @@ export class EventInventory {
     const rect = this.dragRect();
     const resize = this.resizeState();
     const move = this.moveState();
+    const moved = this.dragMoved();
     this.dragStart.set(null);
     this.dragCurrent.set(null);
     this.resizeState.set(null);
     this.moveState.set(null);
+    this.dragMoved.set(false);
     if (!rect) return;
 
     if (resize || move) {
@@ -449,6 +461,11 @@ export class EventInventory {
       this.saved.set(false);
       return;
     }
+
+    // A plain click (mousedown+mouseup with no pointer movement at all)
+    // resolves to a 1x1 "rect" at the clicked cell — that's an accidental
+    // click, not an intentional draw, so it must not create a zone.
+    if (!moved) return;
 
     if (this.rectOverlapsExistingZone(rect)) {
       this.error.set("Zones can't overlap — pick an empty area.");

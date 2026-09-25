@@ -63,6 +63,17 @@ function dragRectangle(host: HTMLElement, startRow: number, startCol: number, en
   window.dispatchEvent(new MouseEvent('mouseup'));
 }
 
+/** Simulates a plain click with zero mouse movement: mousedown then mouseup
+ * on window, with no `mouseenter` in between at all — a real single click
+ * never re-fires `mouseenter` on the cell the pointer is already sitting on,
+ * unlike `dragRectangle`'s same-cell case which explicitly dispatches one. */
+function clickCellNoDrag(host: HTMLElement, row: number, col: number): void {
+  const button = host.querySelector<HTMLButtonElement>(`[data-grid-row="${row}"][data-grid-col="${col}"]`);
+  if (!button) throw new Error(`no grid cell at (${row},${col})`);
+  button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  window.dispatchEvent(new MouseEvent('mouseup'));
+}
+
 function setInputValue(host: HTMLElement, selector: string, value: string): void {
   const input = host.querySelector<HTMLInputElement>(selector);
   if (!input) throw new Error(`no input matching ${selector}`);
@@ -499,6 +510,16 @@ describe('EventInventory', () => {
     fixture.detectChanges();
 
     expect(host.querySelectorAll('.zone-card').length).toBe(2);
+  });
+
+  it('a plain click with no drag on an empty cell does not create a stray zone', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT);
+
+    clickCellNoDrag(host, 0, 0);
+    fixture.detectChanges();
+
+    // No zone should appear from a click alone — only an actual drag draws one.
+    expect(host.querySelectorAll('.zone-card').length).toBe(0);
   });
 
   it('no longer offers a "Tag seats" mode for a seated event — deferred to a later cycle', async () => {
