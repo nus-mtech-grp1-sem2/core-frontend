@@ -774,7 +774,10 @@ export class EventDetail {
       this.inventorySummary.set({
         zoneCount: result.zones.length,
         totalSeats: result.seats.length,
-        soldCount: result.zones.reduce((sum, zone) => sum + zone.soldCount, 0),
+        // `sold_count` is a MySQL SUM()/COALESCE() aggregate, which mysql2 returns
+        // as a string — without Number(), `sum + zone.soldCount` silently degrades
+        // into string concatenation (e.g. "0" + "2" + "0" -> "020" instead of 2).
+        soldCount: result.zones.reduce((sum, zone) => sum + Number(zone.soldCount), 0),
       });
     } catch {
       this.inventorySummary.set(null);
