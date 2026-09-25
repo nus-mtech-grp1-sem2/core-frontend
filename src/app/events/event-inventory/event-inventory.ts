@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/api';
@@ -247,6 +247,7 @@ function computeResizeRect(kind: HandleKind, original: GridRect, current: GridCe
 export class EventInventory {
   private readonly api = inject(ApiService);
   private readonly fb = inject(NonNullableFormBuilder);
+  private readonly router = inject(Router);
 
   readonly id = input('');
 
@@ -626,8 +627,11 @@ export class EventInventory {
         gridCols: this.gridColCount(),
       };
       await firstValueFrom(this.api.put('inventory', `/events/${event.event_id}/inventory`, body));
-      await this.load();
       this.saved.set(true);
+      // Saving is the end of this workflow, not a mid-edit checkpoint — send
+      // the organiser back to their events list rather than reloading and
+      // leaving them stranded on the same config screen.
+      await this.router.navigate(['/organiser/events']);
     } catch (error) {
       this.error.set(describeSaveError(error));
     } finally {

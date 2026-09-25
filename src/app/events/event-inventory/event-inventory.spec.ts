@@ -1,7 +1,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
+import { vi } from 'vitest';
 
 import { EventInventory } from './event-inventory';
 
@@ -125,11 +126,36 @@ describe('EventInventory', () => {
     expect(body.seats).toBeUndefined();
 
     putReq.flush(null, { status: 204, statusText: 'No Content' });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    httpMock.expectOne(`/api/event/events/${SEATED_EVENT.event_id}`).flush({ event: SEATED_EVENT });
-    httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`).flush(EMPTY_INVENTORY);
     await settle(fixture);
 
+    // A successful save navigates away (see the dedicated navigation test
+    // below) rather than reloading this same page's data.
+    httpMock.verify();
+  });
+
+  it('navigates back to the organiser events list after a successful save, instead of staying on the page', async () => {
+    const { fixture, httpMock, host } = await renderFor(SEATED_EVENT);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    dragRectangle(host, 0, 0, 1, 2);
+    fixture.detectChanges();
+    setInputValue(host, '.zone-name-input', 'Front Stalls');
+    setInputValue(host, '.zone-price input', '75');
+    fixture.detectChanges();
+
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.trim().startsWith('Save'),
+    );
+    saveButton?.click();
+    fixture.detectChanges();
+
+    const putReq = httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`);
+    putReq.flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+
+    // No reload of this same page's data — the organiser is taken straight
+    // back to their events list instead.
+    expect(navigate).toHaveBeenCalledWith(['/organiser/events']);
     httpMock.verify();
   });
 
@@ -166,9 +192,6 @@ describe('EventInventory', () => {
     expect(body.seats).toBeUndefined();
 
     putReq.flush(null, { status: 204, statusText: 'No Content' });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    httpMock.expectOne(`/api/event/events/${GA_EVENT.event_id}`).flush({ event: GA_EVENT });
-    httpMock.expectOne(`/api/inventory/events/${GA_EVENT.event_id}/inventory`).flush(EMPTY_INVENTORY);
     await settle(fixture);
 
     httpMock.verify();
