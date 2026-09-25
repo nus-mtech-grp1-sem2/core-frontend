@@ -120,6 +120,100 @@ describe('EventDetail checkout navigation', () => {
   );
 });
 
+describe('EventDetail seat map sizing', () => {
+  it("sizes seat cells the same fixed size as the organiser's zone-drawing view, instead of stretching to fill the purchase panel", async () => {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172')
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner',
+            title: 'Test event',
+            description: '',
+            venue: 'Test Hall',
+            starts_at: '2099-01-01 20:00:00',
+            total_seats: 10,
+            available_buyers: 2,
+            tier: 'TIER2_SEATED',
+            status: 'PUBLISHED',
+            price_cents: 2000,
+          },
+        });
+      if (path === '/helper/shifts') return of({ events: [] });
+      if (path === '/customers/me/orders') return of({ orders: [] });
+      if (path === '/customers/me/tickets') return of({ tickets: [] });
+      if (path === '/events/172/seats')
+        // A wide venue (10 columns) — wide enough that fixed-size cells no
+        // longer fit inside the purchase panel's ~24rem width, which is
+        // exactly the case that used to make the seat map spill out of it.
+        return of({
+          gridRows: 2,
+          gridCols: 10,
+          seats: [
+            {
+              seatId: 8,
+              seatLabel: 'A8',
+              gridRow: 0,
+              gridCol: 0,
+              inventoryItemId: 1,
+              sectionName: 'Floor',
+              priceCents: 2000,
+              color: '#000000',
+              status: 'AVAILABLE',
+              tag: 'NONE',
+            },
+          ],
+        });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
+        { provide: ApiService, useValue: { get, post: vi.fn(), url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => true,
+            user: signal({ sub: 'customer', email: 'test@example.com', name: 'Test', groups: [] }),
+          },
+        },
+        {
+          provide: QueueService,
+          useValue: {
+            status: vi.fn().mockResolvedValue({
+              status: 'ADMITTED',
+              admissionToken: 'test-admission',
+              tokenExpiresAt: '2099-01-01T20:00:00Z',
+            }),
+            admissionTokenFor: () => 'test-admission',
+            clear: vi.fn(),
+          },
+        },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const seatGrid = host.querySelector<HTMLElement>('.seat-grid');
+    // Same fixed cinema-style cell size the organiser drew the zones with
+    // (event-inventory.css's `.grid-cell`/`.seat-cell`), not a stretchy
+    // `minmax(_, 1fr)` track that grows cells to fill a narrow panel and
+    // then overflows it once there are enough columns.
+    expect(seatGrid?.style.gridTemplateColumns).toBe('repeat(10, 1.75rem)');
+    expect(seatGrid?.style.gridTemplateRows).toBe('repeat(2, 1.75rem)');
+    // The grid must sit inside a container that can scroll instead of
+    // visually spilling out of the purchase panel's rounded border.
+    expect(seatGrid?.closest('.seat-map')).not.toBeNull();
+  });
+});
+
 describe('EventDetail buyer capacity', () => {
   it('uses the configured number of concurrent buyers', () => {
     expect(buyerCapacity(104, 1)).toBe(1);

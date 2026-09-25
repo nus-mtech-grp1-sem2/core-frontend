@@ -139,34 +139,36 @@
       />
     </div>
     @if (event.tier === 'TIER2_SEATED') { @if (seats().length > 0) {
-    <div
-      class="seat-grid"
-      role="group"
-      aria-label="Choose your seats"
-      [style.grid-template-rows]="'repeat(' + gridRows().length + ', minmax(2.5rem, 1fr))'"
-      [style.grid-template-columns]="'repeat(' + gridCols().length + ', minmax(2.5rem, 1fr))'"
-    >
-      @for (row of gridRows(); track row) { @for (col of gridCols(); track col) { @let seat =
-      seatAt(row, col); @if (seat) {
-      <button
-        type="button"
-        class="seat"
-        [class.selected]="isSeatSelected(seat)"
-        [style.grid-row]="row + 1"
-        [style.grid-column]="col + 1"
-        [style.background]="seat.color"
-        [disabled]="seat.status !== 'AVAILABLE'"
-        [attr.aria-label]="
-                  seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)
-                "
-        [title]="seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)"
-        (click)="toggleSeat(seat)"
+    <div class="seat-map">
+      <div
+        class="seat-grid"
+        role="group"
+        aria-label="Choose your seats"
+        [style.grid-template-rows]="'repeat(' + gridRows().length + ', 1.75rem)'"
+        [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'"
       >
-        {{ seat.seatLabel }}
-      </button>
-      } @else {
-      <span class="seat-gap" [style.grid-row]="row + 1" [style.grid-column]="col + 1"></span>
-      } } }
+        @for (row of gridRows(); track row) { @for (col of gridCols(); track col) { @let seat =
+        seatAt(row, col); @if (seat) {
+        <button
+          type="button"
+          class="seat"
+          [class.selected]="isSeatSelected(seat)"
+          [style.grid-row]="row + 1"
+          [style.grid-column]="col + 1"
+          [style.background]="seat.color"
+          [disabled]="seat.status !== 'AVAILABLE'"
+          [attr.aria-label]="
+                    seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)
+                  "
+          [title]="seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)"
+          (click)="toggleSeat(seat)"
+        >
+          {{ seat.seatLabel }}
+        </button>
+        } @else {
+        <span class="seat-gap" [style.grid-row]="row + 1" [style.grid-column]="col + 1"></span>
+        } } }
+      </div>
     </div>
     } @else {
     <p class="empty">No seats available.</p>

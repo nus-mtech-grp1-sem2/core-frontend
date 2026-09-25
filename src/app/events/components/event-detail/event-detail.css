@@ -171,20 +171,37 @@
   justify-self: start;
 }
 
+/* Same cinema-style fixed-size cells as the organiser's zone-drawing view
+ * (event-inventory.css's `.grid-cell`/`.seat-cell`, also 1.75rem with a
+ * 0.25rem gap) — a `minmax(_, 1fr)` track used to stretch every seat to fill
+ * this panel's width, which both looked inconsistent with how the organiser
+ * laid the venue out and, for wide venues, made the seat map spill out past
+ * the panel's rounded border since the panel itself was width-capped. This
+ * wrapper lets the (now fixed-size) grid scroll horizontally instead, so it
+ * always stays contained within the panel. */
+.seat-map {
+  overflow-x: auto;
+  display: flex;
+  justify-content: center;
+  padding-block: 0.125rem;
+}
+
 .seat-grid {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .seat {
-  aspect-ratio: 4 / 3;
+  width: 1.75rem;
+  height: 1.75rem;
   border: 2px solid transparent;
   border-radius: var(--radius);
   color: #fff;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.5625rem;
   font-weight: 700;
+  padding: 0;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.15s ease, transform 0.1s ease, border-color 0.1s ease;
@@ -206,7 +223,8 @@
 }
 
 .seat-gap {
-  aspect-ratio: 4 / 3;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .edit-form,
