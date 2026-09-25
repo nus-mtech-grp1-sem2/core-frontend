@@ -44,7 +44,8 @@ export default defineConfig({
       dependencies: ['full-stack-setup'],
       fullyParallel: false,
       timeout: 120_000,
-      use: { ...devices['Desktop Chrome'] },
+      // Traces record request headers, which here carry real Cognito tokens.
+      use: { ...devices['Desktop Chrome'], trace: 'off' },
     },
   ],
   webServer: {
