@@ -60,10 +60,12 @@ export class CognitoGateway {
     }
 
     const groups = claims['cognito:groups'];
+    // The pool requires `name`; given/family names are optional, so they are only a fallback.
+    const name = typeof claims['name'] === 'string' ? claims['name'].trim() : '';
     return {
       sub: claims['sub'],
       email: typeof claims['email'] === 'string' ? claims['email'] : '',
-      name: [claims['given_name'], claims['family_name']].filter((value): value is string => typeof value === 'string' && value.length > 0).join(' '),
+      name: name || [claims['given_name'], claims['family_name']].filter((value): value is string => typeof value === 'string' && value.length > 0).join(' '),
       groups: Array.isArray(groups) ? groups.map(String) : [],
     };
   }

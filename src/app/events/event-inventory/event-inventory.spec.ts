@@ -11,6 +11,7 @@ interface EventFixture {
   readonly title: string;
   readonly tier: 'TIER1_GA' | 'TIER2_SEATED';
   readonly status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+  readonly starts_at?: string;
 }
 
 // Configuring zones/seats happens before publishing, so the default fixtures
@@ -18,7 +19,8 @@ interface EventFixture {
 // below, which exercises normal editing.
 const SEATED_EVENT: EventFixture = { event_id: 1, title: 'ASEAN Cup Final', tier: 'TIER2_SEATED', status: 'DRAFT' };
 const GA_EVENT: EventFixture = { event_id: 2, title: 'Neon Skyline Tour', tier: 'TIER1_GA', status: 'DRAFT' };
-const PUBLISHED_EVENT: EventFixture = { event_id: 3, title: 'Sold Out Show', tier: 'TIER1_GA', status: 'PUBLISHED' };
+const PUBLISHED_EVENT: EventFixture = { event_id: 3, title: 'Sold Out Show', tier: 'TIER1_GA', status: 'PUBLISHED', starts_at: '2099-01-01 20:00:00' };
+const STARTED_EVENT: EventFixture = { ...PUBLISHED_EVENT, event_id: 4, starts_at: '2020-01-01 20:00:00' };
 
 const EMPTY_INVENTORY = { gridRows: 6, gridCols: 8, zones: [], seats: [] };
 
@@ -101,6 +103,33 @@ describe('EventInventory', () => {
     expect(cellAt(1, 0)?.textContent?.trim()).toBe('B1');
     expect(cellAt(1, 1)?.textContent?.trim()).toBe('B2');
     expect(cellAt(1, 2)?.textContent?.trim()).toBe('B3');
+  });
+
+  it('asks for a group seat name instead of saving a zone without one, even one of only spaces', async () => {
+    const { fixture, httpMock, host } = await renderFor(SEATED_EVENT);
+    dragRectangle(host, 0, 0, 1, 2);
+    fixture.detectChanges();
+    const save = () =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.trim().startsWith('Save'))
+        ?.click();
+
+    for (const name of ['', '   ']) {
+      setInputValue(host, '.zone-name-input', name);
+      save();
+      fixture.detectChanges();
+
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain('Please enter group seat name.');
+      expect(host.querySelector('.zone-name-error')?.textContent).toContain('Please enter group seat name.');
+      expect(host.querySelector('.zone-name-input')?.getAttribute('aria-invalid')).toBe('true');
+      httpMock.expectNone(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`);
+    }
+
+    setInputValue(host, '.zone-name-input', 'Front Stalls');
+    fixture.detectChanges();
+    expect(host.querySelector('.zone-name-error')).toBeNull();
+    save();
+    httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`).flush(null, { status: 204, statusText: 'No Content' });
   });
 
   it('drags a rectangle to create a seated zone, and saves the rectangle with no seats field', async () => {
@@ -550,10 +579,19 @@ describe('EventInventory', () => {
     expect(host.querySelectorAll('.zone-card').length).toBe(0);
   });
 
-  it('locks a published event: shows a notice, blocks drawing new zones, and disables Save', async () => {
-    const { fixture, httpMock, host } = await renderFor(PUBLISHED_EVENT);
+  it('keeps a published event editable, with a notice that sold and held tickets stay as they are', async () => {
+    const { fixture, host } = await renderFor(PUBLISHED_EVENT);
 
-    expect(host.querySelector('.lock-note')?.textContent).toContain('published');
+    expect(host.querySelector('.lock-note')?.textContent).toContain('on sale');
+    dragRectangle(host, 0, 0, 1, 2);
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.zone-card').length).toBe(1);
+  });
+
+  it('locks a published event once it has started: shows a notice, blocks drawing new zones, and disables Save', async () => {
+    const { fixture, httpMock, host } = await renderFor(STARTED_EVENT);
+
+    expect(host.querySelector('.lock-note')?.textContent).toContain('already started');
 
     // Dragging over the empty grid must not create a zone once locked.
     dragRectangle(host, 0, 0, 1, 2);
@@ -569,7 +607,7 @@ describe('EventInventory', () => {
     fixture.detectChanges();
 
     // No PUT is ever issued for a locked event.
-    httpMock.expectNone(`/api/inventory/events/${PUBLISHED_EVENT.event_id}/inventory`);
+    httpMock.expectNone(`/api/inventory/events/${STARTED_EVENT.event_id}/inventory`);
     httpMock.verify();
   });
 

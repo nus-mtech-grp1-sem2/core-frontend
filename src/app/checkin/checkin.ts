@@ -190,8 +190,18 @@ export class Checkin implements OnDestroy {
   }
 
   protected async checkInSearchResult(result: SearchResult): Promise<void> {
-    if (this.checkingIn() || !window.confirm('Check in this ticket?')) return;
-    await this.submit({ ticketId: result.ticket_id });
+    if (!canCheckIn(result.status) || this.checkingIn() || !window.confirm('Check in this ticket?')) return;
+    const outcome = await this.submit({ ticketId: result.ticket_id });
+    // Either way the ticket is now used, so its row stops offering a check-in.
+    if (outcome === 'VALID' || outcome === 'ALREADY_USED') {
+      this.searchResults.update((results) =>
+        results.map((row) => (row.ticket_id === result.ticket_id ? { ...row, status: 'CHECKED_IN' } : row)),
+      );
+    }
+  }
+
+  protected canCheckIn(status: string): boolean {
+    return canCheckIn(status);
   }
 
   protected describe(outcome: ScanOutcome): string {
@@ -314,7 +324,7 @@ export class Checkin implements OnDestroy {
 
   private searchTickets(query: string) {
     const eventId = this.eventId();
-    if (eventId === null || query.length < 2)
+    if (eventId === null || !isSearchableQuery(query))
       return of({ tickets: [] as readonly SearchResult[], status: '' });
     this.searchStatus.set('Searching…');
     return this.api
@@ -335,9 +345,9 @@ export class Checkin implements OnDestroy {
   private async submit(input: {
     readonly qrToken?: string;
     readonly ticketId?: number;
-  }): Promise<void> {
+  }): Promise<ScanOutcome | null> {
     const eventId = this.eventId();
-    if (this.checkingIn() || eventId === null) return;
+    if (this.checkingIn() || eventId === null) return null;
     this.lastSubmission = input;
     this.checkingIn.set(true);
     this.requestError.set('');
@@ -352,8 +362,10 @@ export class Checkin implements OnDestroy {
       const outcome = mapTicketOutcome(response.outcome);
       this.record({ outcome, at: timestamp() });
       this.playTone(outcome);
+      return outcome;
     } catch (error) {
       this.requestError.set(checkinErrorMessage(error));
+      return null;
     } finally {
       this.checkingIn.set(false);
       void this.loadStats(eventId);
@@ -781,6 +793,16 @@ function cameraErrorMessage(error: unknown): string {
     return 'No usable camera was found on this device.';
   }
   return 'The camera could not be started. Close other camera apps or enter the QR token manually.';
+}
+
+/** Only an issued ticket can still be checked in: a checked-in one is used, a void one is invalid. */
+export function canCheckIn(status: string): boolean {
+  return status === 'ISSUED';
+}
+
+/** Matches the ticket service: an order ID (digits) of any length, or text of 3+ characters. */
+export function isSearchableQuery(query: string): boolean {
+  return /^\d+$/.test(query) || query.length >= 3;
 }
 
 export function outcomeDescription(outcome: ScanOutcome): string {

@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext } from '@playwright/test';
 
 import { accessToken } from './auth';
-import { configureInventory, startsAt } from './events';
+import { configureInventory, setAvailableBuyers, startsAt } from './events';
 import type { Role } from './users';
 
 /** A call to the API as `role`, with that account's real access token. */
@@ -26,13 +26,12 @@ export async function createPublishedGaEvent(
     description: 'API-created for the full-stack e2e suite',
     venue: 'E2E Test Hall',
     startsAt: startsAt(7),
-    totalSeats: seats,
-    availableBuyers: seats,
     tier: 'TIER1_GA',
   });
   expect(created.status()).toBe(201);
   const { eventId } = (await created.json()) as { eventId: number };
   await configureInventory(request, eventId, { name: 'General admission', price: 5, cols: seats });
+  await setAvailableBuyers(request, eventId, seats);
   const published = await callAs(
     request,
     'organiser',

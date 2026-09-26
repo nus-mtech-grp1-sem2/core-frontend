@@ -165,6 +165,20 @@ describe('Attendees states and roster mapping', () => {
     http.verify();
   });
 
+  it('shows the buyer name, falling back to the email for orders without one', async () => {
+    const { host, http, loadRoster } = await setup();
+
+    await loadRoster(twoEvents, [
+      attendee({ order_id: 1, customer_name: 'Ada Lovelace', customer_email: 'ada@example.com' }),
+      attendee({ order_id: 2, customer_name: '', customer_email: 'legacy@example.com' }),
+    ]);
+
+    const buyers = Array.from(host.querySelectorAll('tbody th')).map((cell) => cell.textContent?.trim());
+    expect(buyers).toEqual(['Ada Lovelace', 'legacy@example.com']);
+    expect(host.textContent).toContain('ada@example.com');
+    http.verify();
+  });
+
   it("loads the chosen event's roster when the filter changes", async () => {
     const { host, http, settle, loadRoster } = await setup();
     await loadRoster(twoEvents, [attendee({ customer_email: 'first@example.com' })]);
