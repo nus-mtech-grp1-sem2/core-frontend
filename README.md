@@ -62,10 +62,18 @@ npx playwright install --with-deps chromium
 Then:
 
 ```bash
-npm run test:e2e        # headless
+npm run test:e2e        # headless: the `mocked` and `mocked-camera` projects
 npm run test:e2e:ui     # Playwright UI mode
 npx playwright show-report
 ```
+
+The `mocked-camera` project runs `e2e/camera-checkin.e2e.ts` in Chromium launched with a fake camera
+(`--use-fake-device-for-media-stream`) that films a ticket's QR code, so the door's camera scanner
+runs for real while the ticket service is stubbed. Its setup step writes the video
+(`e2e/.fixtures/ticket-qr.y4m`, gitignored) by hand, since Playwright's bundled ffmpeg cannot encode
+one. Camera errors (denied, missing, unsupported) are simulated by making `getUserMedia` fail.
+QR image quality cases (small, low contrast, cropped, not an image, over 12 MB) are in
+`e2e/helper-checkin.e2e.ts`; `support/qr-images` degrades a generated QR with a canvas in the page.
 
 ### Writing tests
 
@@ -115,6 +123,11 @@ What it covers (`e2e/full-stack/`):
 - **Reserved seating:** waiting room positions, rejoining keeps one place, the organiser admits
   customers, a genuine race for one seat (exactly one wins, the other picks another), checkout, and
   no seat is issued twice.
+- **Automatic admission:** the queue service is recreated with the scheduler on and short timings
+  (admission lasts 8 s, interval 15 s, one buyer at a time). The first customer is admitted with
+  nobody pressing "Admit next customer" and their page moves on to seat selection; the second waits
+  while the first admission is live; when it expires the slot frees but the second still waits out
+  the interval; then they are admitted at least an interval after the first.
 - **Backend rules, checked at the API:** an admission token buys once and an expired one is refused;
   malformed orders create nothing; the last ticket cannot be sold twice; paying twice at once charges
   and issues once; a payment made while the ticket service is down is recovered by paying again;
@@ -124,8 +137,11 @@ Choices worth knowing about:
 
 - `backend-env.sh` turns **automatic waiting-room admission off** so the tests decide when customers
   are admitted. With it on, a scheduler admits a customer about a second after they join, so the
-  organiser's "Admit next customer" and the queue position could not be tested reliably. The
-  scheduler itself is therefore not covered here.
+  organiser's "Admit next customer" and the queue position could not be tested reliably. Only
+  `admission-scheduler.e2e.ts` turns it on, by recreating the `queue-service` container with
+  `docker compose` (using the project, files and env file compose recorded on the container, so it
+  works wherever the stack was started) and recreating it again afterwards, even if the test fails.
+  Run that spec on its own and the stack ends as it began.
 - The outage test **stops and restarts the `ticket-service` container** of the local stack.
 - The suite bumps the local order counter so order ids have at least two digits: the door's search
   ignores queries shorter than two characters.
@@ -133,7 +149,7 @@ Choices worth knowing about:
   `given_name`/`family_name` on the access token, which Cognito does not include, so no ticket has a
   name today and the door shows the email instead.
 - Not covered: the helper invitation and acceptance flow (the invitation looks the user up in
-  Cognito and needs AWS access), the camera scanner, and QR images that are cropped or low contrast.
+  Cognito and needs AWS access).
 
 The local database keeps data between runs (each run creates its own uniquely named event). To
 reset it, run the backend's `docker compose ... down -v` and start it again. Confirmation prompts

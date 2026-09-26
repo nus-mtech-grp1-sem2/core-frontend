@@ -1,42 +1,22 @@
-import { toBuffer } from 'qrcode';
-
 import { expect, test } from './support/fixtures';
+import {
+  EVENT_ID,
+  OUTCOMES,
+  SCANNER_TOKEN,
+  TICKET_TOKEN,
+  stubDoorApi,
+  uploadFile,
+} from './support/door';
+import { BLANK_PNG, degrade, qrPng } from './support/qr-images';
 import { helper, signInAs } from './support/session';
-
-const EVENT_ID = 7;
-const SCANNER_TOKEN = 'scanner-session-test-token';
-const TICKET_TOKEN = 'tkt_test_0123456789abcdef';
-
-/** A 1x1 white PNG: a valid image that contains no QR code. */
-const BLANK_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-  'base64',
-);
 
 test.beforeEach(async ({ page, api }) => {
   await signInAs(page, helper);
-  api
-    .on('GET', 'event/helper/shifts', {
-      json: {
-        events: [
-          {
-            event_id: EVENT_ID,
-            title: 'E2E Helper Concert',
-            starts_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-          },
-        ],
-      },
-    })
-    .on('POST', 'ticket/scanner/sessions', { json: { sessionToken: SCANNER_TOKEN } })
-    .on('GET', `ticket/events/${EVENT_ID}/checkin-stats`, { json: { checkedIn: 3, issued: 10 } });
+  stubDoorApi(api);
 });
 
 async function uploadQr(page: import('@playwright/test').Page, image: Buffer) {
-  await page.getByLabel('Upload QR image').setInputFiles({
-    name: 'ticket.png',
-    mimeType: 'image/png',
-    buffer: image,
-  });
+  await uploadFile(page, { name: 'ticket.png', mimeType: 'image/png', buffer: image });
 }
 
 test('shows the door workspace for an assigned event', async ({ page }) => {
@@ -44,22 +24,12 @@ test('shows the door workspace for an assigned event', async ({ page }) => {
   await expect(page.getByRole('status').filter({ hasText: '3 of 10 checked in' })).toBeVisible();
 });
 
-const outcomes = [
-  { apiOutcome: 'SUCCESS', message: 'Valid ticket. Check-in accepted.' },
-  { apiOutcome: 'DUPLICATE', message: 'Already used. This ticket was checked in earlier.' },
-  {
-    apiOutcome: 'WRONG_EVENT',
-    message: 'Wrong event. This ticket is not assigned to this event.',
-  },
-  { apiOutcome: 'INVALID', message: 'Invalid ticket. It could not be checked in.' },
-] as const;
-
-for (const { apiOutcome, message } of outcomes) {
+for (const { apiOutcome, message } of OUTCOMES) {
   test(`uploaded QR: ${apiOutcome} is reported as "${message}"`, async ({ page, api }) => {
     api.on('POST', 'ticket/tickets/validate', { json: { outcome: apiOutcome } });
     await page.goto(`/checkin/${EVENT_ID}`);
 
-    await uploadQr(page, await toBuffer(TICKET_TOKEN, { width: 320, margin: 4 }));
+    await uploadQr(page, await qrPng());
 
     await expect(page.getByRole('status').filter({ hasText: message })).toBeVisible();
 
@@ -88,4 +58,100 @@ test('a helper not assigned to the event is told so', async ({ page, api }) => {
   await expect(page.getByRole('alert')).toContainText(
     'This event is not assigned to your helper account.',
   );
+});
+
+test.describe('QR images of varying quality', () => {
+  const READ_FAILURE = 'No QR code could be read from that image.';
+
+  test.beforeEach(async ({ page, api }) => {
+    api.on('POST', 'ticket/tickets/validate', { json: { outcome: 'SUCCESS' } });
+    await page.goto(`/checkin/${EVENT_ID}`);
+  });
+
+  const readable = [
+    // A shrunken screenshot: modules ~2 px wide with anti-aliased grey edges, which the
+    // small-QR recovery in src/app/checkin/qr-small-recovery.ts exists for.
+    { name: 'a small crop with a white border', recipe: { width: 64 } },
+    { name: 'a low-contrast image (dark grey on light grey)', recipe: { ink: 110, paper: 215 } },
+    { name: 'a large image', recipe: { width: 1600 } },
+  ];
+
+  for (const { name, recipe } of readable) {
+    test(`reads ${name}`, async ({ page, api }) => {
+      await uploadQr(page, await degrade(page, await qrPng(), recipe));
+
+      await expect(
+        page.getByRole('status').filter({ hasText: 'Valid ticket. Check-in accepted.' }),
+      ).toBeVisible();
+      const [validate] = api.requests('POST', 'ticket/tickets/validate');
+      expect(validate.postDataJSON()).toEqual({ qrToken: TICKET_TOKEN });
+    });
+  }
+
+  const unreadable = [
+    {
+      name: 'a QR that is cropped through the middle',
+      recipe: { keep: { x: 0, y: 0, w: 0.6, h: 1 } },
+    },
+    { name: 'an almost invisible QR (faint grey on white)', recipe: { ink: 240, paper: 255 } },
+  ];
+
+  for (const { name, recipe } of unreadable) {
+    test(`rejects ${name} without calling ticket validation`, async ({ page, api }) => {
+      await uploadQr(page, await degrade(page, await qrPng(), recipe));
+
+      await expect(page.getByRole('alert')).toContainText(READ_FAILURE);
+      expect(api.requests('POST', 'ticket/tickets/validate')).toHaveLength(0);
+    });
+  }
+
+  test('rejects a file that is not an image without calling ticket validation', async ({
+    page,
+    api,
+  }) => {
+    await uploadFile(page, {
+      name: 'ticket.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 not an image'),
+    });
+
+    await expect(page.getByRole('alert')).toContainText(READ_FAILURE);
+    expect(api.requests('POST', 'ticket/tickets/validate')).toHaveLength(0);
+  });
+
+  test('rejects a file named like an image that is not one', async ({ page, api }) => {
+    await uploadFile(page, {
+      name: 'ticket.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('this is plain text, not a PNG'),
+    });
+
+    await expect(page.getByRole('alert')).toContainText(READ_FAILURE);
+    expect(api.requests('POST', 'ticket/tickets/validate')).toHaveLength(0);
+  });
+
+  test('refuses an image over 12 MB before reading it', async ({ page, api }) => {
+    await uploadFile(page, {
+      name: 'huge.png',
+      mimeType: 'image/png',
+      buffer: Buffer.alloc(12 * 1024 * 1024 + 1),
+    });
+
+    await expect(page.getByRole('alert')).toContainText(
+      'That image is too large. Upload a QR image smaller than 12 MB.',
+    );
+    expect(api.requests('POST', 'ticket/tickets/validate')).toHaveLength(0);
+  });
+
+  test('a failed read leaves the door ready for the next image', async ({ page }) => {
+    await uploadQr(page, BLANK_PNG);
+    await expect(page.getByRole('alert')).toContainText(READ_FAILURE);
+
+    await uploadQr(page, await qrPng());
+
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Valid ticket. Check-in accepted.' }),
+    ).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  });
 });
