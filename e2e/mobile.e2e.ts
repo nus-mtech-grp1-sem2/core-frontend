@@ -240,15 +240,6 @@ for (const [label, size] of [
 
     for (const screen of screens) {
       test(`${screen.name} does not scroll sideways`, async ({ page, api }) => {
-        if (
-          (screen.name === 'event management' && size.width < 380) ||
-          screen.name === 'the seat-map editor'
-        ) {
-          test.fail(
-            true,
-            'Known bug (core-frontend#57): the organiser pages do not fit a phone: the event edit form is 363 px wide (scrolls sideways under about 380 px) and the seat-map editor is wider than any phone',
-          );
-        }
         await open(page, api, screen);
         await expectNoSidewaysScroll(page);
       });
@@ -257,22 +248,12 @@ for (const [label, size] of [
 }
 
 test.describe('tap targets', () => {
-  // The carousel's slide dots are checked separately below (a known bug).
-  for (const screen of screens.filter((candidate) => candidate.name !== 'home')) {
+  for (const screen of screens) {
     test(`${screen.name}: buttons and fields are big enough to tap`, async ({ page, api }) => {
       await open(page, api, screen);
       expect(await undersizedControls(page), `controls under ${MIN_TARGET}px`).toEqual([]);
     });
   }
-
-  test('home: the featured-event dots are big enough to tap', async ({ page, api }) => {
-    test.fail(
-      true,
-      'Known bug (core-frontend#56): the carousel slide dots are 32 x 4 px, far below the 24 px minimum',
-    );
-    await open(page, api, screens[0]);
-    expect(await undersizedControls(page), `controls under ${MIN_TARGET}px`).toEqual([]);
-  });
 });
 
 test.describe('the navigation menu', () => {

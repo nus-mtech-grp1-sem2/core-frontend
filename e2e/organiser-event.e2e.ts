@@ -427,7 +427,7 @@ test.describe('the team roster', () => {
       .click();
 
     await expect(management(page).getByRole('alert')).toContainText(
-      'You do not have permission to manage this event.',
+      "Only the event's owner can do that.",
     );
   });
 
