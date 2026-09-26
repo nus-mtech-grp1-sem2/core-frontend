@@ -9,7 +9,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "lint": "ng lint",
-    "test:e2e": "playwright test --project=mocked",
+    "test:e2e": "playwright test --project=mocked --project=mocked-camera",
     "test:e2e:full": "playwright test --project=full-stack --workers=1",
     "test:e2e:ui": "playwright test --ui"
   },

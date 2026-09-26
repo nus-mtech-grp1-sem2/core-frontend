@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 const MYSQL_CONTAINER = 'onestage-local-mysql';
 const EVENT_CONTAINER = 'event-service';
+const QUEUE_CONTAINER = 'queue-service';
 
 function docker(...args: string[]): string {
   return execFileSync('docker', args, { encoding: 'utf8' }).trim();
@@ -79,4 +80,83 @@ export async function withServiceDown(container: string, body: () => Promise<voi
 
   if (failure !== undefined) throw failure;
   if (!healthy) throw new Error(`${container} did not become healthy again.`);
+}
+
+/** The value of an environment variable inside a running container of the local stack. */
+function containerEnv(container: string, name: string): string | undefined {
+  return docker('inspect', '-f', '{{range .Config.Env}}{{println .}}{{end}}', container)
+    .split('\n')
+    .find((line) => line.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
+/** Recreates one service of the local stack, with `env` overriding the compose file's defaults. */
+function recreateService(container: string, service: string, env: Record<string, string>): void {
+  // Compose records how it started each container, so the stack is recreated exactly the way the
+  // developer or workflow started it, without the tests having to know where the backend lives.
+  const labels = JSON.parse(
+    docker('inspect', '-f', '{{json .Config.Labels}}', container),
+  ) as Record<string, string>;
+  const files = labels['com.docker.compose.project.config_files']?.split(',') ?? [];
+  const envFile = labels['com.docker.compose.project.environment_file'];
+  if (!labels['com.docker.compose.project'] || files.length === 0) {
+    throw new Error(`${container} was not started by docker compose, so it cannot be recreated.`);
+  }
+  execFileSync(
+    'docker',
+    [
+      'compose',
+      '--project-name',
+      labels['com.docker.compose.project'],
+      '--project-directory',
+      labels['com.docker.compose.project.working_dir'],
+      ...files.flatMap((file) => ['-f', file]),
+      ...(envFile ? ['--env-file', envFile] : []),
+      'up',
+      '-d',
+      '--no-deps',
+      '--force-recreate',
+      '--wait',
+      '--wait-timeout',
+      '120',
+      service,
+    ],
+    // Variables set here win over the .env file when compose fills in `${VAR:-default}`.
+    { env: { ...process.env, ...env }, stdio: 'pipe' },
+  );
+}
+
+/**
+ * Runs `body` with the queue service recreated using `settings` (for example
+ * `AUTO_ADMISSION_ENABLED: 'true'`), then recreates it again with the stack's own settings, even
+ * if `body` throws. The rest of the tier runs with the automatic admission scheduler off so the
+ * tests decide when customers are admitted; this is the one place that turns it on.
+ */
+export async function withQueueSettings(
+  settings: Record<string, string>,
+  body: () => Promise<void>,
+): Promise<void> {
+  const original = Object.fromEntries(
+    Object.keys(settings).map((name) => [name, containerEnv(QUEUE_CONTAINER, name)]),
+  );
+
+  let failure: unknown;
+  try {
+    recreateService(QUEUE_CONTAINER, 'queue', settings);
+    await body();
+  } catch (error) {
+    failure = error;
+  }
+
+  // Put the queue back exactly as it was, whatever happened above.
+  const restoreEnv = Object.fromEntries(
+    Object.entries(original).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  );
+  recreateService(QUEUE_CONTAINER, 'queue', restoreEnv);
+  for (const [name, value] of Object.entries(original)) {
+    if (containerEnv(QUEUE_CONTAINER, name) !== value) {
+      throw new Error(`The queue service was not restored: ${name} should be ${value}.`);
+    }
+  }
+  if (failure !== undefined) throw failure;
 }
