@@ -46,6 +46,39 @@ function unsignedJwt(payload: Record<string, unknown>): string {
   return `${part({ alg: 'none', typ: 'JWT' })}.${part(payload)}.test-signature`;
 }
 
+export interface TestTokens {
+  readonly idToken: string;
+  readonly accessToken: string;
+  readonly refreshToken: string;
+}
+
+/** Unsigned tokens for `user`, as Cognito's token endpoint would return them. */
+export function testTokens(user: TestUser, lifetimeSeconds = 3600): TestTokens {
+  const now = Math.floor(Date.now() / 1000);
+  const common = { sub: user.sub, iss: ISSUER, iat: now, exp: now + lifetimeSeconds };
+  const username = user.sub;
+
+  return {
+    idToken: unsignedJwt({
+      ...common,
+      token_use: 'id',
+      aud: CLIENT_ID,
+      email: user.email,
+      given_name: user.givenName,
+      family_name: user.familyName,
+      'cognito:username': username,
+    }),
+    accessToken: unsignedJwt({
+      ...common,
+      token_use: 'access',
+      client_id: CLIENT_ID,
+      username,
+      scope: 'openid email phone',
+    }),
+    refreshToken: 'test-refresh-token',
+  };
+}
+
 /**
  * Makes the app believe `user` is signed in, without contacting Cognito.
  *
@@ -54,33 +87,15 @@ function unsignedJwt(payload: Record<string, unknown>): string {
  * init script that runs before the app boots.
  */
 export async function signInAs(page: Page, user: TestUser): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
-  const common = { sub: user.sub, iss: ISSUER, iat: now, exp: now + 3600 };
+  const { idToken, accessToken, refreshToken } = testTokens(user);
   const username = user.sub;
-
-  const idToken = unsignedJwt({
-    ...common,
-    token_use: 'id',
-    aud: CLIENT_ID,
-    email: user.email,
-    given_name: user.givenName,
-    family_name: user.familyName,
-    'cognito:username': username,
-  });
-  const accessToken = unsignedJwt({
-    ...common,
-    token_use: 'access',
-    client_id: CLIENT_ID,
-    username,
-    scope: 'openid email phone',
-  });
 
   const prefix = `CognitoIdentityServiceProvider.${CLIENT_ID}`;
   const entries: Record<string, string> = {
     [`${prefix}.LastAuthUser`]: username,
     [`${prefix}.${username}.idToken`]: idToken,
     [`${prefix}.${username}.accessToken`]: accessToken,
-    [`${prefix}.${username}.refreshToken`]: 'test-refresh-token',
+    [`${prefix}.${username}.refreshToken`]: refreshToken,
     [`${prefix}.${username}.clockDrift`]: '0',
   };
 
