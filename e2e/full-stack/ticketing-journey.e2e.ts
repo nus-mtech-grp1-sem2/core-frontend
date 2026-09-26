@@ -168,13 +168,7 @@ test.describe('door check-in', () => {
   });
 
   test('finds a ticket by name, email or order id, only within this event', async ({ browser }) => {
-    // The app never stores an attendee name today: the ticket service builds it from
-    // given_name/family_name on the *access* token, which Cognito does not put there. So seed
-    // one to check the lookup itself; the door otherwise shows the email in its place.
-    sql(
-      `UPDATE ticketing.tickets SET customer_name = '${NAMED.name}' WHERE order_id = ${namedOrderId}`,
-    );
-
+    // The name comes from the purchase itself (customerName on the order), not seeded here.
     const context = await browser.newContext();
     await useSession(context, 'helper');
     const page = await context.newPage();
