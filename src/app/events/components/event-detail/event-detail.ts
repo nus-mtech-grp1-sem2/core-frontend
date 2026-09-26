@@ -972,30 +972,25 @@ function queueAdmissionRequired(error: unknown): boolean {
   );
 }
 
+const EVENT_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  queue_admission_required: 'Your waiting-room admission has expired. Rejoin the queue to continue.',
+  event_not_editable: 'This event has already been published — its details can no longer be edited.',
+  only_draft_events_can_be_deleted: 'Only draft events can be deleted. Cancel a published event instead.',
+  event_has_reservation_history:
+    'This event has reservation history, so it cannot be deleted. Cancel it instead.',
+  inventory_not_configured:
+    'Configure inventory before publishing: the event has no seats until you add at least one zone.',
+  available_buyers_above_total_seats: 'Available buyers cannot be more than the total seats.',
+};
+
 function describeError(error: unknown, action: string): string {
   if (error instanceof HttpErrorResponse) {
     if (action === 'complete your purchase') {
       const purchaseMessage = purchaseErrorMessage(error);
       if (purchaseMessage) return purchaseMessage;
     }
-    if ((error.error as { error?: string } | null)?.error === 'queue_admission_required') {
-      return 'Your waiting-room admission has expired. Rejoin the queue to continue.';
-    }
-    if ((error.error as { error?: string } | null)?.error === 'event_not_editable') {
-      return 'This event has already been published — its details can no longer be edited.';
-    }
-    if ((error.error as { error?: string } | null)?.error === 'only_draft_events_can_be_deleted') {
-      return 'Only draft events can be deleted. Cancel a published event instead.';
-    }
-    if ((error.error as { error?: string } | null)?.error === 'event_has_reservation_history') {
-      return 'This event has reservation history, so it cannot be deleted. Cancel it instead.';
-    }
-    if ((error.error as { error?: string } | null)?.error === 'inventory_not_configured') {
-      return 'Configure inventory before publishing: the event has no seats until you add at least one zone.';
-    }
-    if ((error.error as { error?: string } | null)?.error === 'available_buyers_above_total_seats') {
-      return 'Available buyers cannot be more than the total seats.';
-    }
+    const code = (error.error as { error?: string } | null)?.error;
+    if (code && Object.hasOwn(EVENT_ERROR_MESSAGES, code)) return EVENT_ERROR_MESSAGES[code];
     if (error.status === 401) return 'Please sign in again before managing this event.';
     if (error.status === 403) return 'You do not have permission to manage this event.';
     if (error.status === 404) {
