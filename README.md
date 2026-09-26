@@ -123,6 +123,16 @@ What it covers (`e2e/full-stack/`):
 - **Reserved seating:** waiting room positions, rejoining keeps one place, the organiser admits
   customers, a genuine race for one seat (exactly one wins, the other picks another), checkout, and
   no seat is issued twice.
+- **Event management:** the seat-map editor driven with the real mouse (draw, move, resize, save,
+  and the saved layout comes back; adding zones once on sale; a zone with a sold seat cannot be
+  removed or shrunk, in the page and at the API); a draft is edited, given a photo and is not public;
+  deleting a draft asks first; publishing locks the details and cancelling takes it off sale
+  (orders refused, editor locked) until it is re-published. Team roles (`team-roles.e2e.ts`, with the
+  stand-in Cognito): a helper has no say over the event, a promoted organiser gets the controls but
+  is not an owner, demoting takes them away, removing takes away scanner access.
+- **Known bugs are marked `test.fail`:** a test that asserts the correct behaviour of something
+  currently broken, with the issue number. It passes while the bug exists and starts failing when
+  it is fixed, which is the cue to delete the marker.
 - **Automatic admission:** the queue service is recreated with the scheduler on and short timings
   (admission lasts 8 s, interval 15 s, one buyer at a time). The first customer is admitted with
   nobody pressing "Admit next customer" and their page moves on to seat selection; the second waits
