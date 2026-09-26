@@ -477,6 +477,10 @@
   font-family: inherit;
 }
 
+.zone-name-input[aria-invalid='true'] {
+  border-bottom: 1px solid #8c1d18;
+}
+
 .zone-name-input:focus {
   outline: none;
   border-bottom: 1px solid var(--brand-600);

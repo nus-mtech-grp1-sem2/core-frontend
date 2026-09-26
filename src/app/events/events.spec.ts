@@ -114,21 +114,10 @@ describe('Events', () => {
     await fixture.whenStable();
 
     expect(host.querySelector('#event-title')).not.toBeNull();
-    expect(host.querySelector('#event-available-buyers')).not.toBeNull();
-
-    const totalSeats = host.querySelector<HTMLInputElement>('#event-total-seats')!;
-    const availableBuyers = host.querySelector<HTMLInputElement>('#event-available-buyers')!;
-    totalSeats.value = '1';
-    totalSeats.dispatchEvent(new Event('input'));
-    availableBuyers.value = '2';
-    availableBuyers.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
-
-    const create = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent?.trim() === 'Create event',
-    );
-    expect(create?.disabled).toBe(true);
-    expect(host.textContent).toContain('Available buyers cannot exceed total seats.');
+    // Seats come from Configure inventory, and available buyers is set on the
+    // event page once there are seats, so neither is asked for up front.
+    expect(host.querySelector('#event-total-seats')).toBeNull();
+    expect(host.querySelector('#event-available-buyers')).toBeNull();
     httpMock.verify();
   });
 

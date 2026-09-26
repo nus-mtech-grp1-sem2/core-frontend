@@ -681,6 +681,8 @@ export class EventDetail {
         this.form.disable();
       } else {
         this.form.enable();
+        // Seats come from the zones in Configure inventory, whatever the status.
+        this.form.controls.totalSeats.disable();
       }
       if (this.readOnly()) {
         this.inviteForm.disable();
@@ -981,6 +983,18 @@ function describeError(error: unknown, action: string): string {
     }
     if ((error.error as { error?: string } | null)?.error === 'event_not_editable') {
       return 'This event has already been published — its details can no longer be edited.';
+    }
+    if ((error.error as { error?: string } | null)?.error === 'only_draft_events_can_be_deleted') {
+      return 'Only draft events can be deleted. Cancel a published event instead.';
+    }
+    if ((error.error as { error?: string } | null)?.error === 'event_has_reservation_history') {
+      return 'This event has reservation history, so it cannot be deleted. Cancel it instead.';
+    }
+    if ((error.error as { error?: string } | null)?.error === 'inventory_not_configured') {
+      return 'Configure inventory before publishing: the event has no seats until you add at least one zone.';
+    }
+    if ((error.error as { error?: string } | null)?.error === 'available_buyers_above_total_seats') {
+      return 'Available buyers cannot be more than the total seats.';
     }
     if (error.status === 401) return 'Please sign in again before managing this event.';
     if (error.status === 403) return 'You do not have permission to manage this event.';

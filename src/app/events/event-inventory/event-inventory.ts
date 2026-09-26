@@ -5,6 +5,7 @@ import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/api';
+import { isCompleted } from '../../core/event-time';
 import { WorkspaceShell } from '../../layout/components/workspace-shell/workspace-shell';
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
@@ -15,6 +16,7 @@ interface EventSummary {
   readonly title: string;
   readonly tier: EventTier;
   readonly status: EventStatus;
+  readonly starts_at: string;
 }
 
 interface EventSummaryResponse {
@@ -99,7 +101,8 @@ function buildZoneGroup(fb: NonNullableFormBuilder, zone?: ZoneDto, colorIndex =
   return fb.group({
     inventoryItemId: fb.control<number | null>(zone?.inventoryItemId ?? null),
     code: fb.control({ value: zone?.code ?? '', disabled: true }),
-    name: fb.control(zone?.name ?? '', Validators.required),
+    // A name of only spaces is as good as none: the inventory service trims it and refuses it.
+    name: fb.control(zone?.name ?? '', [Validators.required, Validators.pattern(/\S/)]),
     price: fb.control((zone?.priceCents ?? 0) / 100, [Validators.required, Validators.min(0)]),
     color: fb.control(zone?.color ?? defaultColorFor(colorIndex), [Validators.required, Validators.pattern(/^#[0-9A-Fa-f]{6}$/)]),
     gridRow: fb.control(bounds.gridRow),
@@ -279,12 +282,15 @@ export class EventInventory {
 
   protected readonly hasCommittedSeats = computed(() => this.committedZoneIds().size > 0);
   protected readonly isSeatedTier = computed(() => this.event()?.tier === 'TIER2_SEATED');
-  /** Zones/seats are configured before publishing; once an event is no longer
-   * a DRAFT (published, or cancelled), the backend rejects any inventory
-   * change (see the inventory service's `event_already_published` /
-   * `event_cancelled` guards) — mirror that here so the UI doesn't invite an
-   * edit that's guaranteed to be rejected. */
-  protected readonly locked = computed(() => this.event()?.status !== 'DRAFT');
+  /** A live event can still add or remove seats and change prices; the
+   * inventory service keeps every sold or held seat intact. It rejects edits
+   * once the event is cancelled or has started (`event_cancelled` /
+   * `event_completed`), so mirror that here rather than invite a doomed edit. */
+  protected readonly locked = computed(() => {
+    const event = this.event();
+    return !!event && (event.status === 'CANCELLED' || (event.status === 'PUBLISHED' && isCompleted(event.starts_at)));
+  });
+  protected readonly live = computed(() => this.event()?.status === 'PUBLISHED' && !this.locked());
 
   protected readonly dragStart = signal<GridCell | null>(null);
   protected readonly dragCurrent = signal<GridCell | null>(null);
@@ -614,6 +620,8 @@ export class EventInventory {
 
     if (this.zones.invalid) {
       this.zones.markAllAsTouched();
+      this.saved.set(false);
+      this.error.set(zonesProblem(this.zones.controls));
       return;
     }
 
@@ -695,6 +703,15 @@ export class EventInventory {
   }
 }
 
+export const ZONE_NAME_REQUIRED = 'Please enter group seat name.';
+
+/** What to fix before saving, for the first kind of problem any zone has. */
+function zonesProblem(zones: readonly ZoneGroup[]): string {
+  if (zones.some((zone) => zone.controls.name.invalid)) return ZONE_NAME_REQUIRED;
+  if (zones.some((zone) => zone.controls.price.invalid)) return 'Please enter a price of 0 or more for every zone.';
+  return 'Please pick a colour for every zone.';
+}
+
 function describeSaveError(error: unknown): string {
   if (error instanceof HttpErrorResponse) {
     const code = (error.error as { error?: string } | null)?.error;
@@ -707,8 +724,11 @@ function describeSaveError(error: unknown): string {
     if (code === 'duplicate_seat_label' || code === 'invalid_inventory_payload') {
       return 'Check that every zone has a name and colour, then try again.';
     }
-    if (code === 'event_already_published') {
-      return "This event has already been published — its inventory can no longer be edited.";
+    if (code === 'zone_below_allocated') {
+      return "A zone can't be made smaller than the tickets already sold or on hold in it.";
+    }
+    if (code === 'event_completed') {
+      return 'This event has already started — its inventory can no longer be edited.';
     }
     if (code === 'event_cancelled') {
       return 'This event has been cancelled — its inventory can no longer be edited.';

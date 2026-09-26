@@ -2,7 +2,13 @@ import { expect, test } from '@playwright/test';
 import { toBuffer } from 'qrcode';
 
 import { accessToken, useSession, userSub } from './support/auth';
-import { configureInventory, createEvent, publishEvent, signedInPage } from './support/events';
+import {
+  configureInventory,
+  createEvent,
+  publishEvent,
+  setAvailableBuyers,
+  signedInPage,
+} from './support/events';
 import { buyGaTicket, callAs, createPublishedGaEvent } from './support/orders';
 import { assertLocalStack, sql } from './support/stack';
 import { credentials } from './support/users';
@@ -45,14 +51,13 @@ test('organiser creates a general-admission event, sets inventory and publishes 
   eventId = await createEvent(page, {
     title: TITLE,
     tier: 'TIER1_GA',
-    totalSeats: 10,
-    availableBuyers: 10,
   });
   await configureInventory(page.request, eventId, {
     name: 'General admission',
     price: 5,
     cols: 10,
   });
+  await setAvailableBuyers(page.request, eventId, 10);
   await publishEvent(page, TITLE);
   await page.context().close();
 });

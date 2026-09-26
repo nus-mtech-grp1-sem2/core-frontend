@@ -19,11 +19,10 @@ export function startsAt(days: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/** Seats come later, from `configureInventory`; available buyers from `setAvailableBuyers`. */
 export interface NewEvent {
   readonly title: string;
   readonly tier: Tier;
-  readonly totalSeats: number;
-  readonly availableBuyers: number;
 }
 
 /** Creates a draft event through the organiser's form and returns its id. */
@@ -34,8 +33,6 @@ export async function createEvent(page: Page, event: NewEvent): Promise<number> 
   await page.getByLabel('Description').fill('Created by the full-stack e2e suite');
   await page.getByLabel('Venue').fill('E2E Test Hall');
   await page.getByLabel('Starts at').fill(startsAt(7));
-  await page.getByLabel('Total seats').fill(String(event.totalSeats));
-  await page.getByLabel('Available buyers').fill(String(event.availableBuyers));
   await page.getByLabel('Ticketing').selectOption(event.tier);
 
   const created = page.waitForResponse(
@@ -81,6 +78,35 @@ export async function configureInventory(
   expect(response.ok(), `inventory PUT -> ${response.status()} ${await response.text()}`).toBe(
     true,
   );
+}
+
+/**
+ * Sets how many waiting-room customers are admitted together. It must not exceed the event's total
+ * seats, so call it after `configureInventory`. Saves the draft the way its edit form does.
+ */
+export async function setAvailableBuyers(
+  request: APIRequestContext,
+  eventId: number,
+  availableBuyers: number,
+): Promise<void> {
+  const headers = { Authorization: `Bearer ${accessToken('organiser')}` };
+  const loaded = await request.get(`/api/event/events/${eventId}`, { headers });
+  expect(loaded.ok(), `event GET -> ${loaded.status()}`).toBe(true);
+  const { event } = (await loaded.json()) as {
+    event: { title: string; description: string | null; venue: string; starts_at: string; tier: Tier };
+  };
+  const response = await request.put(`/api/event/events/${eventId}`, {
+    headers,
+    data: {
+      title: event.title,
+      description: event.description ?? '',
+      venue: event.venue,
+      startsAt: event.starts_at.replace(' ', 'T').slice(0, 16),
+      tier: event.tier,
+      availableBuyers,
+    },
+  });
+  expect(response.ok(), `event PUT -> ${response.status()} ${await response.text()}`).toBe(true);
 }
 
 /** Publishes a draft from the organiser's event list, accepting the confirmation prompt. */

@@ -475,6 +475,7 @@ describe('EventDetail completed events for an organiser', () => {
   async function renderOrganiser(
     startsAt: string,
     status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED' = 'PUBLISHED',
+    tier: 'TIER1_GA' | 'TIER2_SEATED' = 'TIER1_GA',
   ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172') {
@@ -488,7 +489,7 @@ describe('EventDetail completed events for an organiser', () => {
             starts_at: startsAt,
             total_seats: 10,
             available_buyers: 2,
-            tier: 'TIER1_GA',
+            tier,
             status,
             price_cents: 2_000,
           },
@@ -601,6 +602,9 @@ describe('EventDetail completed events for an organiser', () => {
     expect(host.textContent).toContain('already been published');
 
     expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('#venue')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('#seats')?.disabled).toBe(true);
     expect(button('Save changes')?.disabled).toBe(true);
 
     // Team management and the event's own lifecycle actions are unaffected —
@@ -612,6 +616,16 @@ describe('EventDetail completed events for an organiser', () => {
 
     button('Save changes')?.click();
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it('shows total seats read-only even on a draft, since the zones in Configure inventory set it', async () => {
+    const { host, button } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
+
+    expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(false);
+    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.disabled).toBe(false);
+    expect(host.querySelector<HTMLInputElement>('#seats')?.disabled).toBe(true);
+    expect(host.textContent).toContain('Set by the zones in Configure inventory');
+    expect(button('Save changes')?.disabled).toBe(false);
   });
 });
 

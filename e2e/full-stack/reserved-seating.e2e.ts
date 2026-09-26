@@ -2,7 +2,13 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 
 import { accessToken, userSub } from './support/auth';
 import { payAtCheckout } from './support/checkout';
-import { configureInventory, createEvent, publishEvent, signedInPage } from './support/events';
+import {
+  configureInventory,
+  createEvent,
+  publishEvent,
+  setAvailableBuyers,
+  signedInPage,
+} from './support/events';
 import { assertLocalStack, sql } from './support/stack';
 import { startsAt } from './support/events';
 import type { Role } from './support/users';
@@ -28,10 +34,9 @@ test('organiser publishes a reserved-seating event and opens the waiting room', 
   eventId = await createEvent(page, {
     title: TITLE,
     tier: 'TIER2_SEATED',
-    totalSeats: 4,
-    availableBuyers: 2,
   });
   await configureInventory(page.request, eventId, { name: 'Stalls', price: 8, cols: 4 });
+  await setAvailableBuyers(page.request, eventId, 2);
   await publishEvent(page, TITLE);
 
   const inventory = await page.request.get(`/api/inventory/events/${eventId}/inventory`, {
@@ -198,13 +203,12 @@ test.describe('admission token and order input safety (API level)', () => {
       description: 'API-level checks',
       venue: 'E2E Test Hall',
       startsAt: startsAt(7),
-      totalSeats: 4,
-      availableBuyers: 2,
       tier: 'TIER2_SEATED',
     });
     expect(created.status()).toBe(201);
     apiEventId = ((await created.json()) as { eventId: number }).eventId;
     await configureInventory(request, apiEventId, { name: 'Stalls', price: 8, cols: 4 });
+    await setAvailableBuyers(request, apiEventId, 2);
     expect(
       (
         await call(request, 'organiser', 'post', `/api/event/events/${apiEventId}/publish`, {})
