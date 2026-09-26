@@ -1,0 +1,34 @@
+# Layered over the backend's compose files by support/fake-cognito.ts, never on its own.
+# Adds a stand-in for Cognito's user lookups and points the event service at it.
+services:
+  fake-cognito:
+    image: ${FAKE_COGNITO_IMAGE}
+    container_name: fake-cognito
+    entrypoint: ['node', '/stub/server.mjs']
+    working_dir: /stub
+    environment:
+      FAKE_COGNITO_USERS: ${FAKE_COGNITO_USERS}
+    volumes:
+      - ${FAKE_COGNITO_DIR}:/stub:ro
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9229/__calls').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  event:
+    depends_on:
+      fake-cognito:
+        condition: service_healthy
+    environment:
+      # The AWS SDK reads this to send Cognito calls elsewhere. It needs some credentials to sign
+      # with; these are dummies and mean nothing to AWS.
+      AWS_ENDPOINT_URL_COGNITO_IDENTITY_PROVIDER: http://fake-cognito:9229
+      AWS_ACCESS_KEY_ID: fake
+      AWS_SECRET_ACCESS_KEY: fake
