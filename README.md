@@ -62,7 +62,7 @@ npx playwright install --with-deps chromium
 Then:
 
 ```bash
-npm run test:e2e        # headless: the `mocked` and `mocked-camera` projects
+npm run test:e2e        # headless: the `mocked`, `mocked-camera` and `mobile` projects
 npm run test:e2e:ui     # Playwright UI mode
 npx playwright show-report
 ```
@@ -88,6 +88,12 @@ Import `test`/`expect` from `e2e/support/fixtures`, not from `@playwright/test`:
 - `expectAccessible(page)` (`support/a11y`) runs axe against WCAG 2.x A/AA; call it once the
   page shows real content.
 - Build responses with the factories in `support/data`.
+
+The `mobile` project (`e2e/mobile.e2e.ts`) runs a phone-sized, touch-enabled Chromium (Pixel 7).
+It checks that each screen people use on a phone does not scroll sideways at 412, 360 and 320 px
+wide and on its side, that buttons and fields are at least 24 px (WCAG 2.2 AA), that the navigation
+menu opens with a tap, and that choosing seats, buying, checking a ticket in and working the camera
+all work with `tap()` rather than mouse clicks. Known layout bugs are marked `test.fail`.
 
 ### Full-stack tier
 
