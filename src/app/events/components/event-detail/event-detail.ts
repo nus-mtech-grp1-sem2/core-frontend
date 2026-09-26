@@ -119,6 +119,12 @@ interface InventorySummary {
   readonly soldCount: number;
 }
 
+const SEAT_STATUS_LABELS: Record<Exclude<SeatOption['status'], 'AVAILABLE'>, string> = {
+  SOLD: 'sold',
+  HELD: 'on hold',
+  BLOCKED: 'unavailable',
+};
+
 function seatKey(row: number, col: number): string {
   return `${row},${col}`;
 }
@@ -546,6 +552,17 @@ export class EventDetail {
 
   protected isSeatSelected(seat: SeatOption): boolean {
     return this.selectedSeatIds().includes(seat.seatId);
+  }
+
+  /** "Name — email", leaving out whichever part is missing so no dash dangles. */
+  protected memberLabel(member: TeamMember): string {
+    return [member.name, member.user_email].filter(Boolean).join(' — ') || 'Team member';
+  }
+
+  /** Accessible name; a seat that can't be chosen says why, since disabled alone doesn't. */
+  protected seatName(seat: SeatOption): string {
+    const name = `${seat.seatLabel} — ${seat.sectionName} — ${this.priceLabel(seat.priceCents)}`;
+    return seat.status === 'AVAILABLE' ? name : `${name} — ${SEAT_STATUS_LABELS[seat.status]}`;
   }
 
   protected seatBackground(seat: SeatOption): string {
@@ -981,6 +998,16 @@ const EVENT_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   inventory_not_configured:
     'Configure inventory before publishing: the event has no seats until you add at least one zone.',
   available_buyers_above_total_seats: 'Available buyers cannot be more than the total seats.',
+  invited_user_not_found:
+    'No OneStage account uses that email. Ask them to sign up first, then invite them again.',
+  already_invited_or_member:
+    "That person is already on this event's team or has a pending invitation.",
+  invited_user_missing_identity:
+    "That account isn't fully set up, so it can't be invited yet. Ask them to finish signing up, then invite them again.",
+  team_member_not_found:
+    "That person is no longer on this event's team. Refresh the page to see the current team.",
+  event_owner_required: "Only the event's owner can do that.",
+  cannot_change_owner_role: "The event owner's role can't be changed.",
 };
 
 function describeError(error: unknown, action: string): string {
