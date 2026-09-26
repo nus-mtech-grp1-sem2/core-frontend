@@ -88,6 +88,11 @@ Import `test`/`expect` from `e2e/support/fixtures`, not from `@playwright/test`:
 - `expectAccessible(page)` (`support/a11y`) runs axe against WCAG 2.x A/AA; call it once the
   page shows real content.
 - Build responses with the factories in `support/data`.
+- `accessibility.e2e.ts` runs axe over the pages and states that have no spec of their own (home, sign
+  in, event page in each waiting-room state, the door screen after every scan result, the organiser
+  pages and the seat-map editor) and checks keyboard use. axe finds only some problems, so things it
+  cannot see (a focus indicator on an invisible input, a state with no `aria-pressed`) are tested by
+  hand-written checks. A test that documents a known bug is marked `test.fail` with its issue number.
 
 ### Full-stack tier
 
