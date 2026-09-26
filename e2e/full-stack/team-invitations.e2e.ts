@@ -169,12 +169,16 @@ test('inviting an unknown email or someone already invited shows an error and ad
   const before = await rows.count();
 
   expect(await invite(organiser, `nobody-${runId}@example.com`)).toBe(404);
-  await expect(organiser.getByRole('alert')).toBeVisible();
+  await expect(organiser.getByRole('alert')).toContainText(
+    'No OneStage account uses that email. Ask them to sign up first, then invite them again.',
+  );
   await expect(rows).toHaveCount(before);
 
   // The helper is already on the team: a second invitation is refused, not added twice.
   expect(await invite(organiser, email('helper'))).toBe(409);
-  await expect(organiser.getByRole('alert')).toBeVisible();
+  await expect(organiser.getByRole('alert')).toContainText(
+    "That person is already on this event's team or has a pending invitation.",
+  );
   await expect(rows).toHaveCount(before);
   expect(
     sql(`SELECT COUNT(*) FROM event_inventory.event_team_memberships
@@ -191,7 +195,9 @@ test('when Cognito is unavailable an invitation fails cleanly and the roster sti
   try {
     await organiser.goto(`/organiser/events/${eventId}`);
     expect(await invite(organiser, email('customer'))).toBe(502);
-    await expect(organiser.getByRole('alert')).toBeVisible();
+    await expect(organiser.getByRole('alert')).toContainText(
+      'Unable to send the invitation. Please try again.',
+    );
     expect(membership('customer')).toBeNull();
 
     // Names come from Cognito, so they are missing, but the team is still listed by email.
