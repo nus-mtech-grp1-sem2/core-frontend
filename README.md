@@ -62,7 +62,7 @@ npx playwright install --with-deps chromium
 Then:
 
 ```bash
-npm run test:e2e        # headless: the `mocked` and `mocked-camera` projects
+npm run test:e2e        # headless: the `mocked`, `mocked-camera` and `mobile` projects
 npm run test:e2e:ui     # Playwright UI mode
 npx playwright show-report
 ```
@@ -93,6 +93,12 @@ Import `test`/`expect` from `e2e/support/fixtures`, not from `@playwright/test`:
   pages and the seat-map editor) and checks keyboard use. axe finds only some problems, so things it
   cannot see (a focus indicator on an invisible input, a state with no `aria-pressed`) are tested by
   hand-written checks. A test that documents a known bug is marked `test.fail` with its issue number.
+
+The `mobile` project (`e2e/mobile.e2e.ts`) runs a phone-sized, touch-enabled Chromium (Pixel 7).
+It checks that each screen people use on a phone does not scroll sideways at 412, 360 and 320 px
+wide and on its side, that buttons and fields are at least 24 px (WCAG 2.2 AA), that the navigation
+menu opens with a tap, and that choosing seats, buying, checking a ticket in and working the camera
+all work with `tap()` rather than mouse clicks. Known layout bugs are marked `test.fail`.
 
 ### Full-stack tier
 
