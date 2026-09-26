@@ -113,8 +113,8 @@ test('a helper who is not on the event team is refused by the backend', async ({
 
 test.describe('door check-in', () => {
   test.beforeAll(() => {
-    // Assigning a helper normally goes through an invitation that looks the user up in
-    // Cognito (needs AWS access). The local database is disposable, so seed the accepted row.
+    // Assigning a helper normally goes through an invitation (covered by team-invitations.e2e.ts).
+    // Here the door is the subject, so seed the accepted row directly.
     sql(
       `INSERT INTO event_inventory.event_team_memberships
          (event_id, user_sub, user_email, role, invite_status, granted_by_sub)
