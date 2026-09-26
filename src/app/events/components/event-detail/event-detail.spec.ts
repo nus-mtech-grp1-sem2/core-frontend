@@ -103,7 +103,15 @@ describe('EventDetail checkout navigation', () => {
       fixture.detectChanges();
       const host = fixture.nativeElement as HTMLElement;
       if (tier === 'TIER2_SEATED') {
-        host.querySelector<HTMLButtonElement>('button.seat')!.click();
+        const seat = host.querySelector<HTMLButtonElement>('button.seat')!;
+        expect(seat.getAttribute('aria-pressed')).toBe('false');
+        seat.click();
+        fixture.detectChanges();
+        expect(seat.getAttribute('aria-pressed')).toBe('true');
+        seat.click();
+        fixture.detectChanges();
+        expect(seat.getAttribute('aria-pressed')).toBe('false');
+        seat.click();
         fixture.detectChanges();
       }
       const buy = Array.from(host.querySelectorAll('button')).find(
@@ -476,6 +484,15 @@ describe('EventDetail completed events for an organiser', () => {
     startsAt: string,
     status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED' = 'PUBLISHED',
     tier: 'TIER1_GA' | 'TIER2_SEATED' = 'TIER1_GA',
+    members: readonly Record<string, unknown>[] = [
+      {
+        membership_id: 1,
+        user_sub: 'helper-sub',
+        user_email: 'helper@example.com',
+        role: 'HELPER',
+        invite_status: 'ACCEPTED',
+      },
+    ],
   ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172') {
@@ -495,19 +512,7 @@ describe('EventDetail completed events for an organiser', () => {
           },
         });
       }
-      if (path === '/events/172/team-members') {
-        return of({
-          members: [
-            {
-              membership_id: 1,
-              user_sub: 'helper-sub',
-              user_email: 'helper@example.com',
-              role: 'HELPER',
-              invite_status: 'ACCEPTED',
-            },
-          ],
-        });
-      }
+      if (path === '/events/172/team-members') return of({ members });
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
     const put = vi.fn(() => of({}));
@@ -549,7 +554,7 @@ describe('EventDetail completed events for an organiser', () => {
       Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
         (candidate) => candidate.textContent?.trim() === label,
       );
-    return { host, button, put, post, remove };
+    return { fixture, host, button, put, post, remove };
   }
 
   it('can be opened but not edited, and its team cannot be changed', async () => {
@@ -579,6 +584,87 @@ describe('EventDetail completed events for an organiser', () => {
     expect(put).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('names each team member without a dangling dash when a name or email is missing', async () => {
+    const member = (membership_id: number, user_email: string, name?: string) => ({
+      membership_id,
+      user_sub: `sub-${membership_id}`,
+      user_email,
+      name,
+      role: 'ORGANISER',
+      invite_status: 'ACCEPTED',
+    });
+    const { host } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT', 'TIER1_GA', [
+      member(1, 'both@example.com', 'Both Known'),
+      member(2, '', 'Owner Only'),
+      member(3, 'email-only@example.com'),
+      member(4, ''),
+    ]);
+
+    const labels = Array.from(host.querySelectorAll('.member-list strong')).map((label) =>
+      label.textContent?.trim(),
+    );
+    expect(labels).toEqual([
+      'Both Known — both@example.com',
+      'Owner Only',
+      'email-only@example.com',
+      'Team member',
+    ]);
+  });
+
+  it.each([
+    [
+      404,
+      'invited_user_not_found',
+      'No OneStage account uses that email. Ask them to sign up first, then invite them again.',
+    ],
+    [
+      409,
+      'already_invited_or_member',
+      "That person is already on this event's team or has a pending invitation.",
+    ],
+    [
+      400,
+      'invited_user_missing_identity',
+      "That account isn't fully set up, so it can't be invited yet. Ask them to finish signing up, then invite them again.",
+    ],
+    [502, 'invitation_failed', 'Unable to send the invitation. Please try again.'],
+  ])('says what went wrong when an invitation fails with %i %s', async (status, code, message) => {
+    const { fixture, host, button, post } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
+    post.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status, error: { error: code } })),
+    );
+    const email = host.querySelector<HTMLInputElement>('#member-email')!;
+    email.value = 'someone@example.com';
+    email.dispatchEvent(new Event('input'));
+    button('Invite')!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(post).toHaveBeenCalledOnce();
+    expect(host.querySelector('[role="alert"]')?.textContent?.trim()).toBe(message);
+  });
+
+  it('says a team member is already gone instead of that the event was not found', async () => {
+    const { fixture, host, button, remove } = await renderOrganiser(
+      '2099-01-01 20:00:00',
+      'DRAFT',
+    );
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    remove.mockReturnValueOnce(
+      throwError(
+        () => new HttpErrorResponse({ status: 404, error: { error: 'team_member_not_found' } }),
+      ),
+    );
+    button('Remove')!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(host.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+      "That person is no longer on this event's team. Refresh the page to see the current team.",
+    );
+    vi.restoreAllMocks();
   });
 
   it('stays fully editable while a draft event is still upcoming', async () => {

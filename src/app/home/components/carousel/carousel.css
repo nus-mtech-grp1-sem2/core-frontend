@@ -143,26 +143,31 @@ h1 {
 .dots {
   position: absolute;
   z-index: 3;
-  bottom: 1.5rem;
+  /* The dots' 44px hit area adds 20px below the visible bar. */
+  bottom: calc(1.5rem - 20px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   gap: 0.5rem;
 }
 
+/* The visible mark is a thin 4px bar, but the button itself is 44px tall
+ * (WCAG 2.5.8 target size): the vertical padding is transparent because the
+ * background is clipped to the content box. */
 .dot {
   width: 2rem;
-  height: 4px;
-  padding: 0;
+  height: 44px;
+  padding: 20px 0;
   border: 0;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.45);
+  background-color: rgba(255, 255, 255, 0.45);
+  background-clip: content-box;
   cursor: pointer;
   transition: background 0.2s ease;
 }
 
 .dot.selected {
-  background: #fff;
+  background-color: #fff;
 }
 
 @media (max-width: 720px) {

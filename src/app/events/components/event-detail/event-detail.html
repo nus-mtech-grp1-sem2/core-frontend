@@ -148,10 +148,9 @@
           [style.grid-column]="colIndex + 1"
           [style.background]="seatBackground(seat)"
           [disabled]="seat.status !== 'AVAILABLE'"
-          [attr.aria-label]="
-                    seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)
-                  "
-          [title]="seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)"
+          [attr.aria-pressed]="isSeatSelected(seat)"
+          [attr.aria-label]="seatName(seat)"
+          [title]="seatName(seat)"
           (click)="toggleSeat(seat)"
         >
           {{ seat.seatLabel }}
@@ -338,8 +337,7 @@
         <li>
           <span
             ><strong
-              >{{ member.name ? member.name + ' — ' + member.user_email : member.user_email
-              }}</strong
+              >{{ memberLabel(member) }}</strong
             ><small
               >{{ member.role === 'ORGANISER' ? 'Organizer' : 'Helper' }} · {{ member.invite_status
               | lowercase }}</small
