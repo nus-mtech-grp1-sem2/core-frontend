@@ -82,6 +82,8 @@ Import `test`/`expect` from `e2e/support/fixtures`, not from `@playwright/test`:
 - `signInAs(page, customer | helper | organiser)` (`support/session`) fakes a signed-in session
   with an unsigned test token, before `page.goto`. It never contacts Cognito and is useless
   against a real backend.
+- The mocked tier is hermetic: the fixture refuses web fonts (the page falls back to system fonts) and
+  fails any test that makes another request to the internet, so it runs the same offline.
 - `api.on('GET', 'event/events', { json: ... })` stubs a gateway call (path after `/api/`).
   Any API call you did not stub fails the test, so a test can never silently hit a real backend.
   `api.requests(...)` lets you assert what the app did (or did not) send.
@@ -134,6 +136,15 @@ What it covers (`e2e/full-stack/`):
 - **Reserved seating:** waiting room positions, rejoining keeps one place, the organiser admits
   customers, a genuine race for one seat (exactly one wins, the other picks another), checkout, and
   no seat is issued twice.
+- **Sign-in, sign-up and sign-out:** these are Cognito's hosted pages, so the mocked tier
+  (`auth.e2e.ts`, with a stand-in for the hosted UI and token endpoint in `support/cognito.ts`) tests
+  what the app sends and does: the redirect (client, scopes, PKCE S256, state), the sign-up variant,
+  trading the code for tokens with the matching verifier, tokens kept for the tab only, a callback with
+  a wrong state or a refused code, a renewed or expired session, and sign-out reaching Cognito's logout.
+  `auth-session.e2e.ts` uses real Cognito for what only it can answer: the tokens carry the name, email
+  and scopes the app relies on, a real refresh token renews an expired session and the backend accepts
+  it, and sign-out ends the hosted session. **Not automated:** creating an account and the email
+  confirmation code (they need a real mailbox and would create users in the shared pool).
 - **Event management:** the seat-map editor driven with the real mouse (draw, move, resize, save,
   and the saved layout comes back; adding zones once on sale; a zone with a sold seat cannot be
   removed or shrunk, in the page and at the API); a draft is edited, given a photo and is not public;

@@ -44,7 +44,7 @@ function stubEvents(api: MockApi, overrides: Record<string, unknown> = {}) {
     });
 }
 
-function stubCustomer(api: MockApi, queue?: object) {
+function stubCustomer(api: MockApi, queue?: Record<string, unknown>) {
   api
     .on('GET', 'ticket/customers/me/tickets', { json: { tickets: [] } })
     .on('GET', 'order/customers/me/orders', { json: { orders: [] } });
