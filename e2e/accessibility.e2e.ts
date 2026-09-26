@@ -496,10 +496,6 @@ test.describe('keyboard use', () => {
   });
 
   test('a chosen seat is announced as chosen, not only coloured', async ({ page, api }) => {
-    test.fail(
-      true,
-      'Known bug (core-frontend#53): the selected state of a seat is only a CSS class, with no aria-pressed',
-    );
     await signInAs(page, customer);
     stubSeated(api);
     stubCustomer(api, {
