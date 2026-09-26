@@ -82,6 +82,8 @@ Import `test`/`expect` from `e2e/support/fixtures`, not from `@playwright/test`:
 - `signInAs(page, customer | helper | organiser)` (`support/session`) fakes a signed-in session
   with an unsigned test token, before `page.goto`. It never contacts Cognito and is useless
   against a real backend.
+- The mocked tier is hermetic: the fixture refuses web fonts (the page falls back to system fonts) and
+  fails any test that makes another request to the internet, so it runs the same offline.
 - `api.on('GET', 'event/events', { json: ... })` stubs a gateway call (path after `/api/`).
   Any API call you did not stub fails the test, so a test can never silently hit a real backend.
   `api.requests(...)` lets you assert what the app did (or did not) send.

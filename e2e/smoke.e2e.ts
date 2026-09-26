@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 
 test.beforeEach(async ({ page }) => {
   // Keep the smoke test hermetic: no backend is running, so answer every gateway call.
