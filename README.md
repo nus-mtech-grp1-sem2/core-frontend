@@ -128,6 +128,12 @@ What it covers (`e2e/full-stack/`):
   nobody pressing "Admit next customer" and their page moves on to seat selection; the second waits
   while the first admission is live; when it expires the slot frees but the second still waits out
   the interval; then they are admitted at least an interval after the first.
+- **Team invitations:** the organiser invites a helper by email and sees "Helper · pending" with a
+  name; a pending invitation grants no scanner access and nobody but the invitee can answer it;
+  accepting puts the helper on the roster and lets them open the door; rejecting grants nothing and
+  cannot be undone by answering again; an unknown email or a second invitation is refused and adds
+  nobody; an unavailable Cognito fails the invitation cleanly, the roster still loads, and it
+  recovers.
 - **Backend rules, checked at the API:** an admission token buys once and an expired one is refused;
   malformed orders create nothing; the last ticket cannot be sold twice; paying twice at once charges
   and issues once; a payment made while the ticket service is down is recovered by paying again;
@@ -148,8 +154,17 @@ Choices worth knowing about:
 - Attendee names are seeded by the lookup test. The ticket service builds a name from
   `given_name`/`family_name` on the access token, which Cognito does not include, so no ticket has a
   name today and the door shows the email instead.
-- Not covered: the helper invitation and acceptance flow (the invitation looks the user up in
-  Cognito and needs AWS access).
+- The event service looks invitees up in Cognito, which needs AWS credentials. Only
+  `team-invitations.e2e.ts` gets around that, by recreating `event-service` pointed at a **stand-in
+  Cognito** (`e2e/full-stack/fake-cognito/`: a dependency-free Node server, run in the backend's own
+  image, that answers `ListUsers` and `AdminGetUser` for the four test accounts, using their real
+  subs so their real tokens match). The AWS SDK is redirected with
+  `AWS_ENDPOINT_URL_COGNITO_IDENTITY_PROVIDER`, with dummy credentials; nothing in the backend
+  changes. This proves our side of the flow, not real Cognito's answers. The stack is put back
+  afterwards (`afterAll`); if a run is killed halfway, run the spec again or recreate
+  `event-service` to restore it.
+- The gateway (`kong-gateway`) is restarted whenever a service is recreated: it keeps the address it
+  first resolved, so a recreated container would otherwise answer 502.
 
 The local database keeps data between runs (each run creates its own uniquely named event). To
 reset it, run the backend's `docker compose ... down -v` and start it again. Confirmation prompts
