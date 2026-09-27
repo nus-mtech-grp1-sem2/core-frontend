@@ -214,6 +214,64 @@ describe('EventDetail seat map sizing', () => {
   });
 });
 
+describe('EventDetail inventory summary', () => {
+  it('counts a GA zone\'s seats and sales from the zone itself, not the empty per-seat list', async () => {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172')
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner',
+            title: 'Test event',
+            description: '',
+            venue: 'Test Hall',
+            starts_at: '2099-01-01 20:00:00',
+            total_seats: 6,
+            available_buyers: 2,
+            tier: 'TIER1_GA',
+            status: 'PUBLISHED',
+            price_cents: 2000,
+          },
+        });
+      if (path === '/events/172/team-members') return of({ members: [] });
+      if (path === '/events/172/inventory')
+        // Matches the real inventory service response for a GA zone with a
+        // sale: no per-seat rows exist, so seatCount/soldCount come from the
+        // zone's own counters rather than `seats`.
+        return of({
+          zones: [{ inventoryItemId: 1, seatCount: 6, soldCount: 1 }],
+          seats: [],
+        });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'organiser' } } } },
+        { provide: ApiService, useValue: { get, post: vi.fn(), url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => true,
+            user: signal({ sub: 'owner', email: 'owner@example.com', name: 'Owner', groups: [] }),
+          },
+        },
+        { provide: QueueService, useValue: { status: vi.fn(), admissionTokenFor: () => null, clear: vi.fn() } },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('1 zone · 6 seats, 1 sold');
+  });
+});
+
 describe('EventDetail buyer capacity', () => {
   it('uses the configured number of concurrent buyers', () => {
     expect(buyerCapacity(104, 1)).toBe(1);

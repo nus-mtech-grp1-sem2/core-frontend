@@ -787,7 +787,9 @@ export class EventDetail {
       );
       this.inventorySummary.set({
         zoneCount: result.zones.length,
-        totalSeats: result.seats.length,
+        // TIER1_GA zones have no per-seat rows, so `seats.length` is always 0 for
+        // them — total seats must come from each zone's own seatCount instead.
+        totalSeats: result.zones.reduce((sum, zone) => sum + Number(zone.seatCount), 0),
         // `sold_count` is a MySQL SUM()/COALESCE() aggregate, which mysql2 returns
         // as a string — without Number(), `sum + zone.soldCount` silently degrades
         // into string concatenation (e.g. "0" + "2" + "0" -> "020" instead of 2).
