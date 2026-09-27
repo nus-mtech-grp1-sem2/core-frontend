@@ -17,6 +17,17 @@ import { ApiService } from '../../../core/api';
 import { QueueService, QueueStatus, QueueSummary } from '../../../core/queue';
 import { WorkspaceShell } from '../../../layout/components/workspace-shell/workspace-shell';
 
+/** Lower/upper bounds (ms) for the randomized gap between waiting-room status
+ * polls. Jittering each client's next check inside this window, instead of
+ * every client polling on the same fixed 3s beat, spreads the request load
+ * from a large queue out over time rather than concentrating it in bursts. */
+const POLL_MIN_DELAY_MS = 9000;
+const POLL_MAX_DELAY_MS = 15000;
+
+function nextPollDelay(): number {
+  return POLL_MIN_DELAY_MS + Math.random() * (POLL_MAX_DELAY_MS - POLL_MIN_DELAY_MS);
+}
+
 type QueueState =
   | 'joining'
   | 'waiting'
@@ -39,7 +50,8 @@ interface EventNameResponse {
   readonly event: { readonly title: string };
 }
 
-/** Per-event customer waiting room. MySQL status is refreshed every three seconds. */
+/** Per-event customer waiting room. MySQL status is refreshed on a jittered
+ * 9-15 second cadence (see `nextPollDelay`). */
 @Component({
   selector: 'app-event-queue',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -122,9 +134,12 @@ export class EventQueue {
     }
   }
 
+  /** Schedules a single status check after a freshly jittered delay. Each
+   * response re-arms the next check (see `apply`) with its own new delay,
+   * rather than a fixed-period timer, so the gap between checks varies. */
   private poll(eventId: number): void {
     this.polling?.unsubscribe();
-    this.polling = timer(3000, 3000)
+    this.polling = timer(nextPollDelay())
       .pipe(
         exhaustMap(() => from(this.queue.status(eventId))),
         takeUntilDestroyed(this.destroyRef),
@@ -154,7 +169,7 @@ export class EventQueue {
       return;
     }
     this.state.set('waiting');
-    if (!this.polling || this.polling.closed) this.poll(eventId);
+    this.poll(eventId);
   }
 
   private fail(error: unknown): void {

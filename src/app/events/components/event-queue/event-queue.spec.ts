@@ -9,6 +9,56 @@ import { QueueService, QueueStatus } from '../../../core/queue';
 import { EventQueue } from './event-queue';
 
 describe('EventQueue', () => {
+  it('spreads status checks across a jittered 9-15s window instead of a fixed 3s beat', async () => {
+    vi.useFakeTimers();
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const queue = {
+        summary: vi.fn().mockResolvedValue({
+          eventId: 7,
+          opensAt: '2026-09-16T12:00:00.000Z',
+          admissionBatchSize: 10,
+          admissionIntervalSec: 30,
+          status: 'OPEN',
+          waitingCount: 3,
+        }),
+        join: vi.fn().mockResolvedValue({ queueEntryId: 71, status: 'WAITING', position: 20 }),
+        status: vi.fn().mockResolvedValue({ queueEntryId: 71, status: 'WAITING', position: 19 }),
+        leave: vi.fn(),
+      };
+
+      await TestBed.configureTestingModule({
+        imports: [EventQueue],
+        providers: [
+          provideRouter([]),
+          { provide: QueueService, useValue: queue },
+          { provide: ApiService, useValue: { get: () => of({ event: { title: 'Test Event' } }) } },
+          { provide: AuthService, useValue: { isAuthenticated: () => true } },
+        ],
+      }).compileComponents();
+
+      const fixture = TestBed.createComponent(EventQueue);
+      fixture.componentRef.setInput('id', '7');
+      fixture.detectChanges();
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.detectChanges();
+      expect(queue.status).toHaveBeenCalledTimes(1);
+
+      // Math.random is pinned to 0, so the next check is scheduled at the
+      // minimum of the jitter window (9s) — well past the old fixed 3s beat.
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(queue.status).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(queue.status).toHaveBeenCalledTimes(2);
+
+      fixture.destroy();
+    } finally {
+      randomSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('waits for the live queue position instead of flashing the original position', async () => {
     let resolveStatus!: (status: QueueStatus) => void;
     const liveStatus = new Promise<QueueStatus>((resolve) => {
