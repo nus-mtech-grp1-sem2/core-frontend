@@ -704,6 +704,10 @@ function describeSaveError(error: unknown): string {
     if (code === 'zone_has_reservation_history') {
       return "This zone can't be removed — it has past reservation history. Rename or resize it instead of deleting it.";
     }
+    if (code === 'capacity_below_available_buyers') {
+      const availableBuyers = (error.error as { availableBuyers?: number }).availableBuyers;
+      return `Total capacity must be at least ${availableBuyers} — that many buyers are already allowed for this event.`;
+    }
     if (code === 'duplicate_seat_label' || code === 'invalid_inventory_payload') {
       return 'Check that every zone has a name and colour, then try again.';
     }

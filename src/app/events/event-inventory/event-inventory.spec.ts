@@ -164,6 +164,33 @@ describe('EventInventory', () => {
     httpMock.verify();
   });
 
+  it('shows an actionable message when shrinking capacity below the available buyers count', async () => {
+    const { fixture, httpMock, host } = await renderFor(GA_EVENT);
+
+    dragRectangle(host, 0, 0, 0, 4); // 1 row x 5 cols
+    fixture.detectChanges();
+    setInputValue(host, '.zone-name-input', 'General Admission');
+    setInputValue(host, '.zone-price input', '25');
+    fixture.detectChanges();
+
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.trim().startsWith('Save'),
+    );
+    saveButton?.click();
+    fixture.detectChanges();
+
+    const putReq = httpMock.expectOne(`/api/inventory/events/${GA_EVENT.event_id}/inventory`);
+    putReq.flush(
+      { error: 'capacity_below_available_buyers', availableBuyers: 8 },
+      { status: 409, statusText: 'Conflict' },
+    );
+    await settle(fixture);
+
+    expect(host.querySelector('.error')?.textContent).toContain('8');
+    expect(host.querySelector('.error')?.textContent).toContain('at least');
+    httpMock.verify();
+  });
+
   it('drags a rectangle on a GA event; capacity comes from the rectangle and no per-seat tag UI is shown', async () => {
     const { fixture, httpMock, host } = await renderFor(GA_EVENT);
 
