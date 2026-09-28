@@ -23,7 +23,7 @@ export class EventCard {
   readonly imageUrl = input.required<string>();
   readonly publish = output<number>();
   readonly delete = output<number>();
-  readonly cancel = output<number>();
+  readonly cancelRequested = output<number>();
 
   protected useFallbackImage(target: EventTarget | null): void {
     if (target instanceof HTMLImageElement) target.src = 'images/hero-concert.jpg';

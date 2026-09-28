@@ -3,6 +3,8 @@ import { create } from 'qrcode';
 import {
   currentAndFutureEvents,
   decodeQrPixels,
+  canCheckIn,
+  isSearchableQuery,
   outcomeDescription,
   outcomeIcon,
   qrCanvasPlan,
@@ -25,6 +27,28 @@ describe('event helper outcomes', () => {
   it('provides non-color indicators for every outcome', () => {
     const outcomes = ['VALID', 'ALREADY_USED', 'INVALID', 'WRONG_EVENT'] as const;
     expect(new Set(outcomes.map((outcome) => outcomeIcon(outcome))).size).toBe(4);
+  });
+});
+
+describe('manual lookup check-in button', () => {
+  it('is offered only for a ticket that is still issued', () => {
+    expect(canCheckIn('ISSUED')).toBe(true);
+    expect(canCheckIn('CHECKED_IN')).toBe(false);
+    expect(canCheckIn('VOID')).toBe(false);
+  });
+});
+
+describe('manual lookup query', () => {
+  it('searches a short order ID straight away', () => {
+    expect(isSearchableQuery('7')).toBe(true);
+    expect(isSearchableQuery('82')).toBe(true);
+  });
+
+  it('waits for three characters of name or email, as the ticket service requires', () => {
+    expect(isSearchableQuery('')).toBe(false);
+    expect(isSearchableQuery('Al')).toBe(false);
+    expect(isSearchableQuery('8a')).toBe(false);
+    expect(isSearchableQuery('Ada')).toBe(true);
   });
 });
 

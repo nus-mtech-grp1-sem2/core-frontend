@@ -26,6 +26,8 @@ interface AttendeesResponse {
   readonly attendees: readonly {
     readonly order_id: number;
     readonly customer_email: string;
+    /** Blank for orders placed before names were stored. */
+    readonly customer_name?: string;
     readonly paid_at: string | null;
     readonly description: string;
     readonly quantity: number;
@@ -108,7 +110,7 @@ export class Attendees {
         this.attendees.set(
           result.attendees.map((attendee) => ({
             id: `${attendee.order_id}:${attendee.seat_id ?? 'ga'}:${attendee.description}`,
-            buyer: attendee.customer_email,
+            buyer: attendee.customer_name?.trim() || attendee.customer_email,
             email: attendee.customer_email,
             ticketType:
               attendee.description ||

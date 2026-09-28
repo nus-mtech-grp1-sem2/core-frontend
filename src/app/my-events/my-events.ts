@@ -5,7 +5,6 @@ import {
   Component,
   DestroyRef,
   computed,
-  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -15,6 +14,7 @@ import { exhaustMap, firstValueFrom, from, take, takeWhile, timer } from 'rxjs';
 import { toDataURL } from 'qrcode';
 
 import { ApiService } from '../core/api';
+import { startsTodayOrLater } from '../core/event-dates';
 import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
 
@@ -111,10 +111,6 @@ interface PaidOrder {
 
 interface OrdersResponse {
   readonly orders: readonly PaidOrder[];
-}
-
-interface TeamEventsResponse {
-  readonly events: readonly { readonly event_id: number }[];
 }
 
 interface TicketWithQr extends Ticket {
@@ -248,21 +244,11 @@ export class MyEvents {
     this.requestRunning = true;
     if (!silent) this.status.set('loading');
     try {
-      const [result, orderResult, teamResult] = await Promise.all([
+      const [result, orderResult] = await Promise.all([
         firstValueFrom(this.api.get<TicketsResponse>('ticket', '/customers/me/tickets')),
         firstValueFrom(this.api.get<OrdersResponse>('order', '/customers/me/orders')),
-        firstValueFrom(this.api.get<TeamEventsResponse>('event', '/helper/shifts')).catch(
-          () => ({ events: [] }) as TeamEventsResponse,
-        ),
       ]);
-      const teamEventIds = new Set(teamResult.events.map((event) => Number(event.event_id)));
-      const visibleTickets = result.tickets.filter(
-        (ticket) => !teamEventIds.has(Number(ticket.event_id)),
-      );
-      const visibleOrders = orderResult.orders.filter(
-        (order) => !teamEventIds.has(Number(order.event_id)),
-      );
-      for (const order of visibleOrders) {
+      for (const order of orderResult.orders) {
         if (order.status !== 'PENDING') {
           try {
             sessionStorage.removeItem(paymentProcessingKey(order.order_id));
@@ -271,6 +257,13 @@ export class MyEvents {
           }
         }
       }
+      const today = new Date();
+      const visibleTickets = result.tickets.filter((ticket) =>
+        startsTodayOrLater(ticket.starts_at, today),
+      );
+      const visibleOrders = orderResult.orders.filter((order) =>
+        startsTodayOrLater(order.starts_at, today),
+      );
       const withQr = await Promise.all(
         visibleTickets.map(async (ticket) => ({
           ...ticket,

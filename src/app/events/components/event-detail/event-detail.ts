@@ -40,7 +40,6 @@ type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
 type QueueAccess =
   'checking' | 'not-joined' | 'waiting' | 'admitted' | 'expired' | 'checkout' | 'unavailable';
-type PurchaseEligibility = 'checking' | 'allowed' | 'event-team';
 
 interface EventDetailData {
   readonly event_id: number;
@@ -135,6 +134,12 @@ interface InventorySummary {
   readonly soldCount: number;
 }
 
+const SEAT_STATUS_LABELS: Record<Exclude<SeatOption['status'], 'AVAILABLE'>, string> = {
+  SOLD: 'sold',
+  HELD: 'on hold',
+  BLOCKED: 'unavailable',
+};
+
 function seatKey(row: number, col: number): string {
   return `${row},${col}`;
 }
@@ -162,10 +167,6 @@ interface OwnedOrdersResponse {
     readonly event_id: number;
     readonly status: string;
   }[];
-}
-
-interface HelperShiftsResponse {
-  readonly events: readonly { readonly event_id: number }[];
 }
 
 /** What the signed-in customer already holds for this event. */
@@ -209,17 +210,12 @@ export class EventDetail {
   protected readonly changingRoleFor = signal<string | null>(null);
   protected readonly error = signal('');
   protected readonly seats = signal<readonly SeatOption[]>([]);
-  protected readonly gridRowCount = signal(0);
-  protected readonly gridColCount = signal(0);
-  protected readonly gridRows = computed(() =>
-    Array.from({ length: this.gridRowCount() }, (_, i) => i),
-  );
-  protected readonly gridCols = computed(() =>
-    Array.from({ length: this.gridColCount() }, (_, i) => i),
-  );
+  protected readonly displaySeats = computed(() => seatsWithFallbackLayout(this.seats()));
+  protected readonly gridRows = computed(() => occupiedGridAxis(this.displaySeats(), 'gridRow'));
+  protected readonly gridCols = computed(() => occupiedGridAxis(this.displaySeats(), 'gridCol'));
   protected readonly seatsByKey = computed(() => {
     const map = new Map<string, SeatOption>();
-    for (const seat of this.seats()) map.set(seatKey(seat.gridRow, seat.gridCol), seat);
+    for (const seat of this.displaySeats()) map.set(seatKey(seat.gridRow, seat.gridCol), seat);
     return map;
   });
   protected readonly quantity = signal(1);
@@ -235,7 +231,6 @@ export class EventDetail {
   protected readonly hasZoneChoice = computed(() => this.zoneOptions().length > 1);
   protected readonly purchasing = signal(false);
   protected readonly purchaseError = signal('');
-  protected readonly purchaseEligibility = signal<PurchaseEligibility>('checking');
   protected readonly queueAccess = signal<QueueAccess>('checking');
   protected readonly queuePosition = signal<number | null>(null);
   protected readonly admissionExpiresAt = signal<number | null>(null);
@@ -571,8 +566,7 @@ export class EventDetail {
     return (
       this.customerMode &&
       this.event()?.status === 'PUBLISHED' &&
-      !this.completed() &&
-      this.purchaseEligibility() === 'allowed'
+      !this.completed()
     );
   }
 
@@ -584,11 +578,26 @@ export class EventDetail {
     return this.selectedSeatIds().includes(seat.seatId);
   }
 
+  /** "Name — email", leaving out whichever part is missing so no dash dangles. */
+  protected memberLabel(member: TeamMember): string {
+    return [member.name, member.user_email].filter(Boolean).join(' — ') || 'Team member';
+  }
+
+  /** Accessible name; a seat that can't be chosen says why, since disabled alone doesn't. */
+  protected seatName(seat: SeatOption): string {
+    const name = `${seat.seatLabel} — ${seat.sectionName} — ${this.priceLabel(seat.priceCents)}`;
+    return seat.status === 'AVAILABLE' ? name : `${name} — ${SEAT_STATUS_LABELS[seat.status]}`;
+  }
+
+  protected seatBackground(seat: SeatOption): string {
+    return this.isSeatSelected(seat) ? 'var(--brand-600)' : seat.color;
+  }
+
   protected toggleSeat(seat: SeatOption): void {
     if (seat.status !== 'AVAILABLE') return;
     this.selectedSeatIds.update((ids) => {
       if (ids.includes(seat.seatId)) return ids.filter((id) => id !== seat.seatId);
-      if (ids.length >= this.quantity()) return ids;
+      if (ids.length >= this.quantity()) return [...ids.slice(1), seat.seatId];
       return [...ids, seat.seatId];
     });
   }
@@ -628,13 +637,6 @@ export class EventDetail {
 
     if (this.completed()) {
       this.purchaseError.set(EVENT_COMPLETED_MESSAGE);
-      return;
-    }
-
-    if (this.purchaseEligibility() === 'event-team') {
-      this.purchaseError.set(
-        'Organisers and event helpers cannot purchase tickets for events they manage.',
-      );
       return;
     }
 
@@ -714,7 +716,6 @@ export class EventDetail {
         this.api.get<EventDetailResponse>('event', `/events/${eventId}`),
       );
       this.event.set(result.event);
-      await this.loadPurchaseEligibility(result.event);
       this.form.reset({
         title: result.event.title,
         description: result.event.description ?? '',
@@ -728,6 +729,8 @@ export class EventDetail {
         this.form.disable();
       } else {
         this.form.enable();
+        // Seats come from the zones in Configure inventory, whatever the status.
+        this.form.controls.totalSeats.disable();
       }
       if (this.readOnly()) {
         this.inviteForm.disable();
@@ -755,48 +758,17 @@ export class EventDetail {
   /** Organisers manage the seat map; customers only need it while the event can still be bought. */
   private wantsSeatMap(event: EventDetailData): boolean {
     if (event.tier !== 'TIER2_SEATED') return false;
-    return this.organiserMode || (this.purchaseEligibility() === 'allowed' && !this.completed());
+    return this.organiserMode || this.canBuy();
   }
 
   /** What a customer already holds, and their waiting-room place. A completed event needs no queue place. */
   private async loadCustomerPurchaseState(event: EventDetailData): Promise<void> {
-    if (!this.customerMode || this.purchaseEligibility() !== 'allowed') return;
+    if (!this.customerMode) return;
     if (this.auth.isAuthenticated()) await this.loadOwnership(event.event_id);
     if (event.tier === 'TIER1_GA' && !this.completed()) await this.loadZones(event.event_id);
     if (event.tier !== 'TIER2_SEATED' || this.completed()) return;
     if (this.auth.isAuthenticated()) await this.loadQueueAccess(event.event_id);
     else this.queueAccess.set('not-joined');
-  }
-
-  private async loadPurchaseEligibility(event: EventDetailData): Promise<void> {
-    if (this.organiserMode) {
-      this.purchaseEligibility.set('event-team');
-      return;
-    }
-    if (!this.auth.isAuthenticated()) {
-      this.purchaseEligibility.set('allowed');
-      return;
-    }
-
-    this.purchaseEligibility.set('checking');
-    if (event.organiser_sub === this.auth.user()?.sub) {
-      this.purchaseEligibility.set('event-team');
-      return;
-    }
-    try {
-      const result = await firstValueFrom(
-        this.api.get<HelperShiftsResponse>('event', '/helper/shifts'),
-      );
-      this.purchaseEligibility.set(
-        result.events.some((shift) => Number(shift.event_id) === event.event_id)
-          ? 'event-team'
-          : 'allowed',
-      );
-    } catch {
-      // The order API is authoritative. Do not block ordinary customers when
-      // this optional UI eligibility lookup is temporarily unavailable.
-      this.purchaseEligibility.set('allowed');
-    }
   }
 
   private async loadMembers(eventId: number): Promise<void> {
@@ -873,12 +845,8 @@ export class EventDetail {
       const result = await firstValueFrom(
         this.api.get<SeatResponse>('inventory', `/events/${eventId}/seats`),
       );
-      this.gridRowCount.set(result.gridRows || 0);
-      this.gridColCount.set(result.gridCols || 0);
       this.seats.set(result.seats);
     } catch {
-      this.gridRowCount.set(0);
-      this.gridColCount.set(0);
       this.seats.set([]);
     }
   }
@@ -997,6 +965,68 @@ export class EventDetail {
   }
 }
 
+function occupiedGridAxis(
+  seats: readonly SeatOption[],
+  coordinate: 'gridRow' | 'gridCol',
+): readonly number[] {
+  return [...new Set(seats.map((seat) => seat[coordinate]))].sort((a, b) => a - b);
+}
+
+/**
+ * A seated event created before its inventory is saved has purchasable seat
+ * rows with null coordinates. Only that case receives a compact fallback;
+ * configured events retain the organiser's exact placement.
+ */
+export function seatsWithFallbackLayout(seats: readonly SeatOption[]): readonly SeatOption[] {
+  const configured = seats.every(
+    (seat) =>
+      Number.isInteger(seat.gridRow) &&
+      seat.gridRow >= 0 &&
+      Number.isInteger(seat.gridCol) &&
+      seat.gridCol >= 0,
+  );
+  if (configured || seats.length === 0) return seats;
+
+  const columns = defaultSeatGridColumns(seats.length);
+  const orderedSeats = [...seats].sort(
+    (left, right) =>
+      left.seatLabel.localeCompare(right.seatLabel, undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      }) || left.seatId - right.seatId,
+  );
+  return orderedSeats.map((seat, index) => ({
+    ...seat,
+    color: seat.color || '#059669',
+    gridRow: Math.floor(index / columns),
+    gridCol: index % columns,
+  }));
+}
+
+/** Picks a compact landscape grid, preferring a fully filled rectangle. */
+export function defaultSeatGridColumns(seatCount: number): number {
+  const count = Math.max(0, Math.floor(seatCount));
+  if (count === 0) return 0;
+
+  const firstCandidate = Math.ceil(Math.sqrt(count));
+  const lastCandidate = Math.max(firstCandidate, Math.ceil(Math.sqrt(count * 2)));
+  let bestColumns = firstCandidate;
+  let bestEmptyCells = Number.POSITIVE_INFINITY;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let columns = firstCandidate; columns <= lastCandidate; columns += 1) {
+    const rows = Math.ceil(count / columns);
+    const emptyCells = rows * columns - count;
+    const score = emptyCells + Math.abs(columns - rows);
+    if (score < bestScore || (score === bestScore && emptyCells < bestEmptyCells)) {
+      bestColumns = columns;
+      bestEmptyCells = emptyCells;
+      bestScore = score;
+    }
+  }
+  return bestColumns;
+}
+
 export function buyerCapacity(totalSeats: number, configuredBuyers: number | null): number {
   const seats = Math.max(0, Math.floor(totalSeats));
   if (configuredBuyers !== null && Number.isSafeInteger(configuredBuyers) && configuredBuyers > 0) {
@@ -1012,18 +1042,35 @@ function queueAdmissionRequired(error: unknown): boolean {
   );
 }
 
+const EVENT_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  queue_admission_required: 'Your waiting-room admission has expired. Rejoin the queue to continue.',
+  event_not_editable: 'This event has already been published — its details can no longer be edited.',
+  only_draft_events_can_be_deleted: 'Only draft events can be deleted. Cancel a published event instead.',
+  event_has_reservation_history:
+    'This event has reservation history, so it cannot be deleted. Cancel it instead.',
+  inventory_not_configured:
+    'Configure inventory before publishing: the event has no seats until you add at least one zone.',
+  available_buyers_above_total_seats: 'Available buyers cannot be more than the total seats.',
+  invited_user_not_found:
+    'No OneStage account uses that email. Ask them to sign up first, then invite them again.',
+  already_invited_or_member:
+    "That person is already on this event's team or has a pending invitation.",
+  invited_user_missing_identity:
+    "That account isn't fully set up, so it can't be invited yet. Ask them to finish signing up, then invite them again.",
+  team_member_not_found:
+    "That person is no longer on this event's team. Refresh the page to see the current team.",
+  event_owner_required: "Only the event's owner can do that.",
+  cannot_change_owner_role: "The event owner's role can't be changed.",
+};
+
 function describeError(error: unknown, action: string): string {
   if (error instanceof HttpErrorResponse) {
     if (action === 'complete your purchase') {
       const purchaseMessage = purchaseErrorMessage(error);
       if (purchaseMessage) return purchaseMessage;
     }
-    if ((error.error as { error?: string } | null)?.error === 'queue_admission_required') {
-      return 'Your waiting-room admission has expired. Rejoin the queue to continue.';
-    }
-    if ((error.error as { error?: string } | null)?.error === 'event_not_editable') {
-      return 'This event has already been published — its details can no longer be edited.';
-    }
+    const code = (error.error as { error?: string } | null)?.error;
+    if (code && Object.hasOwn(EVENT_ERROR_MESSAGES, code)) return EVENT_ERROR_MESSAGES[code];
     if (error.status === 401) return 'Please sign in again before managing this event.';
     if (error.status === 403) return 'You do not have permission to manage this event.';
     if (error.status === 404) {
@@ -1037,9 +1084,6 @@ function describeError(error: unknown, action: string): string {
 
 export function purchaseErrorMessage(error: HttpErrorResponse): string | null {
   const code = (error.error as { error?: string } | null)?.error;
-  if (code === 'event_team_cannot_purchase') {
-    return 'Organisers and event helpers cannot purchase tickets for events they manage.';
-  }
   if (code === 'inventory_unavailable') {
     return 'Tickets are currently unavailable or sold out. Refresh the event before trying again.';
   }

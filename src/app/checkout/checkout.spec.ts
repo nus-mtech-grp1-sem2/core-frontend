@@ -327,7 +327,7 @@ describe('Checkout', () => {
   });
 
   it('does not navigate or poll after leaving the page during submission', async () => {
-    const { fill, submit, settle, fixture, get, navigate } = await render();
+    const { fill, submit, fixture, get, navigate } = await render();
     fill();
     submit();
     fixture.destroy();

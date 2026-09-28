@@ -71,7 +71,8 @@ function initialiseAuth(): Promise<void> | void {
           email: true,
           oauth: {
             domain: config.domain,
-            scopes: ['openid', 'email', 'phone'],
+            // 'profile' releases the name claims into the ID token (the app client must allow it).
+            scopes: ['openid', 'email', 'phone', 'profile'],
             redirectSignIn: [...config.redirectSignIn],
             redirectSignOut: [...config.redirectSignOut],
             responseType: 'code',

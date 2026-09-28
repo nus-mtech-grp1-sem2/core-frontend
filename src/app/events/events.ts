@@ -56,9 +56,6 @@ interface EventApiRecord {
 interface EventResponse {
   readonly events: readonly EventApiRecord[];
 }
-interface TeamEventsResponse {
-  readonly events: readonly { readonly event_id: number }[];
-}
 interface PublicEventDetailResponse {
   readonly event: EventApiRecord;
 }
@@ -174,15 +171,9 @@ export class Events {
     description: this.fb.control(''),
     venue: this.fb.control('', Validators.required),
     startsAt: this.fb.control('', Validators.required),
-    totalSeats: this.fb.control(1, [
-      Validators.required,
-      Validators.min(1),
-      Validators.max(1_000_000),
-    ]),
-    availableBuyers: this.fb.control<number | null>(null, [
-      Validators.min(1),
-      Validators.max(1_000_000),
-    ]),
+    // No total seats or available buyers here: seats come from the zones drawn
+    // in Configure inventory, and available buyers is set on the event page
+    // once there are seats to cap it.
     tier: this.fb.control<EventTier>('TIER1_GA', Validators.required),
   });
 
@@ -399,20 +390,10 @@ export class Events {
     this.loading.set(true);
     this.error.set('');
     try {
-      const [result, teamResult] = await Promise.all([
-        firstValueFrom(
-          this.api.get<EventResponse>('event', isOrganiser ? '/events/manage' : '/events'),
-        ),
-        !isOrganiser && this.auth.isAuthenticated()
-          ? firstValueFrom(this.api.get<TeamEventsResponse>('event', '/helper/shifts')).catch(
-              () => ({ events: [] }) as TeamEventsResponse,
-            )
-          : Promise.resolve({ events: [] } as TeamEventsResponse),
-      ]);
-      const teamEventIds = new Set(teamResult.events.map((event) => Number(event.event_id)));
-      const events = result.events
-        .map(toManagedEvent)
-        .filter((event) => isOrganiser || !teamEventIds.has(event.event_id));
+      const result = await firstValueFrom(
+        this.api.get<EventResponse>('event', isOrganiser ? '/events/manage' : '/events'),
+      );
+      const events = result.events.map(toManagedEvent);
       this.allEvents.set(
         isOrganiser
           ? events
@@ -466,8 +447,6 @@ export class Events {
       description: '',
       venue: '',
       startsAt: '',
-      totalSeats: 1,
-      availableBuyers: null,
       tier: 'TIER1_GA',
     });
     this.selectedImageBase64 = null;
@@ -492,10 +471,17 @@ function toManagedEvent(event: EventApiRecord): ManagedEvent {
   };
 }
 
+export const INVENTORY_NOT_CONFIGURED =
+  'Configure inventory before publishing: the event has no seats until you add at least one zone.';
+
 function describeEventError(error: unknown, action: string): string {
   if (error instanceof HttpErrorResponse) {
     if (error.status === 401) return 'Please sign out and sign in again before managing events.';
     if (error.status === 403) return 'You are not an organiser for this event.';
+    const code = (error.error as { error?: string } | null)?.error;
+    if (code === 'inventory_not_configured') return INVENTORY_NOT_CONFIGURED;
+    if (code === 'only_draft_events_can_be_deleted') return 'Only draft events can be deleted. Cancel a published event instead.';
+    if (code === 'event_has_reservation_history') return 'This event has reservation history, so it cannot be deleted. Cancel it instead.';
     if (error.status >= 500)
       return 'The Event service cannot reach its database right now. Refresh the AWS MySQL host and try again.';
   }

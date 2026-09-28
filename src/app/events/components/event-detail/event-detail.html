@@ -52,15 +52,6 @@
       } }
     </div>
   </section>
-  } @else if (customerMode && purchaseEligibility() === 'event-team') {
-  <section class="shell body purchase" aria-label="Ticket purchase unavailable">
-    <div class="owned" role="status">
-      <p>
-        You are part of this event's team. Organisers and event helpers cannot purchase tickets for
-        events they manage.
-      </p>
-    </div>
-  </section>
   } @else if (canBuy()) {
   <section class="shell body purchase" aria-label="Buy tickets">
     @if (ownership(); as owned) {
@@ -168,26 +159,29 @@
         [style.grid-template-rows]="'repeat(' + gridRows().length + ', 1.75rem)'"
         [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'"
       >
-        @for (row of gridRows(); track row) { @for (col of gridCols(); track col) { @let seat =
-        seatAt(row, col); @if (seat) {
+        @for (row of gridRows(); track row; let rowIndex = $index) { @for (col of gridCols(); track
+        col; let colIndex = $index) { @let seat = seatAt(row, col); @if (seat) {
         <button
           type="button"
           class="seat"
           [class.selected]="isSeatSelected(seat)"
-          [style.grid-row]="row + 1"
-          [style.grid-column]="col + 1"
-          [style.background]="seat.color"
+          [style.grid-row]="rowIndex + 1"
+          [style.grid-column]="colIndex + 1"
+          [style.background]="seatBackground(seat)"
           [disabled]="seat.status !== 'AVAILABLE'"
-          [attr.aria-label]="
-                    seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)
-                  "
-          [title]="seat.seatLabel + ' — ' + seat.sectionName + ' — ' + priceLabel(seat.priceCents)"
+          [attr.aria-pressed]="isSeatSelected(seat)"
+          [attr.aria-label]="seatName(seat)"
+          [title]="seatName(seat)"
           (click)="toggleSeat(seat)"
         >
           {{ seat.seatLabel }}
         </button>
         } @else {
-        <span class="seat-gap" [style.grid-row]="row + 1" [style.grid-column]="col + 1"></span>
+        <span
+          class="seat-gap"
+          [style.grid-row]="rowIndex + 1"
+          [style.grid-column]="colIndex + 1"
+        ></span>
         } } }
       </div>
     </div>
@@ -210,8 +204,8 @@
     </p>
     } @else if (detailsLocked()) {
     <p class="owner-note" role="status">
-      This event has already been published — its details can no longer be edited. Cancel or
-      re-publish it, or manage its team, below.
+      This event has already been published — its details can no longer be edited. Use Configure
+      inventory to add or remove seats and change prices, or manage its team below.
     </p>
     }
     <form class="edit-form" [formGroup]="form" (ngSubmit)="save()">
@@ -232,7 +226,14 @@
       </div>
       <div class="field">
         <label for="seats">Total seats</label
-        ><input id="seats" type="number" min="1" step="1" formControlName="totalSeats" />
+        ><input
+          id="seats"
+          type="number"
+          min="1"
+          step="1"
+          formControlName="totalSeats"
+          aria-describedby="seats-help"
+        /><small id="seats-help">Set by the zones in Configure inventory.</small>
       </div>
       <div class="field">
         <label for="available-buyers">Available buyers</label
@@ -262,6 +263,7 @@
           id="event-image"
           type="file"
           accept="image/jpeg,image/png,image/webp"
+          [disabled]="readOnly() || detailsLocked()"
           (change)="onImageSelected($event)"
         />
         @if (imagePreviewUrl()) {
@@ -356,8 +358,7 @@
         <li>
           <span
             ><strong
-              >{{ member.name ? member.name + ' — ' + member.user_email : member.user_email
-              }}</strong
+              >{{ memberLabel(member) }}</strong
             ><small
               >{{ member.role === 'ORGANISER' ? 'Organizer' : 'Helper' }} · {{ member.invite_status
               | lowercase }}</small

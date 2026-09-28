@@ -8,7 +8,13 @@ import { vi } from 'vitest';
 import { ApiService } from '../../../core/api';
 import { AuthService } from '../../../core/auth';
 import { QueueService } from '../../../core/queue';
-import { buyerCapacity, EventDetail, purchaseErrorMessage } from './event-detail';
+import {
+  buyerCapacity,
+  defaultSeatGridColumns,
+  EventDetail,
+  purchaseErrorMessage,
+  seatsWithFallbackLayout,
+} from './event-detail';
 
 describe('EventDetail checkout navigation', () => {
   it.each(['TIER1_GA', 'TIER2_SEATED'] as const)(
@@ -103,7 +109,15 @@ describe('EventDetail checkout navigation', () => {
       fixture.detectChanges();
       const host = fixture.nativeElement as HTMLElement;
       if (tier === 'TIER2_SEATED') {
-        host.querySelector<HTMLButtonElement>('button.seat')!.click();
+        const seat = host.querySelector<HTMLButtonElement>('button.seat')!;
+        expect(seat.getAttribute('aria-pressed')).toBe('false');
+        seat.click();
+        fixture.detectChanges();
+        expect(seat.getAttribute('aria-pressed')).toBe('true');
+        seat.click();
+        fixture.detectChanges();
+        expect(seat.getAttribute('aria-pressed')).toBe('false');
+        seat.click();
         fixture.detectChanges();
       }
       const buy = Array.from(host.querySelectorAll('button')).find(
@@ -150,18 +164,29 @@ describe('EventDetail seat map sizing', () => {
       if (path === '/customers/me/orders') return of({ orders: [] });
       if (path === '/customers/me/tickets') return of({ tickets: [] });
       if (path === '/events/172/seats')
-        // A wide venue (10 columns) — wide enough that fixed-size cells no
-        // longer fit inside the purchase panel's ~24rem width, which is
-        // exactly the case that used to make the seat map spill out of it.
+        // The saved canvas is much larger than its two occupied cells. The
+        // customer view should not render its unused rows and columns.
         return of({
-          gridRows: 2,
-          gridCols: 10,
+          gridRows: 20,
+          gridCols: 20,
           seats: [
             {
               seatId: 8,
               seatLabel: 'A8',
-              gridRow: 0,
-              gridCol: 0,
+              gridRow: 4,
+              gridCol: 6,
+              inventoryItemId: 1,
+              sectionName: 'Floor',
+              priceCents: 2000,
+              color: '#000000',
+              status: 'AVAILABLE',
+              tag: 'NONE',
+            },
+            {
+              seatId: 9,
+              seatLabel: 'B9',
+              gridRow: 5,
+              gridCol: 15,
               inventoryItemId: 1,
               sectionName: 'Floor',
               priceCents: 2000,
@@ -209,12 +234,21 @@ describe('EventDetail seat map sizing', () => {
 
     const host = fixture.nativeElement as HTMLElement;
     const seatGrid = host.querySelector<HTMLElement>('.seat-grid');
-    // Same fixed cinema-style cell size the organiser drew the zones with
-    // (event-inventory.css's `.grid-cell`/`.seat-cell`), not a stretchy
-    // `minmax(_, 1fr)` track that grows cells to fill a narrow panel and
-    // then overflows it once there are enough columns.
-    expect(seatGrid?.style.gridTemplateColumns).toBe('repeat(10, 1.75rem)');
+    // Both completely empty rows/columns are removed from the customer view.
+    expect(seatGrid?.style.gridTemplateColumns).toBe('repeat(2, 1.75rem)');
     expect(seatGrid?.style.gridTemplateRows).toBe('repeat(2, 1.75rem)');
+    const renderedSeats = host.querySelectorAll<HTMLElement>('.seat');
+    expect(renderedSeats[0]?.style.gridRow).toBe('1');
+    expect(renderedSeats[0]?.style.gridColumn).toBe('1');
+    expect(renderedSeats[1]?.style.gridRow).toBe('2');
+    expect(renderedSeats[1]?.style.gridColumn).toBe('2');
+    renderedSeats[0]?.click();
+    fixture.detectChanges();
+    expect(renderedSeats[0]?.classList.contains('selected')).toBe(true);
+    renderedSeats[1]?.click();
+    fixture.detectChanges();
+    expect(renderedSeats[0]?.classList.contains('selected')).toBe(false);
+    expect(renderedSeats[1]?.classList.contains('selected')).toBe(true);
     // The grid must sit inside a container that can scroll instead of
     // visually spilling out of the purchase panel's rounded border.
     expect(seatGrid?.closest('.seat-map')).not.toBeNull();
@@ -290,6 +324,35 @@ describe('EventDetail buyer capacity', () => {
   });
 });
 
+describe('EventDetail default seat layout', () => {
+  it('uses a filled rectangle for 18 unconfigured seats', () => {
+    expect(defaultSeatGridColumns(18)).toBe(6);
+  });
+
+  it('keeps non-factor seat totals close to square', () => {
+    expect(defaultSeatGridColumns(14)).toBe(4);
+  });
+
+  it('naturally orders and colours seats that have no configured coordinates', () => {
+    const seats = ['S1', 'S10', 'S2'].map((seatLabel, index) => ({
+      seatId: index + 1,
+      seatLabel,
+      gridRow: null as unknown as number,
+      gridCol: null as unknown as number,
+      inventoryItemId: 1,
+      sectionName: 'General Admission',
+      priceCents: 2_000,
+      color: null as unknown as string,
+      status: 'AVAILABLE' as const,
+      tag: 'NONE' as const,
+    }));
+
+    const arranged = seatsWithFallbackLayout(seats);
+    expect(arranged.map((seat) => seat.seatLabel)).toEqual(['S1', 'S2', 'S10']);
+    expect(arranged.map((seat) => seat.color)).toEqual(['#059669', '#059669', '#059669']);
+  });
+});
+
 describe('EventDetail purchase errors', () => {
   it('explains an inventory conflict instead of showing a generic failure', () => {
     const error = new HttpErrorResponse({
@@ -300,18 +363,10 @@ describe('EventDetail purchase errors', () => {
     expect(purchaseErrorMessage(error)).toContain('unavailable or sold out');
   });
 
-  it('explains that an event-team member cannot purchase', () => {
-    const error = new HttpErrorResponse({
-      status: 403,
-      error: { error: 'event_team_cannot_purchase' },
-    });
-
-    expect(purchaseErrorMessage(error)).toContain('Organisers and event helpers cannot purchase');
-  });
 });
 
-describe('EventDetail event-team purchase restriction', () => {
-  it('does not render purchase controls for an accepted event helper', async () => {
+describe('EventDetail event-team purchases', () => {
+  it('renders customer purchase controls for an accepted event helper', async () => {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172') {
         return of({
@@ -330,7 +385,8 @@ describe('EventDetail event-team purchase restriction', () => {
           },
         });
       }
-      if (path === '/helper/shifts') return of({ events: [{ event_id: 172 }] });
+      if (path === '/customers/me/orders') return of({ orders: [] });
+      if (path === '/customers/me/tickets') return of({ tickets: [] });
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
 
@@ -374,12 +430,12 @@ describe('EventDetail event-team purchase restriction', () => {
     fixture.detectChanges();
 
     const host = fixture.nativeElement as HTMLElement;
-    expect(host.textContent).toContain('cannot purchase tickets for events they manage');
     expect(
       Array.from(host.querySelectorAll('button')).some(
         (button) => button.textContent?.trim() === 'Buy tickets',
       ),
-    ).toBe(false);
+    ).toBe(true);
+    expect(get).not.toHaveBeenCalledWith('event', '/helper/shifts');
   });
 });
 
@@ -492,6 +548,16 @@ describe('EventDetail completed events for an organiser', () => {
   async function renderOrganiser(
     startsAt: string,
     status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED' = 'PUBLISHED',
+    tier: 'TIER1_GA' | 'TIER2_SEATED' = 'TIER1_GA',
+    members: readonly Record<string, unknown>[] = [
+      {
+        membership_id: 1,
+        user_sub: 'helper-sub',
+        user_email: 'helper@example.com',
+        role: 'HELPER',
+        invite_status: 'ACCEPTED',
+      },
+    ],
   ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172') {
@@ -505,25 +571,13 @@ describe('EventDetail completed events for an organiser', () => {
             starts_at: startsAt,
             total_seats: 10,
             available_buyers: 2,
-            tier: 'TIER1_GA',
+            tier,
             status,
             price_cents: 2_000,
           },
         });
       }
-      if (path === '/events/172/team-members') {
-        return of({
-          members: [
-            {
-              membership_id: 1,
-              user_sub: 'helper-sub',
-              user_email: 'helper@example.com',
-              role: 'HELPER',
-              invite_status: 'ACCEPTED',
-            },
-          ],
-        });
-      }
+      if (path === '/events/172/team-members') return of({ members });
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
     const put = vi.fn(() => of({}));
@@ -565,7 +619,7 @@ describe('EventDetail completed events for an organiser', () => {
       Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
         (candidate) => candidate.textContent?.trim() === label,
       );
-    return { host, button, put, post, remove };
+    return { fixture, host, button, put, post, remove };
   }
 
   it('can be opened but not edited, and its team cannot be changed', async () => {
@@ -597,6 +651,87 @@ describe('EventDetail completed events for an organiser', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
+  it('names each team member without a dangling dash when a name or email is missing', async () => {
+    const member = (membership_id: number, user_email: string, name?: string) => ({
+      membership_id,
+      user_sub: `sub-${membership_id}`,
+      user_email,
+      name,
+      role: 'ORGANISER',
+      invite_status: 'ACCEPTED',
+    });
+    const { host } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT', 'TIER1_GA', [
+      member(1, 'both@example.com', 'Both Known'),
+      member(2, '', 'Owner Only'),
+      member(3, 'email-only@example.com'),
+      member(4, ''),
+    ]);
+
+    const labels = Array.from(host.querySelectorAll('.member-list strong')).map((label) =>
+      label.textContent?.trim(),
+    );
+    expect(labels).toEqual([
+      'Both Known — both@example.com',
+      'Owner Only',
+      'email-only@example.com',
+      'Team member',
+    ]);
+  });
+
+  it.each([
+    [
+      404,
+      'invited_user_not_found',
+      'No OneStage account uses that email. Ask them to sign up first, then invite them again.',
+    ],
+    [
+      409,
+      'already_invited_or_member',
+      "That person is already on this event's team or has a pending invitation.",
+    ],
+    [
+      400,
+      'invited_user_missing_identity',
+      "That account isn't fully set up, so it can't be invited yet. Ask them to finish signing up, then invite them again.",
+    ],
+    [502, 'invitation_failed', 'Unable to send the invitation. Please try again.'],
+  ])('says what went wrong when an invitation fails with %i %s', async (status, code, message) => {
+    const { fixture, host, button, post } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
+    post.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status, error: { error: code } })),
+    );
+    const email = host.querySelector<HTMLInputElement>('#member-email')!;
+    email.value = 'someone@example.com';
+    email.dispatchEvent(new Event('input'));
+    button('Invite')!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(post).toHaveBeenCalledOnce();
+    expect(host.querySelector('[role="alert"]')?.textContent?.trim()).toBe(message);
+  });
+
+  it('says a team member is already gone instead of that the event was not found', async () => {
+    const { fixture, host, button, remove } = await renderOrganiser(
+      '2099-01-01 20:00:00',
+      'DRAFT',
+    );
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    remove.mockReturnValueOnce(
+      throwError(
+        () => new HttpErrorResponse({ status: 404, error: { error: 'team_member_not_found' } }),
+      ),
+    );
+    button('Remove')!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(host.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+      "That person is no longer on this event's team. Refresh the page to see the current team.",
+    );
+    vi.restoreAllMocks();
+  });
+
   it('stays fully editable while a draft event is still upcoming', async () => {
     const { host, button } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
 
@@ -618,6 +753,9 @@ describe('EventDetail completed events for an organiser', () => {
     expect(host.textContent).toContain('already been published');
 
     expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('#venue')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('#seats')?.disabled).toBe(true);
     expect(button('Save changes')?.disabled).toBe(true);
 
     // Team management and the event's own lifecycle actions are unaffected —
@@ -629,6 +767,16 @@ describe('EventDetail completed events for an organiser', () => {
 
     button('Save changes')?.click();
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it('shows total seats read-only even on a draft, since the zones in Configure inventory set it', async () => {
+    const { host, button } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
+
+    expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(false);
+    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.disabled).toBe(false);
+    expect(host.querySelector<HTMLInputElement>('#seats')?.disabled).toBe(true);
+    expect(host.textContent).toContain('Set by the zones in Configure inventory');
+    expect(button('Save changes')?.disabled).toBe(false);
   });
 });
 

@@ -51,7 +51,7 @@
         [order]="order"
         [timeRemaining]="reservationTimeLabel(order)"
         [cancelling]="isCancelling(order.order_id)"
-        (cancel)="cancelReservation(order)"
+        (cancelRequested)="cancelReservation(order)"
       />
       } @for (order of processingOrders(); track order.order_id) {
       <app-reservation-card [order]="order" [processing]="true" />
@@ -129,39 +129,6 @@
         ><input id="event-start" type="datetime-local" formControlName="startsAt" required />
       </div>
       <div class="field">
-        <label for="event-total-seats">Total seats</label
-        ><input
-          id="event-total-seats"
-          type="number"
-          formControlName="totalSeats"
-          min="1"
-          max="1000000"
-          step="1"
-          required
-        />
-      </div>
-      <div class="field">
-        <label for="event-available-buyers">Available buyers</label
-        ><input
-          id="event-available-buyers"
-          type="number"
-          formControlName="availableBuyers"
-          min="1"
-          [max]="eventForm.controls.totalSeats.value"
-          step="1"
-          aria-describedby="event-available-buyers-help event-available-buyers-error"
-          [attr.aria-invalid]="eventForm.controls.availableBuyers.invalid"
-        /><small id="event-available-buyers-help" class="field-help"
-          >Concurrent buyers allowed from the waiting room. Leave blank to use 10% of total
-          seats.</small
-        >
-        @if (eventForm.controls.availableBuyers.hasError('max')) {
-        <small id="event-available-buyers-error" class="error"
-          >Available buyers cannot exceed total seats.</small
-        >
-        }
-      </div>
-      <div class="field">
         <label for="event-tier">Ticketing</label
         ><select id="event-tier" formControlName="tier">
           <option value="TIER1_GA">General admission</option>
@@ -190,7 +157,7 @@
         [detailLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'"
         (publish)="publishEvent($event)"
         (delete)="deleteEvent($event)"
-        (cancel)="cancelEvent($event)"
+        (cancelRequested)="cancelEvent($event)"
       ></li>
       } @empty {
       <li class="empty">

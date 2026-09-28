@@ -114,21 +114,10 @@ describe('Events', () => {
     await fixture.whenStable();
 
     expect(host.querySelector('#event-title')).not.toBeNull();
-    expect(host.querySelector('#event-available-buyers')).not.toBeNull();
-
-    const totalSeats = host.querySelector<HTMLInputElement>('#event-total-seats')!;
-    const availableBuyers = host.querySelector<HTMLInputElement>('#event-available-buyers')!;
-    totalSeats.value = '1';
-    totalSeats.dispatchEvent(new Event('input'));
-    availableBuyers.value = '2';
-    availableBuyers.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
-
-    const create = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent?.trim() === 'Create event',
-    );
-    expect(create?.disabled).toBe(true);
-    expect(host.textContent).toContain('Available buyers cannot exceed total seats.');
+    // Seats come from Configure inventory, and available buyers is set on the
+    // event page once there are seats, so neither is asked for up front.
+    expect(host.querySelector('#event-total-seats')).toBeNull();
+    expect(host.querySelector('#event-available-buyers')).toBeNull();
     httpMock.verify();
   });
 
@@ -264,21 +253,22 @@ describe('Events', () => {
     });
   });
 
-  it('excludes events where the signed-in customer is an organiser or helper', async () => {
+  it('shows team-managed events in the signed-in customer catalogue', async () => {
     const { fixture, httpMock, host } = await renderFor(user([]));
 
     httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
-    httpMock.expectOne('/api/event/helper/shifts').flush({ events: [{ event_id: 1 }] });
     httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
     httpMock.expectOne('/api/order/customers/me/orders').flush({ orders: [] });
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
-    httpMock.expectOne('/api/event/events/2').flush({ event: MOCK_EVENTS[1] });
+    for (const event of MOCK_EVENTS) {
+      httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
+    }
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
 
-    expect(host.querySelectorAll('.event-card').length).toBe(1);
-    expect(host.textContent).not.toContain('Neon Skyline Tour');
+    expect(host.querySelectorAll('.event-card').length).toBe(2);
+    expect(host.textContent).toContain('Neon Skyline Tour');
     expect(host.textContent).toContain('ASEAN Cup Final');
     httpMock.verify();
   });
@@ -287,7 +277,6 @@ describe('Events', () => {
     const { fixture, httpMock, host } = await renderFor(user([]));
 
     httpMock.expectOne('/api/event/events').flush({ events: MOCK_EVENTS });
-    httpMock.expectOne('/api/event/helper/shifts').flush({ events: [] });
     httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
     httpMock.expectOne('/api/order/customers/me/orders').flush({
       orders: [
