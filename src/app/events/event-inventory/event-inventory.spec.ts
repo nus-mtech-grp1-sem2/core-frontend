@@ -229,6 +229,83 @@ describe('EventInventory', () => {
     httpMock.verify();
   });
 
+  it('adds a zone at the first empty cell via a button, with no drag gesture needed', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT);
+
+    expect(host.querySelectorAll('.zone-card').length).toBe(0);
+
+    const addButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Add zone',
+    );
+    expect(addButton).toBeDefined();
+    addButton?.click();
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.zone-card').length).toBe(1);
+    const card = host.querySelector('.zone-card')!;
+    expect(card.querySelector<HTMLInputElement>('.zone-row-input')?.value).toBe('0');
+    expect(card.querySelector<HTMLInputElement>('.zone-col-input')?.value).toBe('0');
+  });
+
+  it('repositions and resizes a zone by typing row/column/span numbers, with no drag gesture needed', async () => {
+    const { fixture, host } = await renderFor(SEATED_EVENT);
+
+    dragRectangle(host, 0, 0, 0, 0); // 1x1 zone to start from
+    fixture.detectChanges();
+    const card = host.querySelector('.zone-card')!;
+
+    setInputValue(host, '.zone-row-input', '2');
+    fixture.detectChanges();
+    setInputValue(host, '.zone-col-input', '3');
+    fixture.detectChanges();
+    setInputValue(host, '.zone-row-span-input', '2');
+    fixture.detectChanges();
+    setInputValue(host, '.zone-col-span-input', '3');
+    fixture.detectChanges();
+
+    expect(card.querySelector<HTMLInputElement>('.zone-row-input')?.value).toBe('2');
+    expect(card.querySelector<HTMLInputElement>('.zone-col-input')?.value).toBe('3');
+    expect(card.querySelector<HTMLInputElement>('.zone-row-span-input')?.value).toBe('2');
+    expect(card.querySelector<HTMLInputElement>('.zone-col-span-input')?.value).toBe('3');
+
+    // The zone actually moved on the map — its old top-left cell (0,0) is
+    // free again, and its new top-left cell (2,3) is now claimed.
+    const cellAt = (row: number, col: number) => host.querySelector(`[data-grid-row="${row}"][data-grid-col="${col}"]`);
+    expect(cellAt(0, 0)?.className).toContain('grid-cell');
+    expect(cellAt(2, 3)?.className).toContain('seat-cell');
+  });
+
+  it('rejects a typed position that would overlap another zone, leaving both zones where they were', async () => {
+    const existingZone = {
+      inventoryItemId: 9,
+      name: 'Balcony',
+      code: 'BALC',
+      priceCents: 4000,
+      color: '#00FF00',
+      seatCount: 2,
+      soldCount: 0,
+      heldCount: 0,
+      gridRow: 3,
+      gridCol: 0,
+      gridRowSpan: 1,
+      gridColSpan: 2,
+    };
+    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+
+    dragRectangle(host, 3, 3, 3, 3); // a fresh 1x1 zone, on the same row as the existing one
+    fixture.detectChanges();
+    const cards = host.querySelectorAll('.zone-card');
+    const newCard = cards[1] as HTMLElement;
+
+    // Moving it left onto the existing zone's columns (same row already).
+    setInputValue(newCard, '.zone-col-input', '0');
+    fixture.detectChanges();
+
+    expect(host.querySelector('.error')?.textContent).toContain("Zones can't overlap");
+    // The typed value was rejected — the zone stayed at its original column.
+    expect(newCard.querySelector<HTMLInputElement>('.zone-col-input')?.value).toBe('3');
+  });
+
   it("blocks dragging a new zone over cells an existing zone already covers", async () => {
     const existingZone = {
       inventoryItemId: 9,

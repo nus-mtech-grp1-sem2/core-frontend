@@ -7,8 +7,9 @@
       <a class="back" [routerLink]="['/organiser/events', event.event_id]">Back to {{ event.title }}</a>
       <h1>Configure inventory</h1>
       <p class="lead">
-        Drag across an empty area of the map to draw a zone — row 0 is closest to the stage. The zone's capacity is
-        the size of the rectangle you draw. Zones can't overlap.
+        Drag across an empty area of the map to draw a zone, or use "Add zone" and the row/column fields below for
+        keyboard entry — row 0 is closest to the stage. The zone's capacity is the size of its rectangle. Zones
+        can't overlap.
       </p>
       @if (locked()) {
         <p class="pill status lock-note">
@@ -151,6 +152,9 @@
         }
       </div>
 
+      <div class="zone-list-actions">
+        <button type="button" class="btn btn-ghost btn-sm" [disabled]="locked()" (click)="addZone()">Add zone</button>
+      </div>
       <ul class="zone-list" [formArray]="zones">
         @for (zone of zones.controls; track zone; let zoneIndex = $index) {
           <li class="zone-card" [formGroupName]="zoneIndex">
@@ -169,9 +173,63 @@
               <span class="zone-seat-total">{{ zoneSeatCount(zoneIndex) }} {{ isSeatedTier() ? 'seats' : 'capacity' }}</span>
               <button type="button" class="btn btn-ghost btn-sm delete" [disabled]="zoneHasCommitted(zoneIndex)" (click)="removeZone(zoneIndex)">Remove</button>
             </header>
+            <div class="zone-card-position">
+              <label>
+                Row
+                <input
+                  type="number"
+                  class="zone-row-input"
+                  [attr.min]="0"
+                  [attr.max]="gridRowCount() - 1"
+                  [value]="zone.controls.gridRow.value"
+                  [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                  (input)="onZoneRectInput(zoneIndex, 'gridRow', $event)"
+                  [attr.aria-label]="'Row for zone ' + (zoneIndex + 1)"
+                />
+              </label>
+              <label>
+                Column
+                <input
+                  type="number"
+                  class="zone-col-input"
+                  [attr.min]="0"
+                  [attr.max]="gridColCount() - 1"
+                  [value]="zone.controls.gridCol.value"
+                  [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                  (input)="onZoneRectInput(zoneIndex, 'gridCol', $event)"
+                  [attr.aria-label]="'Column for zone ' + (zoneIndex + 1)"
+                />
+              </label>
+              <label>
+                Rows
+                <input
+                  type="number"
+                  class="zone-row-span-input"
+                  [attr.min]="1"
+                  [attr.max]="gridRowCount()"
+                  [value]="zone.controls.gridRowSpan.value"
+                  [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                  (input)="onZoneRectInput(zoneIndex, 'gridRowSpan', $event)"
+                  [attr.aria-label]="'Row span for zone ' + (zoneIndex + 1)"
+                />
+              </label>
+              <label>
+                Columns
+                <input
+                  type="number"
+                  class="zone-col-span-input"
+                  [attr.min]="1"
+                  [attr.max]="gridColCount()"
+                  [value]="zone.controls.gridColSpan.value"
+                  [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                  (input)="onZoneRectInput(zoneIndex, 'gridColSpan', $event)"
+                  [attr.aria-label]="'Column span for zone ' + (zoneIndex + 1)"
+                />
+              </label>
+            </div>
           </li>
         } @empty {
-          <li class="empty">No zones yet — drag across the map above to draw one.</li>
+          <li class="empty">No zones yet — drag across the map above to draw one, or use "Add zone" for keyboard entry.</li>
         }
       </ul>
     </div>
