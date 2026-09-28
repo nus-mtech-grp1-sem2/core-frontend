@@ -512,6 +512,78 @@ export class EventInventory {
     this.saved.set(false);
   }
 
+  /** Finds the first empty cell (row-major) so "Add zone" always has a valid
+   * place to put a brand-new 1x1 zone without needing a drag gesture. */
+  private firstAvailableCell(): GridCell | null {
+    for (let row = 0; row < this.gridRowCount(); row += 1) {
+      for (let col = 0; col < this.gridColCount(); col += 1) {
+        if (!this.zoneAt(row, col)) return { row, col };
+      }
+    }
+    return null;
+  }
+
+  /** Keyboard/touch-accessible alternative to drawing a zone by dragging:
+   * adds a 1x1 zone at the first empty cell, which the row/column/span
+   * inputs on the new zone card can then reposition and resize. */
+  protected addZone(): void {
+    if (this.locked()) return;
+    if (this.zones.length >= MAX_ZONES) {
+      this.error.set(`You can only have up to ${MAX_ZONES} zones.`);
+      return;
+    }
+    const cell = this.firstAvailableCell();
+    if (!cell) {
+      this.error.set('There is no empty space left on the map — remove a zone or add more rows/columns first.');
+      return;
+    }
+    this.error.set('');
+    const rect: GridRect = { gridRow: cell.row, gridCol: cell.col, gridRowSpan: 1, gridColSpan: 1 };
+    this.zones.push(buildZoneGroup(this.fb, undefined, this.zones.length, rect));
+    this.saved.set(false);
+  }
+
+  /** Keyboard/touch-accessible alternative to dragging a zone's border or
+   * body: typing a new row, column, row span, or column span directly. Each
+   * field is clamped to the grid's current bounds; a value that would make
+   * the zone overlap another one is rejected (the input snaps back to its
+   * previous value) rather than silently corrupting the layout. */
+  protected onZoneRectInput(
+    index: number,
+    field: 'gridRow' | 'gridCol' | 'gridRowSpan' | 'gridColSpan',
+    event: Event,
+  ): void {
+    const input = event.target as HTMLInputElement;
+    if (this.locked() || this.zoneHasCommitted(index)) return;
+    const group = this.zones.at(index) as ZoneGroup | undefined;
+    if (!group) return;
+    const current = this.rectOf(group);
+    const raw = input.valueAsNumber;
+    if (!Number.isFinite(raw)) {
+      input.value = String(current[field]);
+      return;
+    }
+    const minValue = field === 'gridRowSpan' || field === 'gridColSpan' ? 1 : 0;
+    const proposed = { ...current, [field]: Math.max(minValue, Math.round(raw)) };
+    const gridRow = Math.min(proposed.gridRow, this.gridRowCount() - 1);
+    const gridCol = Math.min(proposed.gridCol, this.gridColCount() - 1);
+    const next: GridRect = {
+      gridRow,
+      gridCol,
+      gridRowSpan: Math.min(proposed.gridRowSpan, this.gridRowCount() - gridRow),
+      gridColSpan: Math.min(proposed.gridColSpan, this.gridColCount() - gridCol),
+    };
+
+    if (this.rectOverlapsExistingZone(next, index)) {
+      this.error.set("Zones can't overlap — pick an empty area.");
+      input.value = String(current[field]);
+      return;
+    }
+    this.error.set('');
+    group.patchValue(next);
+    this.saved.set(false);
+  }
+
   protected zoneSeatCount(index: number): number {
     const group = this.zones.at(index) as ZoneGroup | undefined;
     if (!group) return 0;
@@ -720,6 +792,10 @@ function describeSaveError(error: unknown): string {
     }
     if (code === 'zone_has_reservation_history') {
       return "This zone can't be removed — it has past reservation history. Rename or resize it instead of deleting it.";
+    }
+    if (code === 'capacity_below_available_buyers') {
+      const availableBuyers = (error.error as { availableBuyers?: number }).availableBuyers;
+      return `Total capacity must be at least ${availableBuyers} — that many buyers are already allowed for this event.`;
     }
     if (code === 'duplicate_seat_label' || code === 'invalid_inventory_payload') {
       return 'Check that every zone has a name and colour, then try again.';

@@ -75,11 +75,11 @@
   color: var(--text-muted);
 }
 
-/* Placed in the canvas grid's first column/row so it centres over exactly
- * the cell grid below it — not over the cell grid plus the +/- sidebar,
- * which would pull it visibly off-centre whenever that sidebar is present. */
+/* Placed in the canvas grid's cell-grid column so it centres over exactly
+ * the cell grid below it — not over the cell grid plus the row-index/+/-
+ * sidebars, which would pull it visibly off-centre whenever they're present. */
 .stage-bar {
-  grid-column: 1;
+  grid-column: 2;
   grid-row: 1;
   justify-self: center;
   width: min(100%, 18rem);
@@ -96,27 +96,68 @@
 }
 
 /* `align-items: center` (rather than `start`) is what keeps the +/- column
- * control (grid-add-col-bar, row 2) vertically centred against the full
+ * control (grid-add-col-bar, row 3) vertically centred against the full
  * height of the cell grid beside it, instead of pinned to its top edge. */
 .grid-map-canvas {
   display: grid;
-  /* The cell column may shrink below its content so .grid-body scrolls
-   * instead of pushing the whole page sideways. */
-  grid-template-columns: minmax(0, max-content) auto;
+  grid-template-columns: auto minmax(0, max-content) auto;
+  grid-template-rows: auto auto auto auto;
   max-width: 100%;
   min-width: 0;
-  grid-template-rows: auto auto auto;
   gap: 0.375rem;
   align-items: center;
   justify-content: center;
+}
+
+/* Column indexes sit directly above the grid body, one label per column,
+ * sharing its exact cell width/gap so each number lines up with the column
+ * it names — the same index the row/column number inputs expect. */
+.col-index-row {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.col-index-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1rem;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Row indexes sit to the left of the grid body, sharing its exact cell
+ * height/gap so each number lines up with the row it names. */
+.row-index-col {
+  grid-column: 1;
+  grid-row: 3;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.row-index-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Cinema-style seat map: small fixed-size cells that stay compact and
  * centred no matter how wide the page is, instead of stretching to fill
  * the container (which is what made every seat balloon into a big tile). */
 .grid-body {
-  grid-column: 1;
-  grid-row: 2;
+  grid-column: 2;
+  grid-row: 3;
   display: grid;
   gap: 0.25rem;
   user-select: none;
@@ -130,8 +171,8 @@
 }
 
 .grid-add-col-bar {
-  grid-column: 2;
-  grid-row: 2;
+  grid-column: 3;
+  grid-row: 3;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -140,8 +181,8 @@
 }
 
 .grid-add-row-bar {
-  grid-column: 1;
-  grid-row: 3;
+  grid-column: 2;
+  grid-row: 4;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -439,6 +480,11 @@
   gap: 1rem;
 }
 
+.zone-list-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .zone-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -448,8 +494,91 @@
   transition: box-shadow 0.15s ease;
 }
 
+.zone-card-position {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.position-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.875rem;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+  box-shadow: var(--shadow-sm);
+}
+
+.position-group-label {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-right: 0.875rem;
+  border-right: 1px solid var(--border);
+}
+
+.position-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.875rem;
+}
+
+.position-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+}
+
+.position-field-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.position-field input {
+  width: 2.75rem;
+  padding: 0.25rem 0.375rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.position-field input:focus {
+  outline: none;
+  border-color: var(--brand-600);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-600) 18%, transparent);
+}
+
+.position-field input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .zone-card:hover {
   box-shadow: var(--shadow-md, 0 10px 24px -12px rgb(0 0 0 / 0.35));
+}
+
+.zone-card.has-error {
+  border-color: #b42318;
+  box-shadow: 0 0 0 2px rgb(180 35 24 / 0.25);
+}
+
+.zone-card.has-error .zone-card-head {
+  background: linear-gradient(180deg, #fee4e2, var(--bg));
 }
 
 .zone-card-head {
@@ -505,11 +634,14 @@
   border-bottom: 1px solid var(--brand-600);
 }
 
-.zone-code-badge {
-  font-size: 0.6875rem;
+.zone-name-input.invalid {
+  border-bottom: 1px solid #b42318;
+}
+
+.zone-name-error {
+  font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
+  color: #b42318;
 }
 
 .zone-price {

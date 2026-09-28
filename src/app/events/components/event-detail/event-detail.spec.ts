@@ -40,6 +40,12 @@ describe('EventDetail checkout navigation', () => {
         if (path === '/helper/shifts') return of({ events: [] });
         if (path === '/customers/me/orders') return of({ orders: [] });
         if (path === '/customers/me/tickets') return of({ tickets: [] });
+        if (path === '/events/172/zones')
+          return of({
+            zones: [
+              { inventoryItemId: 5, name: 'General Admission', priceCents: 2000, color: '#000', remaining: 10 },
+            ],
+          });
         if (path === '/events/172/seats')
           return of({
             gridRows: 1,
@@ -125,6 +131,7 @@ describe('EventDetail checkout navigation', () => {
         quantity: 1,
         seatIds: tier === 'TIER2_SEATED' ? [8] : undefined,
         admissionToken: tier === 'TIER2_SEATED' ? 'test-admission' : undefined,
+        inventoryItemId: tier === 'TIER1_GA' ? 5 : undefined,
         customerEmail: 'test@example.com',
         customerName: 'Test',
       });
@@ -245,6 +252,64 @@ describe('EventDetail seat map sizing', () => {
     // The grid must sit inside a container that can scroll instead of
     // visually spilling out of the purchase panel's rounded border.
     expect(seatGrid?.closest('.seat-map')).not.toBeNull();
+  });
+});
+
+describe('EventDetail inventory summary', () => {
+  it('counts a GA zone\'s seats and sales from the zone itself, not the empty per-seat list', async () => {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172')
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner',
+            title: 'Test event',
+            description: '',
+            venue: 'Test Hall',
+            starts_at: '2099-01-01 20:00:00',
+            total_seats: 6,
+            available_buyers: 2,
+            tier: 'TIER1_GA',
+            status: 'PUBLISHED',
+            price_cents: 2000,
+          },
+        });
+      if (path === '/events/172/team-members') return of({ members: [] });
+      if (path === '/events/172/inventory')
+        // Matches the real inventory service response for a GA zone with a
+        // sale: no per-seat rows exist, so seatCount/soldCount come from the
+        // zone's own counters rather than `seats`.
+        return of({
+          zones: [{ inventoryItemId: 1, seatCount: 6, soldCount: 1 }],
+          seats: [],
+        });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'organiser' } } } },
+        { provide: ApiService, useValue: { get, post: vi.fn(), url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => true,
+            user: signal({ sub: 'owner', email: 'owner@example.com', name: 'Owner', groups: [] }),
+          },
+        },
+        { provide: QueueService, useValue: { status: vi.fn(), admissionTokenFor: () => null, clear: vi.fn() } },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('1 zone · 6 seats, 1 sold');
   });
 });
 
@@ -845,5 +910,137 @@ describe('EventDetail completed events for a customer', () => {
     const error = new HttpErrorResponse({ status: 409, error: { error: 'event_completed' } });
 
     expect(purchaseErrorMessage(error)).toContain('already taken place');
+  });
+});
+
+describe('EventDetail GA ticket tiers', () => {
+  async function renderWithZones(zones: readonly {
+    inventoryItemId: number;
+    name: string;
+    priceCents: number;
+    color: string;
+    remaining: number;
+  }[]) {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172')
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner',
+            title: 'Test event',
+            description: '',
+            venue: 'Test Hall',
+            starts_at: '2099-01-01 20:00:00',
+            total_seats: 28,
+            available_buyers: 2,
+            tier: 'TIER1_GA',
+            status: 'PUBLISHED',
+            price_cents: 2000,
+          },
+        });
+      if (path === '/helper/shifts') return of({ events: [] });
+      if (path === '/customers/me/orders') return of({ orders: [] });
+      if (path === '/customers/me/tickets') return of({ tickets: [] });
+      if (path === '/events/172/zones') return of({ zones });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+    const post = vi.fn(() => of({ order: { order_id: 42 } }));
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
+        { provide: ApiService, useValue: { get, post, url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => true,
+            user: signal({ sub: 'customer', email: 'test@example.com', name: 'Test', groups: [] }),
+          },
+        },
+        { provide: QueueService, useValue: { status: vi.fn(), admissionTokenFor: () => null, clear: vi.fn() } },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    return { host: fixture.nativeElement as HTMLElement, fixture, post };
+  }
+
+  // Reproduces the reported bug: a 20-seat "Blue" tier (sold out) and an
+  // 8-seat "Red" tier (still available). Buying ticket 21+ must not just
+  // 409 because the cheapest/first-created zone is full.
+  const blue = { inventoryItemId: 1, name: 'Blue', priceCents: 2000, color: '#2563EB', remaining: 0 };
+  const red = { inventoryItemId: 2, name: 'Red', priceCents: 5000, color: '#DC2626', remaining: 8 };
+
+  it('shows no tier picker for a single-zone event, and buys that zone without asking', async () => {
+    const { host, post } = await renderWithZones([
+      { inventoryItemId: 9, name: 'General Admission', priceCents: 2000, color: '#000', remaining: 28 },
+    ]);
+
+    expect(host.querySelector('.zone-picker')).toBeNull();
+
+    const buy = Array.from(host.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Buy tickets',
+    );
+    buy!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      'order',
+      '/orders',
+      expect.objectContaining({ inventoryItemId: 9 }),
+    );
+  });
+
+  it('auto-selects the cheapest zone with capacity, skipping a sold-out cheaper one', async () => {
+    const { host, post } = await renderWithZones([blue, red]);
+
+    const picker = host.querySelector('.zone-picker');
+    expect(picker).not.toBeNull();
+    const redRadio = Array.from(host.querySelectorAll<HTMLInputElement>('.zone-option input'))
+      .find((input) => input.value === '2');
+    expect(redRadio?.checked).toBe(true);
+    const blueRadio = Array.from(host.querySelectorAll<HTMLInputElement>('.zone-option input'))
+      .find((input) => input.value === '1');
+    expect(blueRadio?.disabled).toBe(true);
+
+    const buy = Array.from(host.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Buy tickets',
+    );
+    buy!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      'order',
+      '/orders',
+      expect.objectContaining({ inventoryItemId: 2 }),
+    );
+  });
+
+  it('lets a customer pick a pricier tier even when a cheaper one still has room', async () => {
+    const roomyBlue = { ...blue, remaining: 5 };
+    const { host, post, fixture } = await renderWithZones([roomyBlue, red]);
+
+    const redOption = Array.from(host.querySelectorAll<HTMLElement>('.zone-option')).find((el) =>
+      el.textContent?.includes('Red'),
+    );
+    redOption!.querySelector('input')!.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    const buy = Array.from(host.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Buy tickets',
+    );
+    buy!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      'order',
+      '/orders',
+      expect.objectContaining({ inventoryItemId: 2 }),
+    );
   });
 });

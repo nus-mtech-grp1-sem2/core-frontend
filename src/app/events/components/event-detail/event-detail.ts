@@ -103,6 +103,21 @@ interface OrderResponse {
   readonly order: { readonly order_id: number };
 }
 
+/** A GA event's ticket tiers, e.g. cheaper "General Admission" alongside a
+ * pricier "VIP" zone — see `GET /events/:eventId/zones` in the inventory
+ * service. */
+interface ZoneOption {
+  readonly inventoryItemId: number;
+  readonly name: string;
+  readonly priceCents: number;
+  readonly color: string;
+  readonly remaining: number;
+}
+
+interface ZonesResponse {
+  readonly zones: readonly ZoneOption[];
+}
+
 interface ZoneSummary {
   readonly seatCount: number;
   readonly soldCount: number;
@@ -205,6 +220,15 @@ export class EventDetail {
   });
   protected readonly quantity = signal(1);
   protected readonly selectedSeatIds = signal<readonly number[]>([]);
+  protected readonly zoneOptions = signal<readonly ZoneOption[]>([]);
+  protected readonly selectedZoneId = signal<number | null>(null);
+  /** A single-zone GA event needs no picker — the order service already
+   * defaults to that zone. Only show a choice once there's actually a
+   * choice to make, cheapest-tier-first like an airline fare table. */
+  protected readonly sortedZoneOptions = computed(() =>
+    [...this.zoneOptions()].sort((a, b) => a.priceCents - b.priceCents),
+  );
+  protected readonly hasZoneChoice = computed(() => this.zoneOptions().length > 1);
   protected readonly purchasing = signal(false);
   protected readonly purchaseError = signal('');
   protected readonly queueAccess = signal<QueueAccess>('checking');
@@ -578,6 +602,11 @@ export class EventDetail {
     });
   }
 
+  protected selectZone(zone: ZoneOption): void {
+    if (zone.remaining <= 0) return;
+    this.selectedZoneId.set(zone.inventoryItemId);
+  }
+
   protected goToQueue(): void {
     if (this.completed()) return;
     void this.router.navigate(['/events', this.id(), 'queue']);
@@ -633,6 +662,8 @@ export class EventDetail {
             event.tier === 'TIER2_SEATED'
               ? this.queue.admissionTokenFor(event.event_id)
               : undefined,
+          inventoryItemId:
+            event.tier === 'TIER1_GA' ? (this.selectedZoneId() ?? undefined) : undefined,
           customerEmail: this.auth.user()?.email ?? '',
           customerName: this.auth.user()?.name ?? '',
         }),
@@ -734,6 +765,7 @@ export class EventDetail {
   private async loadCustomerPurchaseState(event: EventDetailData): Promise<void> {
     if (!this.customerMode) return;
     if (this.auth.isAuthenticated()) await this.loadOwnership(event.event_id);
+    if (event.tier === 'TIER1_GA' && !this.completed()) await this.loadZones(event.event_id);
     if (event.tier !== 'TIER2_SEATED' || this.completed()) return;
     if (this.auth.isAuthenticated()) await this.loadQueueAccess(event.event_id);
     else this.queueAccess.set('not-joined');
@@ -759,7 +791,9 @@ export class EventDetail {
       );
       this.inventorySummary.set({
         zoneCount: result.zones.length,
-        totalSeats: result.seats.length,
+        // TIER1_GA zones have no per-seat rows, so `seats.length` is always 0 for
+        // them — total seats must come from each zone's own seatCount instead.
+        totalSeats: result.zones.reduce((sum, zone) => sum + Number(zone.seatCount), 0),
         // `sold_count` is a MySQL SUM()/COALESCE() aggregate, which mysql2 returns
         // as a string — without Number(), `sum + zone.soldCount` silently degrades
         // into string concatenation (e.g. "0" + "2" + "0" -> "020" instead of 2).
@@ -784,6 +818,25 @@ export class EventDetail {
       this.checkinStats.set(result);
     } catch {
       this.checkinStats.set(null);
+    }
+  }
+
+  /** Ticket tiers for a GA event. Auto-selects the cheapest one that still
+   * has capacity, so checkout never blocks a customer just because a
+   * cheaper tier sold out — they can still see and pick a pricier one. */
+  private async loadZones(eventId: number): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.api.get<ZonesResponse>('inventory', `/events/${eventId}/zones`),
+      );
+      this.zoneOptions.set(result.zones);
+      const cheapestAvailable = [...result.zones]
+        .sort((a, b) => a.priceCents - b.priceCents)
+        .find((zone) => zone.remaining > 0);
+      this.selectedZoneId.set(cheapestAvailable?.inventoryItemId ?? null);
+    } catch {
+      this.zoneOptions.set([]);
+      this.selectedZoneId.set(null);
     }
   }
 

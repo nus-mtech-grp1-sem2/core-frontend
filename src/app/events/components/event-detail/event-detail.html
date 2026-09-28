@@ -118,6 +118,27 @@
       </button>
     </div>
     }
+    @if (event.tier === 'TIER1_GA' && hasZoneChoice()) {
+    <fieldset class="zone-picker">
+      <legend>Choose a ticket type</legend>
+      @for (zone of sortedZoneOptions(); track zone.inventoryItemId) {
+      <label class="zone-option" [class.sold-out]="zone.remaining <= 0">
+        <input
+          type="radio"
+          name="zone"
+          [value]="zone.inventoryItemId"
+          [checked]="selectedZoneId() === zone.inventoryItemId"
+          [disabled]="zone.remaining <= 0"
+          (change)="selectZone(zone)"
+        />
+        <span class="zone-swatch" [style.background]="zone.color"></span>
+        <span class="zone-name">{{ zone.name }}</span>
+        <span class="zone-price">{{ priceLabel(zone.priceCents) }}</span>
+        <span class="zone-remaining">{{ zone.remaining <= 0 ? 'Sold out' : zone.remaining + ' left' }}</span>
+      </label>
+      }
+    </fieldset>
+    }
     <div class="field">
       <label for="quantity">Quantity</label>
       <input
