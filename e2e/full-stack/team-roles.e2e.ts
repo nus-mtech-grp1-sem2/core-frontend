@@ -40,7 +40,6 @@ test('the owner is on the roster with no actions on their own row', async ({ bro
   eventId = await createPublishedGaEvent(page.request, `E2E Team Roles ${runId}`, 5);
 
   await page.goto(`/organiser/events/${eventId}`);
-  // The owner's membership row is created with no email, so the roster knows them by name only.
   const own = ownerRow(page);
   await expect(own).toContainText('E2E Organiser');
   await expect(own).toContainText('Organizer · accepted');
@@ -194,10 +193,6 @@ test('removing a helper takes them off the team and takes away their access', as
 });
 
 test('the owner is listed with their email like everyone else', async ({ browser }) => {
-  test.fail(
-    true,
-    'Known bug (backend-repo#88): the owner\'s membership row is created with an empty email, so the roster shows "E2E Organiser — " with nothing after the dash',
-  );
   const page = await signedInPage(browser, 'organiser');
   await page.goto(`/organiser/events/${eventId}`);
 
