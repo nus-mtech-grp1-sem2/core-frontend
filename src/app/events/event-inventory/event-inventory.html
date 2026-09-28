@@ -34,6 +34,16 @@
         <p class="grid-map-title">Drag across empty cells to draw a new zone. Use the + bars to grow the map.</p>
         <div class="grid-map-canvas">
           <div class="stage-bar">Stage</div>
+          <div class="col-index-row" [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'" aria-hidden="true">
+            @for (col of gridCols(); track col) {
+              <span class="col-index-label">{{ col }}</span>
+            }
+          </div>
+          <div class="row-index-col" [style.grid-template-rows]="'repeat(' + gridRows().length + ', 1.75rem)'" aria-hidden="true">
+            @for (row of gridRows(); track row) {
+              <span class="row-index-label">{{ row }}</span>
+            }
+          </div>
           <div
             class="grid-body"
             [style.grid-template-rows]="'repeat(' + gridRows().length + ', 1.75rem)'"
@@ -157,14 +167,25 @@
       </div>
       <ul class="zone-list" [formArray]="zones">
         @for (zone of zones.controls; track zone; let zoneIndex = $index) {
-          <li class="zone-card" [formGroupName]="zoneIndex">
+          <li class="zone-card" [class.has-error]="zone.controls.name.invalid && zone.controls.name.touched" [formGroupName]="zoneIndex">
             <header class="zone-card-head">
               <span class="zone-swatch-picker">
                 <input type="color" formControlName="color" aria-label="Zone colour" />
               </span>
               <div class="zone-card-titles">
-                <input class="zone-name-input" type="text" formControlName="name" placeholder="e.g. Front Stalls" aria-label="Zone name" />
-                <span class="zone-code-badge">{{ zone.controls.code.value ? '#' + zone.controls.code.value : 'code auto-generated on save' }}</span>
+                <input
+                  class="zone-name-input"
+                  type="text"
+                  formControlName="name"
+                  placeholder="Zone name"
+                  aria-label="Zone name"
+                  [class.invalid]="zone.controls.name.invalid && zone.controls.name.touched"
+                  [attr.aria-invalid]="zone.controls.name.invalid && zone.controls.name.touched ? true : null"
+                  [attr.aria-describedby]="zone.controls.name.invalid && zone.controls.name.touched ? 'zone-name-error-' + zoneIndex : null"
+                />
+                @if (zone.controls.name.invalid && zone.controls.name.touched) {
+                  <span class="zone-name-error" [id]="'zone-name-error-' + zoneIndex" role="alert">Please enter a zone name.</span>
+                }
               </div>
               <label class="zone-price">
                 <span class="currency">$</span>
@@ -174,58 +195,68 @@
               <button type="button" class="btn btn-ghost btn-sm delete" [disabled]="zoneHasCommitted(zoneIndex)" (click)="removeZone(zoneIndex)">Remove</button>
             </header>
             <div class="zone-card-position">
-              <label>
-                Row
-                <input
-                  type="number"
-                  class="zone-row-input"
-                  [attr.min]="0"
-                  [attr.max]="gridRowCount() - 1"
-                  [value]="zone.controls.gridRow.value"
-                  [disabled]="locked() || zoneHasCommitted(zoneIndex)"
-                  (input)="onZoneRectInput(zoneIndex, 'gridRow', $event)"
-                  [attr.aria-label]="'Row for zone ' + (zoneIndex + 1)"
-                />
-              </label>
-              <label>
-                Column
-                <input
-                  type="number"
-                  class="zone-col-input"
-                  [attr.min]="0"
-                  [attr.max]="gridColCount() - 1"
-                  [value]="zone.controls.gridCol.value"
-                  [disabled]="locked() || zoneHasCommitted(zoneIndex)"
-                  (input)="onZoneRectInput(zoneIndex, 'gridCol', $event)"
-                  [attr.aria-label]="'Column for zone ' + (zoneIndex + 1)"
-                />
-              </label>
-              <label>
-                Rows
-                <input
-                  type="number"
-                  class="zone-row-span-input"
-                  [attr.min]="1"
-                  [attr.max]="gridRowCount()"
-                  [value]="zone.controls.gridRowSpan.value"
-                  [disabled]="locked() || zoneHasCommitted(zoneIndex)"
-                  (input)="onZoneRectInput(zoneIndex, 'gridRowSpan', $event)"
-                  [attr.aria-label]="'Row span for zone ' + (zoneIndex + 1)"
-                />
-              </label>
-              <label>
-                Columns
-                <input
-                  type="number"
-                  class="zone-col-span-input"
-                  [attr.min]="1"
-                  [attr.max]="gridColCount()"
-                  [value]="zone.controls.gridColSpan.value"
-                  [disabled]="locked() || zoneHasCommitted(zoneIndex)"
-                  (input)="onZoneRectInput(zoneIndex, 'gridColSpan', $event)"
-                  [attr.aria-label]="'Column span for zone ' + (zoneIndex + 1)"
-                />
-              </label>
+              <div class="position-group" role="group" aria-label="Starting position">
+                <span class="position-group-label">Starts at</span>
+                <div class="position-fields">
+                  <label class="position-field">
+                    <span class="position-field-label">Row index</span>
+                    <input
+                      type="number"
+                      class="zone-row-input"
+                      [attr.min]="0"
+                      [attr.max]="gridRowCount() - 1"
+                      [value]="zone.controls.gridRow.value"
+                      [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                      (input)="onZoneRectInput(zoneIndex, 'gridRow', $event)"
+                      [attr.aria-label]="'Starting row index for zone ' + (zoneIndex + 1)"
+                    />
+                  </label>
+                  <label class="position-field">
+                    <span class="position-field-label">Column index</span>
+                    <input
+                      type="number"
+                      class="zone-col-input"
+                      [attr.min]="0"
+                      [attr.max]="gridColCount() - 1"
+                      [value]="zone.controls.gridCol.value"
+                      [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                      (input)="onZoneRectInput(zoneIndex, 'gridCol', $event)"
+                      [attr.aria-label]="'Starting column index for zone ' + (zoneIndex + 1)"
+                    />
+                  </label>
+                </div>
+              </div>
+              <div class="position-group" role="group" aria-label="Zone size">
+                <span class="position-group-label">Size</span>
+                <div class="position-fields">
+                  <label class="position-field">
+                    <span class="position-field-label">Rows tall</span>
+                    <input
+                      type="number"
+                      class="zone-row-span-input"
+                      [attr.min]="1"
+                      [attr.max]="gridRowCount()"
+                      [value]="zone.controls.gridRowSpan.value"
+                      [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                      (input)="onZoneRectInput(zoneIndex, 'gridRowSpan', $event)"
+                      [attr.aria-label]="'Row span for zone ' + (zoneIndex + 1)"
+                    />
+                  </label>
+                  <label class="position-field">
+                    <span class="position-field-label">Columns wide</span>
+                    <input
+                      type="number"
+                      class="zone-col-span-input"
+                      [attr.min]="1"
+                      [attr.max]="gridColCount()"
+                      [value]="zone.controls.gridColSpan.value"
+                      [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                      (input)="onZoneRectInput(zoneIndex, 'gridColSpan', $event)"
+                      [attr.aria-label]="'Column span for zone ' + (zoneIndex + 1)"
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
           </li>
         } @empty {

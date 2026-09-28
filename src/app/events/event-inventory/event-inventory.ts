@@ -98,7 +98,6 @@ function buildZoneGroup(fb: NonNullableFormBuilder, zone?: ZoneDto, colorIndex =
   const bounds: GridRect = zone ?? rect ?? { gridRow: 0, gridCol: 0, gridRowSpan: 1, gridColSpan: 1 };
   return fb.group({
     inventoryItemId: fb.control<number | null>(zone?.inventoryItemId ?? null),
-    code: fb.control({ value: zone?.code ?? '', disabled: true }),
     name: fb.control(zone?.name ?? '', Validators.required),
     price: fb.control((zone?.priceCents ?? 0) / 100, [Validators.required, Validators.min(0)]),
     color: fb.control(zone?.color ?? defaultColorFor(colorIndex), [Validators.required, Validators.pattern(/^#[0-9A-Fa-f]{6}$/)]),
