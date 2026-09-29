@@ -113,11 +113,10 @@ export async function setAvailableBuyers(
 export async function publishEvent(page: Page, title: string): Promise<void> {
   await page.goto('/organiser/events');
   const card = page.getByRole('listitem').filter({ hasText: title });
-  // Publishing asks for confirmation; Playwright dismisses dialogs unless one is accepted.
-  page.once('dialog', async (dialog) => {
-    expect(dialog.message()).toContain('publish this event');
-    await dialog.accept();
-  });
+  // Publishing asks for confirmation in the app's own dialog.
   await card.getByRole('button', { name: 'Publish' }).click();
+  const confirmation = page.getByRole('dialog');
+  await expect(confirmation).toContainText('publish this event');
+  await confirmation.getByRole('button', { name: 'Yes, publish' }).click();
   await expect(card).toContainText('On sale');
 }

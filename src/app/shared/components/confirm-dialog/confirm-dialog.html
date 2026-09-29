@@ -1,0 +1,28 @@
+<dialog
+  #dialog
+  class="confirm-dialog"
+  [class.confirm-dialog--positive]="positive()"
+  aria-labelledby="confirm-dialog-title"
+  aria-describedby="confirm-dialog-message"
+  (cancel)="dismissed($event)"
+>
+  @if (confirmDialog.pending(); as pending) {
+    <div class="confirm-dialog__header">
+      <span class="confirm-dialog__icon" aria-hidden="true">{{ positive() ? '?' : '!' }}</span>
+      <h2 id="confirm-dialog-title" class="confirm-dialog__title">{{ pending.options.title }}</h2>
+    </div>
+    <div id="confirm-dialog-message" class="confirm-dialog__message">
+      @for (paragraph of pending.options.message; track $index) {
+        <p>{{ paragraph }}</p>
+      }
+    </div>
+    <div class="confirm-dialog__actions">
+      <button #decline type="button" class="confirm-dialog__button confirm-dialog__button--decline" (click)="answer(false)">
+        {{ pending.options.cancelLabel }}
+      </button>
+      <button type="button" class="confirm-dialog__button confirm-dialog__button--confirm" (click)="answer(true)">
+        {{ pending.options.confirmLabel }}
+      </button>
+    </div>
+  }
+</dialog>

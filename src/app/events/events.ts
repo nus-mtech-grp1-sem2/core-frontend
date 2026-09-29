@@ -16,6 +16,8 @@ import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom, map, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
+import { cancelEventWithConfirmation } from './event-cancellation';
+import { ConfirmDialogService } from '../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../core/auth';
 import { isCompleted } from '../core/event-time';
 import { hasSubmittedPayment } from '../core/payment-processing';
@@ -102,6 +104,7 @@ interface CustomerOrdersResponse {
 export class Events {
   private readonly auth = inject(AuthService);
   private readonly api = inject(ApiService);
+  private readonly confirmDialog = inject(ConfirmDialogService);
   private readonly queue = inject(QueueService);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly route = inject(ActivatedRoute);
@@ -291,11 +294,23 @@ export class Events {
   }
 
   protected async publishEvent(eventId: number): Promise<void> {
-    if (!window.confirm('Are you sure you want to publish this event?')) return;
+    const confirmed = await this.confirmDialog.ask({
+      title: 'Publish this event?',
+      message: ['Are you sure you want to publish this event?', 'It will go on sale to customers.'],
+      confirmLabel: 'Yes, publish',
+      cancelLabel: 'No',
+      tone: 'positive',
+    });
+    if (!confirmed) return;
     await this.performAction(`/events/${eventId}/publish`);
   }
   protected async cancelEvent(eventId: number): Promise<void> {
-    await this.performAction(`/events/${eventId}/cancel`);
+    try {
+      if (!(await cancelEventWithConfirmation(this.api, eventId, (options) => this.confirmDialog.ask(options)))) return;
+      await this.loadEvents(this.isAdmin());
+    } catch (error) {
+      this.error.set(describeEventError(error, 'cancel the event'));
+    }
   }
   protected async deleteEvent(eventId: number): Promise<void> {
     if (!window.confirm('Delete this draft event? This cannot be undone.')) return;

@@ -75,6 +75,9 @@ function stubEvent(
       },
     })
     .on('GET', `ticket/events/${EVENT_ID}/checkin-stats`, { json: { checkedIn: 1, issued: 2 } })
+    .on('GET', `event/events/${EVENT_ID}/cancellation-impact`, {
+      json: { eventId: EVENT_ID, customers: 0, ticketsSold: 0, requiresConfirmation: false },
+    })
     .on('GET', 'event/events/manage', () => ({ json: { events: [state.event] } }));
   return state;
 }
@@ -90,6 +93,8 @@ function answerNext(page: Page, accept: boolean) {
 }
 
 const management = (page: Page) => page.getByRole('region', { name: 'Event management' });
+/** The app's own confirmation dialog, used in place of window.confirm for cancelling an event. */
+const confirmation = (page: Page) => page.getByRole('dialog');
 const row = (page: Page, email: string) => page.getByRole('listitem').filter({ hasText: email });
 
 test.beforeEach(async ({ page }) => {
@@ -289,23 +294,32 @@ test.describe('an event moving through its life', () => {
     await expect(page.getByText('1 zone · 4 seats, 2 sold')).toBeVisible();
     await expect(page.getByText('1 of 2 checked in')).toBeVisible();
 
-    answerNext(page, false);
-    await page.getByRole('button', { name: 'Cancel event' }).click();
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await expect(confirmation(page).getByRole('heading')).toHaveText('Cancel this event?');
+    await confirmation(page).getByRole('button', { name: 'No, keep event' }).click();
+    await expect(confirmation(page)).toBeHidden();
     expect(api.requests('POST', `event/events/${EVENT_ID}/cancel`)).toHaveLength(0);
 
-    answerNext(page, true);
-    await page.getByRole('button', { name: 'Cancel event' }).click();
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'Yes, cancel event' }).click();
     await expect(page.getByRole('button', { name: 'Re-publish event' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Cancel event' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Cancel event', exact: true })).toHaveCount(0);
 
-    answerNext(page, true);
     await page.getByRole('button', { name: 'Re-publish event' }).click();
-    await expect(page.getByRole('button', { name: 'Cancel event' })).toBeVisible();
-    expect(dialogs).toEqual([
-      'Are you sure you want to cancel this event?',
-      'Are you sure you want to cancel this event?',
-      'Are you sure you want to enable this event and put it back on sale?',
-    ]);
+    await expect(confirmation(page).getByRole('heading')).toHaveText('Re-publish this event?');
+    await expect(confirmation(page)).toContainText('Are you sure you want to enable this event and put it back on sale?');
+    // Going ahead is the positive choice here, so Yes is green and No is red.
+    await expect(confirmation(page).getByRole('button', { name: 'Yes, re-publish' })).toHaveCSS(
+      'background-color',
+      'rgb(21, 128, 61)',
+    );
+    await expect(confirmation(page).getByRole('button', { name: 'No' })).toHaveCSS(
+      'background-color',
+      'rgb(198, 40, 40)',
+    );
+    await confirmation(page).getByRole('button', { name: 'Yes, re-publish' }).click();
+    await expect(page.getByRole('button', { name: 'Cancel event', exact: true })).toBeVisible();
+    expect(dialogs).toEqual([]);
   });
 
   test('a failed cancellation is reported and the event stays as it was', async ({ page, api }) => {
@@ -313,13 +327,43 @@ test.describe('an event moving through its life', () => {
     api.on('POST', `event/events/${EVENT_ID}/cancel`, { status: 500, json: { error: 'boom' } });
     await page.goto(`/organiser/events/${EVENT_ID}`);
 
-    answerNext(page, true);
-    await page.getByRole('button', { name: 'Cancel event' }).click();
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'Yes, cancel event' }).click();
 
     await expect(management(page).getByRole('alert')).toContainText(
       'Unable to cancel this event. Please try again.',
     );
     await expect(page.getByRole('button', { name: 'Cancel event' })).toBeVisible();
+  });
+
+  test('cancelling once customers have bought tickets warns about them first', async ({ page, api }) => {
+    const state = stubEvent(api, { status: 'PUBLISHED' });
+    api
+      .on('GET', `event/events/${EVENT_ID}/cancellation-impact`, {
+        json: { eventId: EVENT_ID, customers: 2, ticketsSold: 3, requiresConfirmation: true },
+      })
+      .on('POST', `event/events/${EVENT_ID}/cancel`, () => {
+        state.event = { ...state.event, status: 'CANCELLED' };
+        return { status: 204 };
+      });
+    await page.goto(`/organiser/events/${EVENT_ID}`);
+
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    const dialog = confirmation(page);
+    await expect(dialog.getByRole('heading')).toHaveText('Customers have bought tickets');
+    await expect(dialog).toContainText('2 customers have already purchased 3 tickets for this event.');
+    await expect(dialog).toContainText('void their tickets and email them');
+    // The safe choice is focused, so pressing Escape or Enter never cancels by accident.
+    await expect(dialog.getByRole('button', { name: 'No, keep event' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    expect(api.requests('POST', `event/events/${EVENT_ID}/cancel`)).toHaveLength(0);
+
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Yes, cancel event' }).click();
+    await expect(page.getByRole('button', { name: 'Re-publish event' })).toBeVisible();
+    const cancels = api.requests('POST', `event/events/${EVENT_ID}/cancel`);
+    expect(cancels.map((request) => request.postDataJSON())).toEqual([{ confirm: true }]);
   });
 
   test('completed: everything is read-only', async ({ page, api }) => {
