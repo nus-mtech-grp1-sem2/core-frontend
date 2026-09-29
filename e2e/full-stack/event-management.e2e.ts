@@ -340,8 +340,8 @@ test.describe('an event through its life', () => {
     const page = await signedInPage(browser, 'organiser');
     await page.goto('/organiser/events');
     const card = page.getByRole('listitem').filter({ hasText: renamed });
-    page.once('dialog', (dialog) => void dialog.accept());
     await card.getByRole('button', { name: 'Publish' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Yes, publish' }).click();
 
     await expect(page.getByRole('alert')).toContainText('Configure inventory before publishing');
     await expect(card).not.toContainText('On sale');
@@ -441,8 +441,8 @@ test.describe('an event through its life', () => {
     await expect(page.getByRole('button', { name: 'Save inventory' })).toBeDisabled();
 
     await page.goto(`/organiser/events/${eventId}`);
-    page.once('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: 'Re-publish event' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Yes, re-publish' }).click();
     await expect(page.getByRole('button', { name: 'Cancel event' })).toBeVisible();
     expect(await publicTitles(page)).toContain(renamed);
     await page.context().close();

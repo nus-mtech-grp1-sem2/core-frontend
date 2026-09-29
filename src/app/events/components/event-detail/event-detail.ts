@@ -16,6 +16,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom, timer } from 'rxjs';
 
 import { ApiService } from '../../../core/api';
+import { cancelEventWithConfirmation } from '../../event-cancellation';
+import { ConfirmDialogService } from '../../../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../../../core/auth';
 import { isCompleted } from '../../../core/event-time';
 import { QueueService, QueueStatus } from '../../../core/queue';
@@ -191,6 +193,7 @@ interface AdmissionResponse {
 })
 export class EventDetail {
   private readonly api = inject(ApiService);
+  private readonly confirmDialog = inject(ConfirmDialogService);
   private readonly auth = inject(AuthService);
   private readonly queue = inject(QueueService);
   private readonly destroyRef = inject(DestroyRef);
@@ -428,15 +431,26 @@ export class EventDetail {
     const event = this.event();
     if (!event || this.readOnly() || this.updatingStatus()) return;
     const enabling = status === 'PUBLISHED';
-    const action = enabling ? 'enable this event and put it back on sale' : 'cancel this event';
-    if (!window.confirm(`Are you sure you want to ${action}?`)) return;
+    if (
+      enabling &&
+      !(await this.confirmDialog.ask({
+        title: 'Re-publish this event?',
+        message: ['Are you sure you want to enable this event and put it back on sale?'],
+        confirmLabel: 'Yes, re-publish',
+        cancelLabel: 'No',
+        tone: 'positive',
+      }))
+    )
+      return;
 
     this.updatingStatus.set(true);
     this.error.set('');
     try {
-      await firstValueFrom(
-        this.api.post('event', `/events/${event.event_id}/${enabling ? 'publish' : 'cancel'}`, {}),
-      );
+      if (enabling) {
+        await firstValueFrom(this.api.post('event', `/events/${event.event_id}/publish`, {}));
+      } else if (!(await cancelEventWithConfirmation(this.api, event.event_id, (options) => this.confirmDialog.ask(options)))) {
+        return;
+      }
       await this.load(event.event_id);
     } catch (error) {
       this.error.set(describeError(error, enabling ? 'enable this event' : 'cancel this event'));
