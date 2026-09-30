@@ -1,11 +1,14 @@
 <ul class="stats" [class.four-columns]="items().length === 4">
   @for (item of items(); track item.label) {
-  <li>
-    <span class="stat-value">
-      @if (item.currency) { {{ item.value | currency: 'SGD' : 'S$' : '1.0-0' }} } @else { {{
-      item.value }} }
-    </span>
-    <span class="stat-label">{{ item.label }}</span>
-  </li>
+    <li>
+      <span class="stat-value">
+        @if (item.currency) {
+          {{ item.value | currency: 'SGD' : 'S$' : '1.0-0' }}
+        } @else {
+          {{ item.value }}
+        }
+      </span>
+      <span class="stat-label">{{ item.label }}</span>
+    </li>
   }
 </ul>

@@ -17,10 +17,19 @@
       }
     </div>
     <div class="confirm-dialog__actions">
-      <button #decline type="button" class="confirm-dialog__button confirm-dialog__button--decline" (click)="answer(false)">
+      <button
+        #decline
+        type="button"
+        class="confirm-dialog__button confirm-dialog__button--decline"
+        (click)="answer(false)"
+      >
         {{ pending.options.cancelLabel }}
       </button>
-      <button type="button" class="confirm-dialog__button confirm-dialog__button--confirm" (click)="answer(true)">
+      <button
+        type="button"
+        class="confirm-dialog__button confirm-dialog__button--confirm"
+        (click)="answer(true)"
+      >
         {{ pending.options.confirmLabel }}
       </button>
     </div>

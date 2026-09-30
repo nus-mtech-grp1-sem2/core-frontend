@@ -22,7 +22,9 @@ export class ConfirmDialog {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly decline = viewChild<ElementRef<HTMLButtonElement>>('decline');
   /** A positive action swaps the colours: going ahead is green and backing out is red. */
-  protected readonly positive = computed(() => this.confirmDialog.pending()?.options.tone === 'positive');
+  protected readonly positive = computed(
+    () => this.confirmDialog.pending()?.options.tone === 'positive',
+  );
 
   constructor() {
     // After render, so the buttons of a newly asked question exist before focus moves to them.

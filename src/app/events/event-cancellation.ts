@@ -17,7 +17,11 @@ function count(amount: number, noun: string): string {
 export function cancellationPrompt(impact: CancellationImpact | null): ConfirmOptions {
   const labels = { confirmLabel: 'Yes, cancel event', cancelLabel: 'No, keep event' };
   if (!impact || impact.ticketsSold <= 0) {
-    return { title: 'Cancel this event?', message: ['The event will be taken off sale.'], ...labels };
+    return {
+      title: 'Cancel this event?',
+      message: ['The event will be taken off sale.'],
+      ...labels,
+    };
   }
   return {
     title: 'Customers have bought tickets',

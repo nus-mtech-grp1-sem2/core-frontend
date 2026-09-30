@@ -150,7 +150,9 @@ export class Events {
   private selectedImageMimeType: string | null = null;
   protected readonly savedVenues = computed(() => {
     const venues = new Set<string>();
-    for (const event of this.allEvents()) { if (event.venue) venues.add(event.venue); }
+    for (const event of this.allEvents()) {
+      if (event.venue) venues.add(event.venue);
+    }
     return Array.from(venues).sort((a, b) => a.localeCompare(b));
   });
   protected readonly customerOrders = signal<readonly CustomerOrder[]>([]);
@@ -257,8 +259,16 @@ export class Events {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    if (!ALLOWED_IMAGE_TYPES.has(file.type)) { this.error.set('Please choose a JPEG, PNG or WebP image.'); input.value = ''; return; }
-    if (file.size > MAX_IMAGE_BYTES) { this.error.set('Image must be 5MB or smaller.'); input.value = ''; return; }
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      this.error.set('Please choose a JPEG, PNG or WebP image.');
+      input.value = '';
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      this.error.set('Image must be 5MB or smaller.');
+      input.value = '';
+      return;
+    }
     const dataUrl = await readFileAsDataUrl(file);
     this.selectedImageMimeType = file.type;
     this.selectedImageBase64 = dataUrl;
@@ -277,20 +287,29 @@ export class Events {
       const body = this.eventForm.getRawValue();
       let targetEventId = eventId;
       if (eventId === null) {
-        const created = await firstValueFrom(this.api.post<{ eventId: number }>('event', '/events', body));
+        const created = await firstValueFrom(
+          this.api.post<{ eventId: number }>('event', '/events', body),
+        );
         targetEventId = created.eventId;
       } else {
         await firstValueFrom(this.api.put('event', `/events/${eventId}`, body));
       }
       if (targetEventId !== null && this.selectedImageBase64 && this.selectedImageMimeType) {
-        await firstValueFrom(this.api.put('event', `/events/${targetEventId}/image`, {
-          imageBase64: this.selectedImageBase64,
-          mimeType: this.selectedImageMimeType,
-        }));
+        await firstValueFrom(
+          this.api.put('event', `/events/${targetEventId}/image`, {
+            imageBase64: this.selectedImageBase64,
+            mimeType: this.selectedImageMimeType,
+          }),
+        );
       }
-      this.resetForm(); this.showEventForm.set(false); await this.loadEvents(this.isAdmin());
-    } catch (error) { this.error.set(describeEventError(error, 'save the event')); }
-    finally { this.submitting.set(false); }
+      this.resetForm();
+      this.showEventForm.set(false);
+      await this.loadEvents(this.isAdmin());
+    } catch (error) {
+      this.error.set(describeEventError(error, 'save the event'));
+    } finally {
+      this.submitting.set(false);
+    }
   }
 
   protected async publishEvent(eventId: number): Promise<void> {
@@ -306,7 +325,12 @@ export class Events {
   }
   protected async cancelEvent(eventId: number): Promise<void> {
     try {
-      if (!(await cancelEventWithConfirmation(this.api, eventId, (options) => this.confirmDialog.ask(options)))) return;
+      if (
+        !(await cancelEventWithConfirmation(this.api, eventId, (options) =>
+          this.confirmDialog.ask(options),
+        ))
+      )
+        return;
       await this.loadEvents(this.isAdmin());
     } catch (error) {
       this.error.set(describeEventError(error, 'cancel the event'));
@@ -495,8 +519,10 @@ function describeEventError(error: unknown, action: string): string {
     if (error.status === 403) return 'You are not an organiser for this event.';
     const code = (error.error as { error?: string } | null)?.error;
     if (code === 'inventory_not_configured') return INVENTORY_NOT_CONFIGURED;
-    if (code === 'only_draft_events_can_be_deleted') return 'Only draft events can be deleted. Cancel a published event instead.';
-    if (code === 'event_has_reservation_history') return 'This event has reservation history, so it cannot be deleted. Cancel it instead.';
+    if (code === 'only_draft_events_can_be_deleted')
+      return 'Only draft events can be deleted. Cancel a published event instead.';
+    if (code === 'event_has_reservation_history')
+      return 'This event has reservation history, so it cannot be deleted. Cancel it instead.';
     if (error.status >= 500)
       return 'The Event service cannot reach its database right now. Refresh the AWS MySQL host and try again.';
   }

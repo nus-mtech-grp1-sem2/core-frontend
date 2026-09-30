@@ -51,13 +51,16 @@ export function recoverSmallQr(
 }
 
 /** 0 = background, 1 = ink, normalised against the image's own contrast range. */
-function darknessMap(pixels: Uint8ClampedArray, width: number, height: number): Float32Array | null {
+function darknessMap(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+): Float32Array | null {
   const luminance = new Float32Array(width * height);
   for (let i = 0; i < luminance.length; i++) {
     const offset = i * 4;
     const alpha = pixels[offset + 3] / 255;
-    const lum =
-      pixels[offset] * 0.299 + pixels[offset + 1] * 0.587 + pixels[offset + 2] * 0.114;
+    const lum = pixels[offset] * 0.299 + pixels[offset + 1] * 0.587 + pixels[offset + 2] * 0.114;
     // Transparent PNG areas are treated as white paper.
     luminance[i] = lum * alpha + 255 * (1 - alpha);
   }

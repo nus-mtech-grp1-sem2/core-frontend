@@ -28,60 +28,66 @@
 
     <div class="collapsible" id="primary-nav" [class.open]="menuOpen()">
       @if (auth.isAuthenticated()) {
-      <nav class="tabs" aria-label="Workspace">
-        <ul>
-          @for (tab of tabs; track tab.key) {
-          <li>
-            <a [routerLink]="tab.path" [class.active]="activeWorkspace() === tab.key"
-              >{{ tab.label }}</a
-            >
-          </li>
-          }
-        </ul>
-      </nav>
+        <nav class="tabs" aria-label="Workspace">
+          <ul>
+            @for (tab of tabs; track tab.key) {
+              <li>
+                <a [routerLink]="tab.path" [class.active]="activeWorkspace() === tab.key">{{
+                  tab.label
+                }}</a>
+              </li>
+            }
+          </ul>
+        </nav>
       } @else {
-      <nav class="primary" aria-label="Main">
-        <ul>
-          @for (link of anonymousLinks; track link.path) {
-          <li>
-            <a
-              [routerLink]="link.path"
-              routerLinkActive="active"
-              [routerLinkActiveOptions]="{ exact: true }"
-              >{{ link.label }}</a
-            >
-          </li>
-          }
-        </ul>
-      </nav>
-      } @if (showSearch()) {
-      <form class="search" role="search" (submit)="search(searchInput); $event.preventDefault()">
-        <label class="visually-hidden" for="site-search">Search events, venues or artists</label>
-        <button type="submit" class="search-submit">
-          <span class="visually-hidden">Search</span>
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
-            <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.6" />
-            <path d="m16 16 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
-        </button>
-        <input
-          #searchInput
-          id="site-search"
-          type="search"
-          [value]="searchQuery()"
-          (input)="searchAsYouType($any($event.target).value)"
-          placeholder="Search events, venues, artists"
-        />
-      </form>
+        <nav class="primary" aria-label="Main">
+          <ul>
+            @for (link of anonymousLinks; track link.path) {
+              <li>
+                <a
+                  [routerLink]="link.path"
+                  routerLinkActive="active"
+                  [routerLinkActiveOptions]="{ exact: true }"
+                  >{{ link.label }}</a
+                >
+              </li>
+            }
+          </ul>
+        </nav>
+      }
+      @if (showSearch()) {
+        <form class="search" role="search" (submit)="search(searchInput); $event.preventDefault()">
+          <label class="visually-hidden" for="site-search">Search events, venues or artists</label>
+          <button type="submit" class="search-submit">
+            <span class="visually-hidden">Search</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
+              <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.6" />
+              <path
+                d="m16 16 4 4"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+          <input
+            #searchInput
+            id="site-search"
+            type="search"
+            [value]="searchQuery()"
+            (input)="searchAsYouType($any($event.target).value)"
+            placeholder="Search events, venues, artists"
+          />
+        </form>
       }
 
       <div class="account">
         @if (auth.isAuthenticated()) {
-        <span class="who" title="{{ auth.user()?.email }}">{{ auth.user()?.email }}</span>
-        <button class="btn btn-ghost btn-sm" type="button" (click)="signOut()">Sign out</button>
+          <span class="who" title="{{ auth.user()?.email }}">{{ auth.user()?.email }}</span>
+          <button class="btn btn-ghost btn-sm" type="button" (click)="signOut()">Sign out</button>
         } @else {
-        <a class="btn btn-ghost btn-sm" routerLink="/login">Login</a>
-        <a class="btn btn-primary btn-sm" routerLink="/register">Register</a>
+          <a class="btn btn-ghost btn-sm" routerLink="/login">Login</a>
+          <a class="btn btn-primary btn-sm" routerLink="/register">Register</a>
         }
       </div>
     </div>

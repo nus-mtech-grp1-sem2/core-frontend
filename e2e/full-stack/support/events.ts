@@ -93,7 +93,13 @@ export async function setAvailableBuyers(
   const loaded = await request.get(`/api/event/events/${eventId}`, { headers });
   expect(loaded.ok(), `event GET -> ${loaded.status()}`).toBe(true);
   const { event } = (await loaded.json()) as {
-    event: { title: string; description: string | null; venue: string; starts_at: string; tier: Tier };
+    event: {
+      title: string;
+      description: string | null;
+      venue: string;
+      starts_at: string;
+      tier: Tier;
+    };
   };
   const response = await request.put(`/api/event/events/${eventId}`, {
     headers,

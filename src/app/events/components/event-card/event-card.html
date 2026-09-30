@@ -14,57 +14,72 @@
     <a [routerLink]="detailLink()">{{ event().title }}</a>
   </h3>
   @if (isAdmin()) {
-  <p class="where">{{ statusLabel() }}</p>
-  } @if (event().venue) {
-  <p class="where">{{ event().venue }}</p>
+    <p class="where">{{ statusLabel() }}</p>
+  }
+  @if (event().venue) {
+    <p class="where">{{ event().venue }}</p>
   }
   <p class="where">
     {{ event().remaining_qty ?? event().total_seats }} out of {{ event().total_seats }} seats
     remaining
   </p>
   @if (event().price_cents !== null) {
-  <p class="where">{{ priceLabel() }} per seat</p>
-  } @if (event().description) {
-  <p class="where">{{ event().description }}</p>
-  } @if (isAdmin()) { @if (!completed()) {
-  <div class="actions">
-    @if (event().status === 'DRAFT') {
-    <button type="button" class="btn btn-primary btn-sm" (click)="publish.emit(event().event_id)">
-      Publish</button
-    ><button
-      type="button"
-      class="btn btn-ghost btn-sm delete"
-      (click)="delete.emit(event().event_id)"
-    >
-      Delete
-    </button>
-    } @else if (event().status === 'PUBLISHED') {
-    <button
-      type="button"
-      class="btn btn-ghost btn-sm delete"
-      (click)="cancelRequested.emit(event().event_id)"
-    >
-      Cancel
-    </button>
-    } @else {
-    <button type="button" class="btn btn-primary btn-sm" (click)="publish.emit(event().event_id)">
-      Re-publish
-    </button>
+    <p class="where">{{ priceLabel() }} per seat</p>
+  }
+  @if (event().description) {
+    <p class="where">{{ event().description }}</p>
+  }
+  @if (isAdmin()) {
+    @if (!completed()) {
+      <div class="actions">
+        @if (event().status === 'DRAFT') {
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            (click)="publish.emit(event().event_id)"
+          >
+            Publish</button
+          ><button
+            type="button"
+            class="btn btn-ghost btn-sm delete"
+            (click)="delete.emit(event().event_id)"
+          >
+            Delete
+          </button>
+        } @else if (event().status === 'PUBLISHED') {
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm delete"
+            (click)="cancelRequested.emit(event().event_id)"
+          >
+            Cancel
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            (click)="publish.emit(event().event_id)"
+          >
+            Re-publish
+          </button>
+        }
+      </div>
     }
-  </div>
-  } } @else if (completed()) {
-  <div class="customer-action">
-    <span class="pill status completed">Completed</span>
-  </div>
+  } @else if (completed()) {
+    <div class="customer-action">
+      <span class="pill status completed">Completed</span>
+    </div>
   } @else if (event().status === 'PUBLISHED') {
-  <div class="customer-action">
-    @if (event().tier === 'TIER2_SEATED') {
-    <a class="btn btn-primary btn-sm" [routerLink]="['/events', event().event_id, 'queue']"
-      >Join waiting room</a
-    >
-    } @else {
-    <a class="btn btn-primary btn-sm" [routerLink]="['/events', event().event_id]">View tickets</a>
-    }
-  </div>
+    <div class="customer-action">
+      @if (event().tier === 'TIER2_SEATED') {
+        <a class="btn btn-primary btn-sm" [routerLink]="['/events', event().event_id, 'queue']"
+          >Join waiting room</a
+        >
+      } @else {
+        <a class="btn btn-primary btn-sm" [routerLink]="['/events', event().event_id]"
+          >View tickets</a
+        >
+      }
+    </div>
   }
 </div>

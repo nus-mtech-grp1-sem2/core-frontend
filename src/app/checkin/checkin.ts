@@ -190,12 +190,15 @@ export class Checkin implements OnDestroy {
   }
 
   protected async checkInSearchResult(result: SearchResult): Promise<void> {
-    if (!canCheckIn(result.status) || this.checkingIn() || !window.confirm('Check in this ticket?')) return;
+    if (!canCheckIn(result.status) || this.checkingIn() || !window.confirm('Check in this ticket?'))
+      return;
     const outcome = await this.submit({ ticketId: result.ticket_id });
     // Either way the ticket is now used, so its row stops offering a check-in.
     if (outcome === 'VALID' || outcome === 'ALREADY_USED') {
       this.searchResults.update((results) =>
-        results.map((row) => (row.ticket_id === result.ticket_id ? { ...row, status: 'CHECKED_IN' } : row)),
+        results.map((row) =>
+          row.ticket_id === result.ticket_id ? { ...row, status: 'CHECKED_IN' } : row,
+        ),
       );
     }
   }

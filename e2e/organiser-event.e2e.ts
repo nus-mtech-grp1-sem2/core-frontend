@@ -307,7 +307,9 @@ test.describe('an event moving through its life', () => {
 
     await page.getByRole('button', { name: 'Re-publish event' }).click();
     await expect(confirmation(page).getByRole('heading')).toHaveText('Re-publish this event?');
-    await expect(confirmation(page)).toContainText('Are you sure you want to enable this event and put it back on sale?');
+    await expect(confirmation(page)).toContainText(
+      'Are you sure you want to enable this event and put it back on sale?',
+    );
     // Going ahead is the positive choice here, so Yes is green and No is red.
     await expect(confirmation(page).getByRole('button', { name: 'Yes, re-publish' })).toHaveCSS(
       'background-color',
@@ -336,7 +338,10 @@ test.describe('an event moving through its life', () => {
     await expect(page.getByRole('button', { name: 'Cancel event' })).toBeVisible();
   });
 
-  test('cancelling once customers have bought tickets warns about them first', async ({ page, api }) => {
+  test('cancelling once customers have bought tickets warns about them first', async ({
+    page,
+    api,
+  }) => {
     const state = stubEvent(api, { status: 'PUBLISHED' });
     api
       .on('GET', `event/events/${EVENT_ID}/cancellation-impact`, {
@@ -351,7 +356,9 @@ test.describe('an event moving through its life', () => {
     await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
     const dialog = confirmation(page);
     await expect(dialog.getByRole('heading')).toHaveText('Customers have bought tickets');
-    await expect(dialog).toContainText('2 customers have already purchased 3 tickets for this event.');
+    await expect(dialog).toContainText(
+      '2 customers have already purchased 3 tickets for this event.',
+    );
     await expect(dialog).toContainText('void their tickets and email them');
     // The safe choice is focused, so pressing Escape or Enter never cancels by accident.
     await expect(dialog.getByRole('button', { name: 'No, keep event' })).toBeFocused();

@@ -9,156 +9,178 @@
 
   <section class="shell body">
     @if (waitingForTicket()) {
-    <div class="issuance" role="status">
-      <strong>Payment successful.</strong> Your purchase is shown below. The QR ticket will appear
-      when issuance completes.
-    </div>
-    } @switch (status()) { @case ('loading') {
-    <p class="status-message" role="status">Loading your tickets…</p>
-    } @case ('error') {
-    <p class="status-message error" role="alert">
-      Couldn't load your tickets.
-      <button type="button" class="retry" (click)="load()">Try again</button>
-    </p>
-    } @case ('ready') { @if (unpaidOrders().length > 0) {
-    <section class="pending-list" aria-label="Orders awaiting payment">
-      @for (order of unpaidOrders(); track order.order_id) {
-      <article class="ticket-card pending-card">
-        <div class="details">
-          <h2>{{ order.event_title }}</h2>
-          <p>
-            Order #{{ order.order_id }} · {{ order.ticket_count }} ticket(s) · {{
-            money(order.total_amount_cents, order.currency) }}
-          </p>
-          <p>
-            Payment pending. Reservation expires in
-            <strong>{{ reservationTimeLabel(order) }}</strong>.
-          </p>
-          <div class="reservation-actions">
-            <a class="btn btn-primary" [routerLink]="['/checkout', order.order_id]"
-              >Continue to payment</a
-            >
-            <button
-              type="button"
-              class="btn btn-ghost cancel-button"
-              [disabled]="isCancelling(order.order_id)"
-              (click)="cancelReservation(order)"
-            >
-              {{ isCancelling(order.order_id) ? 'Cancellingâ€¦' : 'Cancel reservation' }}
-            </button>
-          </div>
-        </div>
-      </article>
-      }
-    </section>
-    } @if (reservationError()) {
-    <p class="status-message error" role="alert">{{ reservationError() }}</p>
-    } @if (processingOrders().length > 0) {
-    <section class="pending-list" aria-label="Orders processing payment">
-      @for (order of processingOrders(); track order.order_id) {
-      <article class="ticket-card pending-card">
-        <div class="ticket-placeholder" aria-hidden="true">â€¦</div>
-        <div class="details">
-          <h2>{{ order.event_title }}</h2>
-          <p>
-            Order #{{ order.order_id }} Â· {{ order.ticket_count }} ticket(s) Â· {{
-            money(order.total_amount_cents, order.currency) }}
-          </p>
-          <p>
-            Payment is processing. This order can no longer be cancelled. Your ticket will appear
-            here after payment completes.
-          </p>
-        </div>
-      </article>
-      }
-    </section>
-    } @if (pendingOrders().length > 0) {
-    <section class="pending-list" aria-label="Paid orders awaiting tickets">
-      @for (order of pendingOrders(); track order.order_id) {
-      <article class="ticket-card pending-card">
-        <div class="ticket-placeholder" aria-hidden="true">✓</div>
-        <div class="details">
-          <h2>
-            <a [routerLink]="['/events', order.event_id]">{{ order.event_title }}</a>
-          </h2>
-          <p>Venue: {{ order.venue }}</p>
-          <p>Start time: {{ order.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
-          <dl>
-            <div>
-              <dt>Tickets</dt>
-              <dd>{{ order.ticket_count }}</dd>
-            </div>
-            <div>
-              <dt>Paid</dt>
-              <dd>{{ money(order.total_amount_cents, order.currency) }}</dd>
-            </div>
-            <div>
-              <dt>Bought on</dt>
-              <dd>
-                {{ order.paid_at ? (order.paid_at | date: 'd MMM y, h:mm a') : 'Unavailable' }}
-              </dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>Payment received · issuing ticket</dd>
-            </div>
-          </dl>
-        </div>
-      </article>
-      }
-    </section>
+      <div class="issuance" role="status">
+        <strong>Payment successful.</strong> Your purchase is shown below. The QR ticket will appear
+        when issuance completes.
+      </div>
     }
-    <ul class="ticket-list">
-      @for (ticket of tickets(); track ticket.ticket_id) {
-      <li>
-        <article class="ticket-card">
-          <img
-            class="qr"
-            [src]="ticket.qrDataUrl"
-            [alt]="'QR code for ticket ' + ticket.ticket_id"
-          />
-          <div class="details">
-            <h2>
-              <a [routerLink]="['/events', ticket.event_id]">{{ ticket.event_title }}</a>
-            </h2>
-            <p>Venue: {{ ticket.venue }}</p>
-            <p>Event Time: {{ ticket.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
-            <dl>
-              <div>
-                <dt>Bought on</dt>
-                <dd>
-                  @if (purchaseDates().get(+ticket.order_id); as boughtOn) { {{ boughtOn | date: 'd
-                  MMM y, h:mm a' }} } @else { Unavailable }
-                </dd>
-              </div>
-              @if (ticket.seat_label) {
-              <div>
-                <dt>Seat</dt>
-                <dd>{{ ticket.seat_label }}</dd>
-              </div>
-              }
-              <div>
-                <dt>Status</dt>
-                <dd>{{ statusLabel(ticket.status) }}</dd>
-              </div>
-            </dl>
-          </div>
-        </article>
-      </li>
-      } @empty { @if (pendingOrders().length === 0 && processingOrders().length === 0) {
-      <li class="empty">
-        <h2>No tickets yet</h2>
-        <p>Tickets you buy will show up here with a scannable QR code.</p>
-        <a class="btn btn-primary" routerLink="/events">Browse events</a>
-      </li>
-      } }
-    </ul>
-    } }
+    @switch (status()) {
+      @case ('loading') {
+        <p class="status-message" role="status">Loading your tickets…</p>
+      }
+      @case ('error') {
+        <p class="status-message error" role="alert">
+          Couldn't load your tickets.
+          <button type="button" class="retry" (click)="load()">Try again</button>
+        </p>
+      }
+      @case ('ready') {
+        @if (unpaidOrders().length > 0) {
+          <section class="pending-list" aria-label="Orders awaiting payment">
+            @for (order of unpaidOrders(); track order.order_id) {
+              <article class="ticket-card pending-card">
+                <div class="details">
+                  <h2>{{ order.event_title }}</h2>
+                  <p>
+                    Order #{{ order.order_id }} · {{ order.ticket_count }} ticket(s) ·
+                    {{ money(order.total_amount_cents, order.currency) }}
+                  </p>
+                  <p>
+                    Payment pending. Reservation expires in
+                    <strong>{{ reservationTimeLabel(order) }}</strong
+                    >.
+                  </p>
+                  <div class="reservation-actions">
+                    <a class="btn btn-primary" [routerLink]="['/checkout', order.order_id]"
+                      >Continue to payment</a
+                    >
+                    <button
+                      type="button"
+                      class="btn btn-ghost cancel-button"
+                      [disabled]="isCancelling(order.order_id)"
+                      (click)="cancelReservation(order)"
+                    >
+                      {{ isCancelling(order.order_id) ? 'Cancellingâ€¦' : 'Cancel reservation' }}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            }
+          </section>
+        }
+        @if (reservationError()) {
+          <p class="status-message error" role="alert">{{ reservationError() }}</p>
+        }
+        @if (processingOrders().length > 0) {
+          <section class="pending-list" aria-label="Orders processing payment">
+            @for (order of processingOrders(); track order.order_id) {
+              <article class="ticket-card pending-card">
+                <div class="ticket-placeholder" aria-hidden="true">â€¦</div>
+                <div class="details">
+                  <h2>{{ order.event_title }}</h2>
+                  <p>
+                    Order #{{ order.order_id }} Â· {{ order.ticket_count }} ticket(s) Â·
+                    {{ money(order.total_amount_cents, order.currency) }}
+                  </p>
+                  <p>
+                    Payment is processing. This order can no longer be cancelled. Your ticket will
+                    appear here after payment completes.
+                  </p>
+                </div>
+              </article>
+            }
+          </section>
+        }
+        @if (pendingOrders().length > 0) {
+          <section class="pending-list" aria-label="Paid orders awaiting tickets">
+            @for (order of pendingOrders(); track order.order_id) {
+              <article class="ticket-card pending-card">
+                <div class="ticket-placeholder" aria-hidden="true">✓</div>
+                <div class="details">
+                  <h2>
+                    <a [routerLink]="['/events', order.event_id]">{{ order.event_title }}</a>
+                  </h2>
+                  <p>Venue: {{ order.venue }}</p>
+                  <p>Start time: {{ order.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+                  <dl>
+                    <div>
+                      <dt>Tickets</dt>
+                      <dd>{{ order.ticket_count }}</dd>
+                    </div>
+                    <div>
+                      <dt>Paid</dt>
+                      <dd>{{ money(order.total_amount_cents, order.currency) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Bought on</dt>
+                      <dd>
+                        {{
+                          order.paid_at ? (order.paid_at | date: 'd MMM y, h:mm a') : 'Unavailable'
+                        }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>Payment received · issuing ticket</dd>
+                    </div>
+                  </dl>
+                </div>
+              </article>
+            }
+          </section>
+        }
+        <ul class="ticket-list">
+          @for (ticket of tickets(); track ticket.ticket_id) {
+            <li>
+              <article class="ticket-card">
+                <img
+                  class="qr"
+                  [src]="ticket.qrDataUrl"
+                  [alt]="'QR code for ticket ' + ticket.ticket_id"
+                />
+                <div class="details">
+                  <h2>
+                    <a [routerLink]="['/events', ticket.event_id]">{{ ticket.event_title }}</a>
+                  </h2>
+                  <p>Venue: {{ ticket.venue }}</p>
+                  <p>Event Time: {{ ticket.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+                  <dl>
+                    <div>
+                      <dt>Bought on</dt>
+                      <dd>
+                        @if (purchaseDates().get(+ticket.order_id); as boughtOn) {
+                          {{
+                            boughtOn
+                              | date
+                                : 'd
+                  MMM y, h:mm a'
+                          }}
+                        } @else {
+                          Unavailable
+                        }
+                      </dd>
+                    </div>
+                    @if (ticket.seat_label) {
+                      <div>
+                        <dt>Seat</dt>
+                        <dd>{{ ticket.seat_label }}</dd>
+                      </div>
+                    }
+                    <div>
+                      <dt>Status</dt>
+                      <dd>{{ statusLabel(ticket.status) }}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </article>
+            </li>
+          } @empty {
+            @if (pendingOrders().length === 0 && processingOrders().length === 0) {
+              <li class="empty">
+                <h2>No tickets yet</h2>
+                <p>Tickets you buy will show up here with a scannable QR code.</p>
+                <a class="btn btn-primary" routerLink="/events">Browse events</a>
+              </li>
+            }
+          }
+        </ul>
+      }
+    }
   </section>
 
   <div class="toast-region" role="status" aria-live="polite">
     @if (emailToast()) {
-    <p class="toast">Confirmation email sent</p>
+      <p class="toast">Confirmation email sent</p>
     }
   </div>
 </app-workspace-shell>

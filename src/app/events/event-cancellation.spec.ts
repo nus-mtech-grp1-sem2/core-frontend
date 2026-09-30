@@ -101,9 +101,10 @@ describe('cancelEventWithConfirmation', () => {
   });
 
   it('still asks, and then warns, when the numbers could not be loaded', async () => {
-    const { api, posts } = fakeApi(throwError(() => new HttpErrorResponse({ status: 502 })), [
-      throwError(() => refusal(sold)),
-    ]);
+    const { api, posts } = fakeApi(
+      throwError(() => new HttpErrorResponse({ status: 502 })),
+      [throwError(() => refusal(sold))],
+    );
     const confirm = answering(true, false);
 
     expect(await cancelEventWithConfirmation(api, 7, confirm)).toBe(false);

@@ -448,7 +448,11 @@ export class EventDetail {
     try {
       if (enabling) {
         await firstValueFrom(this.api.post('event', `/events/${event.event_id}/publish`, {}));
-      } else if (!(await cancelEventWithConfirmation(this.api, event.event_id, (options) => this.confirmDialog.ask(options)))) {
+      } else if (
+        !(await cancelEventWithConfirmation(this.api, event.event_id, (options) =>
+          this.confirmDialog.ask(options),
+        ))
+      ) {
         return;
       }
       await this.load(event.event_id);
@@ -577,11 +581,7 @@ export class EventDetail {
   }
 
   protected canBuy(): boolean {
-    return (
-      this.customerMode &&
-      this.event()?.status === 'PUBLISHED' &&
-      !this.completed()
-    );
+    return this.customerMode && this.event()?.status === 'PUBLISHED' && !this.completed();
   }
 
   protected seatAt(row: number, col: number): SeatOption | undefined {
@@ -1057,9 +1057,12 @@ function queueAdmissionRequired(error: unknown): boolean {
 }
 
 const EVENT_ERROR_MESSAGES: Readonly<Record<string, string>> = {
-  queue_admission_required: 'Your waiting-room admission has expired. Rejoin the queue to continue.',
-  event_not_editable: 'This event has already been published — its details can no longer be edited.',
-  only_draft_events_can_be_deleted: 'Only draft events can be deleted. Cancel a published event instead.',
+  queue_admission_required:
+    'Your waiting-room admission has expired. Rejoin the queue to continue.',
+  event_not_editable:
+    'This event has already been published — its details can no longer be edited.',
+  only_draft_events_can_be_deleted:
+    'Only draft events can be deleted. Cancel a published event instead.',
   event_has_reservation_history:
     'This event has reservation history, so it cannot be deleted. Cancel it instead.',
   inventory_not_configured:

@@ -1,21 +1,21 @@
 <div class="workspace">
   @if (showSidebar()) {
-  <aside class="sidebar" aria-label="Workspace navigation">
-    <nav>
-      <ul>
-        @for (link of links(); track link.path) {
-        <li>
-          <a
-            [routerLink]="link.path"
-            routerLinkActive="active"
-            [routerLinkActiveOptions]="{ exact: true }"
-            >{{ link.label }}</a
-          >
-        </li>
-        }
-      </ul>
-    </nav>
-  </aside>
+    <aside class="sidebar" aria-label="Workspace navigation">
+      <nav>
+        <ul>
+          @for (link of links(); track link.path) {
+            <li>
+              <a
+                [routerLink]="link.path"
+                routerLinkActive="active"
+                [routerLinkActiveOptions]="{ exact: true }"
+                >{{ link.label }}</a
+              >
+            </li>
+          }
+        </ul>
+      </nav>
+    </aside>
   }
 
   <div class="content">

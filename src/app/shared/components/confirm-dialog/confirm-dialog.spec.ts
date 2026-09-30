@@ -5,7 +5,10 @@ import { ConfirmDialogService, type ConfirmOptions } from './confirm-dialog.serv
 
 const options: ConfirmOptions = {
   title: 'Customers have bought tickets',
-  message: ['2 customers have already purchased 3 tickets for this event.', 'Do you still want to cancel this event?'],
+  message: [
+    '2 customers have already purchased 3 tickets for this event.',
+    'Do you still want to cancel this event?',
+  ],
   confirmLabel: 'Yes, cancel event',
   cancelLabel: 'No, keep event',
 };
@@ -32,7 +35,9 @@ describe('ConfirmDialog', () => {
 
   const dialog = () => host.querySelector('dialog') as HTMLDialogElement;
   const button = (label: string) =>
-    Array.from(host.querySelectorAll('button')).find((candidate) => candidate.textContent?.trim() === label);
+    Array.from(host.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === label,
+    );
   const settle = () => new Promise((resolve) => setTimeout(resolve));
 
   it('stays closed until something asks', () => {
@@ -46,14 +51,21 @@ describe('ConfirmDialog', () => {
 
     expect(dialog().open).toBe(true);
     expect(host.querySelector('h2')?.textContent?.trim()).toBe('Customers have bought tickets');
-    expect(Array.from(host.querySelectorAll('p')).map((p) => p.textContent?.trim())).toEqual(options.message);
+    expect(Array.from(host.querySelectorAll('p')).map((p) => p.textContent?.trim())).toEqual(
+      options.message,
+    );
     expect(button('Yes, cancel event')?.classList).toContain('confirm-dialog__button--confirm');
     expect(button('No, keep event')?.classList).toContain('confirm-dialog__button--decline');
     expect(document.activeElement).toBe(button('No, keep event'));
   });
 
   it('swaps the colours for a positive action, keeping focus on the way back out', async () => {
-    void service.ask({ ...options, confirmLabel: 'Yes, publish', cancelLabel: 'No', tone: 'positive' });
+    void service.ask({
+      ...options,
+      confirmLabel: 'Yes, publish',
+      cancelLabel: 'No',
+      tone: 'positive',
+    });
     await settle();
 
     expect(dialog().classList).toContain('confirm-dialog--positive');

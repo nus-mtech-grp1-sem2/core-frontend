@@ -17,10 +17,30 @@ interface EventFixture {
 // Configuring zones/seats happens before publishing, so the default fixtures
 // are DRAFT — matching the real pre-publish flow and every existing test
 // below, which exercises normal editing.
-const SEATED_EVENT: EventFixture = { event_id: 1, title: 'ASEAN Cup Final', tier: 'TIER2_SEATED', status: 'DRAFT' };
-const GA_EVENT: EventFixture = { event_id: 2, title: 'Neon Skyline Tour', tier: 'TIER1_GA', status: 'DRAFT' };
-const PUBLISHED_EVENT: EventFixture = { event_id: 3, title: 'Sold Out Show', tier: 'TIER1_GA', status: 'PUBLISHED', starts_at: '2099-01-01 20:00:00' };
-const STARTED_EVENT: EventFixture = { ...PUBLISHED_EVENT, event_id: 4, starts_at: '2020-01-01 20:00:00' };
+const SEATED_EVENT: EventFixture = {
+  event_id: 1,
+  title: 'ASEAN Cup Final',
+  tier: 'TIER2_SEATED',
+  status: 'DRAFT',
+};
+const GA_EVENT: EventFixture = {
+  event_id: 2,
+  title: 'Neon Skyline Tour',
+  tier: 'TIER1_GA',
+  status: 'DRAFT',
+};
+const PUBLISHED_EVENT: EventFixture = {
+  event_id: 3,
+  title: 'Sold Out Show',
+  tier: 'TIER1_GA',
+  status: 'PUBLISHED',
+  starts_at: '2099-01-01 20:00:00',
+};
+const STARTED_EVENT: EventFixture = {
+  ...PUBLISHED_EVENT,
+  event_id: 4,
+  starts_at: '2020-01-01 20:00:00',
+};
 
 const EMPTY_INVENTORY = { gridRows: 6, gridCols: 8, zones: [], seats: [] };
 
@@ -60,9 +80,17 @@ async function renderFor(event: EventFixture, inventory: object = EMPTY_INVENTOR
  * cell reactively, so intermediate cells don't need their own events), then
  * mouseup on window. The resulting rectangle is the bounding box between the
  * two corners, same as the component computes it. */
-function dragRectangle(host: HTMLElement, startRow: number, startCol: number, endRow: number, endCol: number): void {
+function dragRectangle(
+  host: HTMLElement,
+  startRow: number,
+  startCol: number,
+  endRow: number,
+  endCol: number,
+): void {
   const cellAt = (row: number, col: number): HTMLButtonElement => {
-    const button = host.querySelector<HTMLButtonElement>(`[data-grid-row="${row}"][data-grid-col="${col}"]`);
+    const button = host.querySelector<HTMLButtonElement>(
+      `[data-grid-row="${row}"][data-grid-col="${col}"]`,
+    );
     if (!button) throw new Error(`no grid cell at (${row},${col})`);
     return button;
   };
@@ -76,7 +104,9 @@ function dragRectangle(host: HTMLElement, startRow: number, startCol: number, en
  * never re-fires `mouseenter` on the cell the pointer is already sitting on,
  * unlike `dragRectangle`'s same-cell case which explicitly dispatches one. */
 function clickCellNoDrag(host: HTMLElement, row: number, col: number): void {
-  const button = host.querySelector<HTMLButtonElement>(`[data-grid-row="${row}"][data-grid-col="${col}"]`);
+  const button = host.querySelector<HTMLButtonElement>(
+    `[data-grid-row="${row}"][data-grid-col="${col}"]`,
+  );
   if (!button) throw new Error(`no grid cell at (${row},${col})`);
   button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
   window.dispatchEvent(new MouseEvent('mouseup'));
@@ -96,7 +126,8 @@ describe('EventInventory', () => {
     dragRectangle(host, 0, 0, 1, 2); // 2 rows x 3 cols — no seats exist server-side yet
     fixture.detectChanges();
 
-    const cellAt = (row: number, col: number) => host.querySelector(`[data-grid-row="${row}"][data-grid-col="${col}"]`);
+    const cellAt = (row: number, col: number) =>
+      host.querySelector(`[data-grid-row="${row}"][data-grid-col="${col}"]`);
     expect(cellAt(0, 0)?.textContent?.trim()).toBe('A1');
     expect(cellAt(0, 1)?.textContent?.trim()).toBe('A2');
     expect(cellAt(0, 2)?.textContent?.trim()).toBe('A3');
@@ -119,8 +150,12 @@ describe('EventInventory', () => {
       save();
       fixture.detectChanges();
 
-      expect(host.querySelector('[role="alert"]')?.textContent).toContain('Please enter group seat name.');
-      expect(host.querySelector('.zone-name-error')?.textContent).toContain('Please enter group seat name.');
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        'Please enter group seat name.',
+      );
+      expect(host.querySelector('.zone-name-error')?.textContent).toContain(
+        'Please enter group seat name.',
+      );
       expect(host.querySelector('.zone-name-input')?.getAttribute('aria-invalid')).toBe('true');
       httpMock.expectNone(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`);
     }
@@ -129,7 +164,9 @@ describe('EventInventory', () => {
     fixture.detectChanges();
     expect(host.querySelector('.zone-name-error')).toBeNull();
     save();
-    httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`).flush(null, { status: 204, statusText: 'No Content' });
+    httpMock
+      .expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`)
+      .flush(null, { status: 204, statusText: 'No Content' });
   });
 
   it('drags a rectangle to create a seated zone, and saves the rectangle with no seats field', async () => {
@@ -144,8 +181,8 @@ describe('EventInventory', () => {
     setInputValue(host, '.zone-price input', '75');
     fixture.detectChanges();
 
-    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-      button.textContent?.trim().startsWith('Save'),
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim().startsWith('Save'),
     );
     saveButton?.click();
     fixture.detectChanges();
@@ -155,7 +192,13 @@ describe('EventInventory', () => {
     const body = putReq.request.body as { zones: unknown[]; seats?: unknown };
     expect(body.zones.length).toBe(1);
     expect(body.zones[0]).toEqual(
-      expect.objectContaining({ name: 'Front Stalls', gridRow: 0, gridCol: 0, gridRowSpan: 2, gridColSpan: 3 }),
+      expect.objectContaining({
+        name: 'Front Stalls',
+        gridRow: 0,
+        gridCol: 0,
+        gridRowSpan: 2,
+        gridColSpan: 3,
+      }),
     );
     expect(body.seats).toBeUndefined();
 
@@ -177,8 +220,8 @@ describe('EventInventory', () => {
     setInputValue(host, '.zone-price input', '75');
     fixture.detectChanges();
 
-    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-      button.textContent?.trim().startsWith('Save'),
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim().startsWith('Save'),
     );
     saveButton?.click();
     fixture.detectChanges();
@@ -202,8 +245,8 @@ describe('EventInventory', () => {
     setInputValue(host, '.zone-price input', '25');
     fixture.detectChanges();
 
-    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-      button.textContent?.trim().startsWith('Save'),
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim().startsWith('Save'),
     );
     saveButton?.click();
     fixture.detectChanges();
@@ -239,8 +282,8 @@ describe('EventInventory', () => {
     setInputValue(host, '.zone-price input', '25');
     fixture.detectChanges();
 
-    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-      button.textContent?.trim().startsWith('Save'),
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim().startsWith('Save'),
     );
     saveButton?.click();
     fixture.detectChanges();
@@ -248,7 +291,13 @@ describe('EventInventory', () => {
     const putReq = httpMock.expectOne(`/api/inventory/events/${GA_EVENT.event_id}/inventory`);
     const body = putReq.request.body as { zones: unknown[]; seats?: unknown };
     expect(body.zones[0]).toEqual(
-      expect.objectContaining({ name: 'General Admission', gridRow: 0, gridCol: 0, gridRowSpan: 2, gridColSpan: 3 }),
+      expect.objectContaining({
+        name: 'General Admission',
+        gridRow: 0,
+        gridCol: 0,
+        gridRowSpan: 2,
+        gridColSpan: 3,
+      }),
     );
     expect(body.seats).toBeUndefined();
 
@@ -299,7 +348,8 @@ describe('EventInventory', () => {
 
     // The zone actually moved on the map — its old top-left cell (0,0) is
     // free again, and its new top-left cell (2,3) is now claimed.
-    const cellAt = (row: number, col: number) => host.querySelector(`[data-grid-row="${row}"][data-grid-col="${col}"]`);
+    const cellAt = (row: number, col: number) =>
+      host.querySelector(`[data-grid-row="${row}"][data-grid-col="${col}"]`);
     expect(cellAt(0, 0)?.className).toContain('grid-cell');
     expect(cellAt(2, 3)?.className).toContain('seat-cell');
   });
@@ -319,7 +369,12 @@ describe('EventInventory', () => {
       gridRowSpan: 1,
       gridColSpan: 2,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [existingZone],
+      seats: [],
+    });
 
     dragRectangle(host, 3, 3, 3, 3); // a fresh 1x1 zone, on the same row as the existing one
     fixture.detectChanges();
@@ -335,7 +390,7 @@ describe('EventInventory', () => {
     expect(newCard.querySelector<HTMLInputElement>('.zone-col-input')?.value).toBe('3');
   });
 
-  it("blocks dragging a new zone over cells an existing zone already covers", async () => {
+  it('blocks dragging a new zone over cells an existing zone already covers', async () => {
     const existingZone = {
       inventoryItemId: 9,
       name: 'Balcony',
@@ -350,7 +405,12 @@ describe('EventInventory', () => {
       gridRowSpan: 1,
       gridColSpan: 2,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [existingZone],
+      seats: [],
+    });
 
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
 
@@ -379,7 +439,12 @@ describe('EventInventory', () => {
       gridRowSpan: 2,
       gridColSpan: 2,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [existingZone],
+      seats: [],
+    });
 
     expect(host.querySelector('.zone-seat-total')?.textContent?.trim()).toBe('4 seats');
 
@@ -420,7 +485,12 @@ describe('EventInventory', () => {
       gridRowSpan: 1,
       gridColSpan: 1,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [resizable, blocker], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [resizable, blocker],
+      seats: [],
+    });
 
     // Growing to (0,3) would swallow the "Pit" zone's only cell.
     dragRectangle(host, 1, 1, 0, 3);
@@ -445,7 +515,12 @@ describe('EventInventory', () => {
       gridRowSpan: 2,
       gridColSpan: 2,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [existingZone],
+      seats: [],
+    });
 
     // Drag the top-left corner (2,2) out to (0,0) — the bottom-right corner
     // (3,3) stays fixed, so the zone grows to rows 0-3, cols 0-3 = 16 seats.
@@ -454,7 +529,9 @@ describe('EventInventory', () => {
 
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
     expect(host.querySelector('.zone-seat-total')?.textContent?.trim()).toBe('16 seats');
-    expect(host.querySelector('[data-grid-row="0"][data-grid-col="0"]')?.classList.contains('seat-cell')).toBe(true);
+    expect(
+      host.querySelector('[data-grid-row="0"][data-grid-col="0"]')?.classList.contains('seat-cell'),
+    ).toBe(true);
   });
 
   it("drags an existing zone's right-edge handle to grow only its column span", async () => {
@@ -472,7 +549,12 @@ describe('EventInventory', () => {
       gridRowSpan: 3,
       gridColSpan: 3,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [existingZone],
+      seats: [],
+    });
 
     // (2,3) is the middle of the right edge (row 2 is interior, col 3 is the
     // right edge). Dragging it out to (2,5) should only widen the zone.
@@ -482,7 +564,9 @@ describe('EventInventory', () => {
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
     expect(host.querySelector('.zone-seat-total')?.textContent?.trim()).toBe('15 seats');
     // Row bounds didn't move — row 0 is still untouched, empty grid.
-    expect(host.querySelector('[data-grid-row="0"][data-grid-col="1"]')?.classList.contains('grid-cell')).toBe(true);
+    expect(
+      host.querySelector('[data-grid-row="0"][data-grid-col="1"]')?.classList.contains('grid-cell'),
+    ).toBe(true);
   });
 
   it('drags a zone by its body to move it to an unoccupied area', async () => {
@@ -500,7 +584,12 @@ describe('EventInventory', () => {
       gridRowSpan: 3,
       gridColSpan: 3,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [existingZone],
+      seats: [],
+    });
 
     // (2,2) is the interior cell of a 3x3 zone (rows 1-3, cols 1-3) — not on
     // any edge or corner, so dragging it moves the whole zone.
@@ -509,8 +598,12 @@ describe('EventInventory', () => {
 
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
     expect(host.querySelector('.zone-seat-total')?.textContent?.trim()).toBe('9 seats');
-    expect(host.querySelector('[data-grid-row="1"][data-grid-col="1"]')?.classList.contains('grid-cell')).toBe(true);
-    expect(host.querySelector('[data-grid-row="0"][data-grid-col="3"]')?.classList.contains('seat-cell')).toBe(true);
+    expect(
+      host.querySelector('[data-grid-row="1"][data-grid-col="1"]')?.classList.contains('grid-cell'),
+    ).toBe(true);
+    expect(
+      host.querySelector('[data-grid-row="0"][data-grid-col="3"]')?.classList.contains('seat-cell'),
+    ).toBe(true);
   });
 
   it("won't move a zone on top of another zone's cells", async () => {
@@ -542,14 +635,21 @@ describe('EventInventory', () => {
       gridRowSpan: 1,
       gridColSpan: 1,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [movable, blocker], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [movable, blocker],
+      seats: [],
+    });
 
     // Moving from (2,2) to (1,4) would land the zone on rows 0-2, cols 3-5 —
     // swallowing the "Pit" zone's cell at (0,5).
     dragRectangle(host, 2, 2, 1, 4);
     fixture.detectChanges();
 
-    expect(host.querySelector('[data-grid-row="1"][data-grid-col="1"]')?.classList.contains('seat-cell')).toBe(true);
+    expect(
+      host.querySelector('[data-grid-row="1"][data-grid-col="1"]')?.classList.contains('seat-cell'),
+    ).toBe(true);
     expect(host.querySelector('.error')?.textContent).toContain("Zones can't overlap");
   });
 
@@ -568,7 +668,12 @@ describe('EventInventory', () => {
       gridRowSpan: 1,
       gridColSpan: 1,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [existingZone],
+      seats: [],
+    });
 
     // A 1x1 zone has no interior to grab-and-move, so dragging its only cell
     // should resize it, not relocate it.
@@ -594,7 +699,12 @@ describe('EventInventory', () => {
       gridRowSpan: 1,
       gridColSpan: 4, // occupies row 2, cols 1-4 — only one row thick
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [existingZone],
+      seats: [],
+    });
 
     // (2,2) is a middle cell of this 1-row zone — not a corner — so it should
     // move the whole zone rather than being treated as an edge handle.
@@ -603,7 +713,9 @@ describe('EventInventory', () => {
 
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
     expect(host.querySelector('.zone-seat-total')?.textContent?.trim()).toBe('4 seats');
-    expect(host.querySelector('[data-grid-row="2"][data-grid-col="1"]')?.classList.contains('grid-cell')).toBe(true);
+    expect(
+      host.querySelector('[data-grid-row="2"][data-grid-col="1"]')?.classList.contains('grid-cell'),
+    ).toBe(true);
   });
 
   it('typing a column count directly resizes the grid to that many columns', async () => {
@@ -630,7 +742,12 @@ describe('EventInventory', () => {
       gridRowSpan: 1,
       gridColSpan: 2, // occupies columns 6-7, so the grid needs at least 8 columns
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [existingZone], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [existingZone],
+      seats: [],
+    });
 
     setInputValue(host, '.grid-col-count-input', '3');
     fixture.detectChanges();
@@ -656,7 +773,12 @@ describe('EventInventory', () => {
       gridRowSpan: 1,
       gridColSpan: 1,
     };
-    const { fixture, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [positionless], seats: [] });
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [positionless],
+      seats: [],
+    });
 
     // Cell (0,0) must still be an empty, drawable cell — JS's `null >= 0`
     // (true) / `null + 1` (1) coercion must not let a position-less zone's
@@ -702,8 +824,8 @@ describe('EventInventory', () => {
     fixture.detectChanges();
     expect(host.querySelectorAll('.zone-card').length).toBe(0);
 
-    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-      button.textContent?.trim().startsWith('Save'),
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim().startsWith('Save'),
     );
     expect(saveButton?.disabled).toBe(true);
 
@@ -739,9 +861,16 @@ describe('EventInventory', () => {
       status: 'AVAILABLE',
       tag: 'NONE',
     };
-    const { fixture, httpMock, host } = await renderFor(SEATED_EVENT, { gridRows: 6, gridCols: 8, zones: [zone], seats: [seat] });
+    const { fixture, httpMock, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [zone],
+      seats: [seat],
+    });
 
-    const buttonLabels = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).map((button) => button.textContent?.trim());
+    const buttonLabels = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).map(
+      (button) => button.textContent?.trim(),
+    );
     expect(buttonLabels).not.toContain('Tag seats');
     expect(buttonLabels).not.toContain('Draw zones');
 

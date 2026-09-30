@@ -173,7 +173,9 @@ describe('Attendees states and roster mapping', () => {
       attendee({ order_id: 2, customer_name: '', customer_email: 'legacy@example.com' }),
     ]);
 
-    const buyers = Array.from(host.querySelectorAll('tbody th')).map((cell) => cell.textContent?.trim());
+    const buyers = Array.from(host.querySelectorAll('tbody th')).map((cell) =>
+      cell.textContent?.trim(),
+    );
     expect(buyers).toEqual(['Ada Lovelace', 'legacy@example.com']);
     expect(host.textContent).toContain('ada@example.com');
     http.verify();
