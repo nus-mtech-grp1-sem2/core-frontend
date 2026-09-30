@@ -34,7 +34,20 @@ function stubPublicEvent(api: MockApi, overrides: Record<string, unknown> = {}) 
     .on('GET', 'event/venues', {
       json: { venues: [{ venue: 'Marina Bay Arena', upcoming: 1, sample_event_id: 7 }] },
     })
-    .on('GET', 'event/events/7', { json: { event: { ...SELLING, ...overrides } } });
+    .on('GET', 'event/events/7', { json: { event: { ...SELLING, ...overrides } } })
+    .on('GET', 'inventory/events/7/zones', {
+      json: {
+        zones: [
+          {
+            inventoryItemId: 1,
+            name: 'General admission',
+            priceCents: 2500,
+            color: '#2563EB',
+            remaining: 60,
+          },
+        ],
+      },
+    });
 }
 
 function stubSeated(api: MockApi) {

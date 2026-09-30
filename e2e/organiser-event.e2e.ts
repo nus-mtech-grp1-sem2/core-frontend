@@ -70,7 +70,7 @@ function stubEvent(
       json: {
         gridRows: 1,
         gridCols: 4,
-        zones: [{ inventoryItemId: 1, soldCount: 2, heldCount: 0 }],
+        zones: [{ inventoryItemId: 1, seatCount: 4, soldCount: 2, heldCount: 0 }],
         seats: [{}, {}, {}, {}],
       },
     })

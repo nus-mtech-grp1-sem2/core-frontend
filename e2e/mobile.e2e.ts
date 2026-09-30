@@ -41,6 +41,19 @@ function stubEvents(api: MockApi, overrides: Record<string, unknown> = {}) {
     })
     .on('GET', 'event/events/7', {
       json: { event: { ...managedEvent(overrides), organiser_sub: 'someone-else' } },
+    })
+    .on('GET', 'inventory/events/7/zones', {
+      json: {
+        zones: [
+          {
+            inventoryItemId: 1,
+            name: 'General admission',
+            priceCents: 2500,
+            color: '#2563EB',
+            remaining: 60,
+          },
+        ],
+      },
     });
 }
 
