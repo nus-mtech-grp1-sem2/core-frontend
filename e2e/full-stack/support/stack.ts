@@ -20,7 +20,7 @@ function dockerBin(): string {
     '/usr/bin/docker',
     '/usr/local/bin/docker',
     '/opt/homebrew/bin/docker',
-    'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe',
+    String.raw`C:\Program Files\Docker\Docker\resources\bin\docker.exe`,
   ];
   const found = candidates.find((path): path is string => !!path && existsSync(path));
   if (!found) throw new Error('docker CLI not found; set DOCKER_PATH to its absolute path.');
