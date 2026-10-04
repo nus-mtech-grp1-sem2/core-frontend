@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const MYSQL_CONTAINER = 'onestage-local-mysql';
@@ -6,8 +7,29 @@ const EVENT_CONTAINER = 'event-service';
 const QUEUE_CONTAINER = 'queue-service';
 const GATEWAY_CONTAINER = 'kong-gateway';
 
+let dockerPath: string | undefined;
+
+/**
+ * The docker CLI by absolute path, so a writable directory on PATH cannot shadow it.
+ * DOCKER_PATH overrides the standard install locations below.
+ */
+function dockerBin(): string {
+  if (dockerPath) return dockerPath;
+  const candidates = [
+    process.env['DOCKER_PATH'],
+    '/usr/bin/docker',
+    '/usr/local/bin/docker',
+    '/opt/homebrew/bin/docker',
+    'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe',
+  ];
+  const found = candidates.find((path): path is string => !!path && existsSync(path));
+  if (!found) throw new Error('docker CLI not found; set DOCKER_PATH to its absolute path.');
+  dockerPath = found;
+  return found;
+}
+
 export function docker(...args: string[]): string {
-  return execFileSync('docker', args, { encoding: 'utf8' }).trim();
+  return execFileSync(dockerBin(), args, { encoding: 'utf8' }).trim();
 }
 
 /**
@@ -126,7 +148,7 @@ export async function recreateServices(
     throw new Error(`${container} was not started by docker compose, so it cannot be recreated.`);
   }
   execFileSync(
-    'docker',
+    dockerBin(),
     [
       'compose',
       '--project-name',

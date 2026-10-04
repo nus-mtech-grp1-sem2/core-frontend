@@ -1,5 +1,12 @@
 import { CurrencyPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  OnInit,
+  signal,
+} from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../../core/api';
@@ -64,7 +71,7 @@ function saleStatus(
   templateUrl: './sales.html',
   styleUrl: './sales.css',
 })
-export class Sales {
+export class Sales implements OnInit {
   private readonly api = inject(ApiService);
 
   protected readonly status = signal<LoadStatus>('loading');
@@ -93,7 +100,7 @@ export class Sales {
     { label: 'Average order value', value: this.averageOrder(), currency: true },
   ]);
 
-  constructor() {
+  ngOnInit(): void {
     void this.load();
   }
 

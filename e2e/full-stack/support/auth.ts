@@ -68,7 +68,7 @@ export function userSub(role: Role): string {
   const entries = loadSession(role);
   const key = Object.keys(entries).find((name) => name.endsWith('.idToken'));
   if (!key) throw new Error(`Saved session for "${role}" has no id token.`);
-  const payload = entries[key].split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+  const payload = entries[key].split('.')[1].replaceAll('-', '+').replaceAll('_', '/');
   const claims = JSON.parse(Buffer.from(payload, 'base64').toString('utf8')) as { sub?: string };
   if (!claims.sub) throw new Error(`Saved id token for "${role}" has no sub claim.`);
   return claims.sub;
