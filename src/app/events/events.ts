@@ -17,6 +17,7 @@ import { firstValueFrom, map, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
 import { cancelEventWithConfirmation } from './event-cancellation';
+import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, readFileAsDataUrl } from './event-image';
 import { ConfirmDialogService } from '../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../core/auth';
 import { isCompleted } from '../core/event-time';
@@ -26,18 +27,6 @@ import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-s
 import { EventCard } from './components/event-card/event-card';
 import { EventStatus, EventTier, ManagedEvent } from './event.models';
 import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
-
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
 
 interface EventApiRecord {
   readonly event_id: number;

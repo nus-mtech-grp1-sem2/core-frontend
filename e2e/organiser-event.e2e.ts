@@ -188,10 +188,14 @@ test.describe('the event photo', () => {
       mimeType: 'image/png',
       buffer: PNG,
     });
-    await expect(page.getByRole('img', { name: 'Selected event photo preview' })).toBeVisible();
+    await expect(
+      page.getByRole('img', { name: 'Preview of the selected event cover' }),
+    ).toBeVisible();
     await page.getByRole('button', { name: 'Save changes' }).click();
 
-    await expect(page.getByRole('img', { name: 'Selected event photo preview' })).toHaveCount(0);
+    await expect(
+      page.getByRole('img', { name: 'Preview of the selected event cover' }),
+    ).toHaveCount(0);
     const [upload] = api.requests('PUT', `event/events/${EVENT_ID}/image`);
     const body = upload.postDataJSON() as { imageBase64: string; mimeType: string };
     expect(body.mimeType).toBe('image/png');
@@ -211,7 +215,9 @@ test.describe('the event photo', () => {
     await expect(management(page).getByRole('alert')).toContainText(
       'Please choose a JPEG, PNG or WebP image.',
     );
-    await expect(page.getByRole('img', { name: 'Selected event photo preview' })).toHaveCount(0);
+    await expect(
+      page.getByRole('img', { name: 'Preview of the selected event cover' }),
+    ).toHaveCount(0);
   });
 
   test('a photo over 5 MB is refused', async ({ page, api }) => {

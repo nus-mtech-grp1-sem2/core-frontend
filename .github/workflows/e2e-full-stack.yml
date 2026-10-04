@@ -35,8 +35,8 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: npm ci --ignore-scripts
+      - run: npm run e2e:install-browsers
 
       - name: Generate the backend .env (random secrets, no AWS credentials)
         run: bash e2e/full-stack/backend-env.sh backend-repo

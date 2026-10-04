@@ -198,7 +198,8 @@ test.describe('the seat map', () => {
     await page.waitForURL('**/organiser/events');
     const after = await inventoryOf(page, eventId);
     expect(after.zones[0].name).toBe('Front stalls');
-    expect(after.zones[0].soldCount).toBe('1');
+    // MySQL returns SUM() as a DECIMAL string, so normalise before comparing.
+    expect(Number(after.zones[0].soldCount)).toBe(1);
     expect(after.seats.filter((seat) => seat.status === 'SOLD')).toHaveLength(1);
     await page.context().close();
   });

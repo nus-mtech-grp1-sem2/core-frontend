@@ -16,8 +16,8 @@ backend_dir="${1:?usage: backend-env.sh <path to backend-repo>}"
 example="$backend_dir/.env.example"
 target="$backend_dir/.env"
 
-[ -f "$example" ] || { echo "Missing $example" >&2; exit 1; }
-if [ -e "$target" ]; then
+[[ -f "$example" ]] || { echo "Missing $example" >&2; exit 1; }
+if [[ -e "$target" ]]; then
   echo "$target already exists; leaving it alone."
   exit 0
 fi
