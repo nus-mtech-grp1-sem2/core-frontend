@@ -332,8 +332,11 @@ Test each image separately:
 Expected result:
 
 - Clear and small-but-readable QR images decode.
-- Invalid images receive actionable guidance.
+- A valid image with no readable QR receives crop guidance: upload the original image or a crop with a clear white border around the whole QR code.
+- A non-image file, including one renamed with a `.png` extension, says it could not be opened as an image and asks the helper to save the ticket QR as a PNG or JPG.
+- Browser-blocked image decoding suggests using the camera or entering the QR token manually.
 - A failed decode does not call ticket validation.
+- Upload errors give useful guidance without directing the helper to the browser console.
 - Temporary object URLs and file input state are cleaned up.
 
 ### Check-in concurrency
