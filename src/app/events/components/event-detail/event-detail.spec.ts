@@ -8,6 +8,7 @@ import { vi } from 'vitest';
 import { ApiService } from '../../../core/api';
 import { AuthService } from '../../../core/auth';
 import { QueueService } from '../../../core/queue';
+import { ConfirmDialogService } from '../../../shared/components/confirm-dialog/confirm-dialog.service';
 import {
   buyerCapacity,
   defaultSeatGridColumns,
@@ -727,7 +728,7 @@ describe('EventDetail completed events for an organiser', () => {
 
   it('says a team member is already gone instead of that the event was not found', async () => {
     const { fixture, host, button, remove } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.spyOn(TestBed.inject(ConfirmDialogService), 'ask').mockResolvedValue(true);
     remove.mockReturnValueOnce(
       throwError(
         () => new HttpErrorResponse({ status: 404, error: { error: 'team_member_not_found' } }),

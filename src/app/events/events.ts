@@ -16,7 +16,7 @@ import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom, map, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
-import { cancelEventWithConfirmation } from './event-cancellation';
+import { cancelEventWithConfirmation, DELETE_DRAFT_PROMPT } from './event-cancellation';
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, readFileAsDataUrl } from './event-image';
 import { ConfirmDialogService } from '../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../core/auth';
@@ -326,7 +326,7 @@ export class Events {
     }
   }
   protected async deleteEvent(eventId: number): Promise<void> {
-    if (!window.confirm('Delete this draft event? This cannot be undone.')) return;
+    if (!(await this.confirmDialog.ask(DELETE_DRAFT_PROMPT))) return;
     try {
       await firstValueFrom(this.api.delete('event', `/events/${eventId}`));
       await this.loadEvents(this.isAdmin());
