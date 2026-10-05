@@ -27,6 +27,8 @@ const member = () =>
     `SELECT role, invite_status FROM event_inventory.event_team_memberships
       WHERE event_id = ${eventId} AND user_sub = '${userSub('customer2')}'`,
   );
+/** The app's own confirmation dialog, used in place of window.confirm. */
+const confirmation = (page: Page) => page.getByRole('dialog');
 const memberRow = (page: Page) =>
   page.getByRole('listitem').filter({ hasText: credentials('customer2').email });
 const ownerRow = (page: Page) => page.getByRole('listitem').filter({ hasText: 'E2E Organiser' });
@@ -110,11 +112,11 @@ test('promoting a helper makes them an organiser, but not an owner', async ({ br
   const page = await signedInPage(browser, 'organiser');
   await page.goto(`/organiser/events/${eventId}`);
 
-  page.once('dialog', (dialog) => {
-    expect(dialog.message()).toBe(`Promote ${credentials('customer2').email} to Organizer?`);
-    void dialog.accept();
-  });
   await memberRow(page).getByRole('button', { name: 'Promote to organizer' }).click();
+  await expect(confirmation(page)).toContainText(
+    `Are you sure you want to promote ${credentials('customer2').email} to Organizer?`,
+  );
+  await confirmation(page).getByRole('button', { name: 'Yes, promote' }).click();
   await expect(memberRow(page)).toContainText('Organizer · accepted');
   expect(member()).toBe('ORGANISER\tACCEPTED');
 
@@ -155,11 +157,11 @@ test('demoting takes the organiser powers away again', async ({ browser }) => {
   const page = await signedInPage(browser, 'organiser');
   await page.goto(`/organiser/events/${eventId}`);
 
-  page.once('dialog', (dialog) => {
-    expect(dialog.message()).toBe(`Demote ${credentials('customer2').email} to Helper?`);
-    void dialog.accept();
-  });
   await memberRow(page).getByRole('button', { name: 'Demote to helper' }).click();
+  await expect(confirmation(page)).toContainText(
+    `Are you sure you want to demote ${credentials('customer2').email} to Helper?`,
+  );
+  await confirmation(page).getByRole('button', { name: 'Yes, demote' }).click();
   await expect(memberRow(page)).toContainText('Helper · accepted');
   expect(member()).toBe('HELPER\tACCEPTED');
 
@@ -173,17 +175,18 @@ test('removing a helper takes them off the team and takes away their access', as
   const page = await signedInPage(browser, 'organiser');
   await page.goto(`/organiser/events/${eventId}`);
 
-  page.once('dialog', (dialog) => {
-    expect(dialog.message()).toBe(`Remove ${credentials('customer2').email} from this event?`);
-    void dialog.dismiss();
-  });
   await memberRow(page).getByRole('button', { name: 'Remove' }).click();
+  await expect(confirmation(page)).toContainText(
+    `Are you sure you want to remove ${credentials('customer2').email} from this event's team?`,
+  );
+  await confirmation(page).getByRole('button', { name: 'No, keep member' }).click();
   await expect(memberRow(page)).toBeVisible();
 
-  page.once('dialog', (dialog) => void dialog.accept());
   await memberRow(page).getByRole('button', { name: 'Remove' }).click();
+  await confirmation(page).getByRole('button', { name: 'Yes, remove' }).click();
   await expect(memberRow(page)).toHaveCount(0);
-  expect(member()).toBe('');
+  // Removal revokes the membership rather than deleting it, keeping a record of who had access.
+  expect(member()).toBe('HELPER\tREVOKED');
   expect(
     (
       await callAs(page.request, 'customer2', 'post', '/api/ticket/scanner/sessions', { eventId })
