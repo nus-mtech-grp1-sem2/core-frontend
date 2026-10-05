@@ -147,7 +147,7 @@ test.describe('door check-in', () => {
     ).toBeVisible();
 
     await upload(BLANK_PNG);
-    await expect(page.getByRole('alert')).toContainText('No QR code could be read');
+    await expect(page.getByRole('alert')).toContainText('No readable QR code was found');
     await context.close();
   });
 
