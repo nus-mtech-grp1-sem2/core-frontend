@@ -3,6 +3,14 @@ import { firstValueFrom } from 'rxjs';
 import type { ApiService } from '../core/api';
 import type { ConfirmOptions } from '../shared/components/confirm-dialog/confirm-dialog.service';
 
+/** The confirmation shown before deleting a draft event. */
+export const DELETE_DRAFT_PROMPT: ConfirmOptions = {
+  title: 'Delete this draft event?',
+  message: ['This cannot be undone.'],
+  confirmLabel: 'Yes, delete draft',
+  cancelLabel: 'No, keep draft',
+};
+
 /** Who a cancellation would affect: customers with paid orders, and the tickets they bought. */
 export interface CancellationImpact {
   readonly customers: number;

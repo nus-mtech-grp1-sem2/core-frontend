@@ -16,7 +16,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom, timer } from 'rxjs';
 
 import { ApiService } from '../../../core/api';
-import { cancelEventWithConfirmation } from '../../event-cancellation';
+import { cancelEventWithConfirmation, DELETE_DRAFT_PROMPT } from '../../event-cancellation';
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, readFileAsDataUrl } from '../../event-image';
 import { ConfirmDialogService } from '../../../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../../../core/auth';
@@ -401,7 +401,7 @@ export class EventDetail {
       this.readOnly() ||
       event.status !== 'DRAFT' ||
       this.deleting() ||
-      !window.confirm('Delete this draft event? This cannot be undone.')
+      !(await this.confirmDialog.ask(DELETE_DRAFT_PROMPT))
     )
       return;
     this.deleting.set(true);
@@ -457,7 +457,12 @@ export class EventDetail {
     if (
       !event ||
       this.readOnly() ||
-      !window.confirm(`Remove ${member.user_email} from this event?`)
+      !(await this.confirmDialog.ask({
+        title: 'Remove team member?',
+        message: [`Are you sure you want to remove ${member.user_email} from this event's team?`],
+        confirmLabel: 'Yes, remove',
+        cancelLabel: 'No, keep member',
+      }))
     )
       return;
     this.error.set('');
@@ -477,11 +482,18 @@ export class EventDetail {
   protected async changeRole(member: TeamMember, role: 'ORGANISER' | 'HELPER'): Promise<void> {
     const event = this.event();
     if (!event || this.readOnly() || role === member.role || this.changingRoleFor()) return;
-    const action = role === 'ORGANISER' ? 'promote' : 'demote';
+    const promoting = role === 'ORGANISER';
+    const action = promoting ? 'promote' : 'demote';
+    const verb = promoting ? 'Promote' : 'Demote';
+    const roleName = promoting ? 'Organizer' : 'Helper';
     if (
-      !window.confirm(
-        `${action === 'promote' ? 'Promote' : 'Demote'} ${member.user_email} to ${role === 'ORGANISER' ? 'Organizer' : 'Helper'}?`,
-      )
+      !(await this.confirmDialog.ask({
+        title: `${verb} team member?`,
+        message: [`Are you sure you want to ${action} ${member.user_email} to ${roleName}?`],
+        confirmLabel: `Yes, ${action}`,
+        cancelLabel: 'No',
+        tone: promoting ? 'positive' : 'destructive',
+      }))
     )
       return;
     this.changingRoleFor.set(member.user_sub);
