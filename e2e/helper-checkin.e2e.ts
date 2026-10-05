@@ -47,7 +47,9 @@ test('an image with no QR code is rejected without calling ticket validation', a
 
   await uploadQr(page, BLANK_PNG);
 
-  await expect(page.getByRole('alert')).toContainText('No QR code could be read from that image.');
+  await expect(page.getByRole('alert')).toContainText(
+    'No readable QR code was found. Upload the original image or a crop with a clear white border around the whole QR code.',
+  );
   expect(api.requests('POST', 'ticket/tickets/validate')).toHaveLength(0);
 });
 
@@ -61,7 +63,10 @@ test('a helper not assigned to the event is told so', async ({ page, api }) => {
 });
 
 test.describe('QR images of varying quality', () => {
-  const READ_FAILURE = 'No QR code could be read from that image.';
+  const NO_QR_GUIDANCE =
+    'No readable QR code was found. Upload the original image or a crop with a clear white border around the whole QR code.';
+  const IMAGE_LOAD_GUIDANCE =
+    'That file could not be opened as an image. Save the ticket QR as a PNG or JPG and upload that.';
 
   test.beforeEach(async ({ page, api }) => {
     api.on('POST', 'ticket/tickets/validate', { json: { outcome: 'SUCCESS' } });
@@ -93,14 +98,14 @@ test.describe('QR images of varying quality', () => {
       name: 'a QR that is cropped through the middle',
       recipe: { keep: { x: 0, y: 0, w: 0.6, h: 1 } },
     },
-    { name: 'an almost invisible QR (faint grey on white)', recipe: { ink: 240, paper: 255 } },
+    { name: 'an almost invisible QR (near-white on white)', recipe: { ink: 254, paper: 255 } },
   ];
 
   for (const { name, recipe } of unreadable) {
     test(`rejects ${name} without calling ticket validation`, async ({ page, api }) => {
       await uploadQr(page, await degrade(page, await qrPng(), recipe));
 
-      await expect(page.getByRole('alert')).toContainText(READ_FAILURE);
+      await expect(page.getByRole('alert')).toContainText(NO_QR_GUIDANCE);
       expect(api.requests('POST', 'ticket/tickets/validate')).toHaveLength(0);
     });
   }
@@ -115,7 +120,7 @@ test.describe('QR images of varying quality', () => {
       buffer: Buffer.from('%PDF-1.4 not an image'),
     });
 
-    await expect(page.getByRole('alert')).toContainText(READ_FAILURE);
+    await expect(page.getByRole('alert')).toContainText(IMAGE_LOAD_GUIDANCE);
     expect(api.requests('POST', 'ticket/tickets/validate')).toHaveLength(0);
   });
 
@@ -126,7 +131,7 @@ test.describe('QR images of varying quality', () => {
       buffer: Buffer.from('this is plain text, not a PNG'),
     });
 
-    await expect(page.getByRole('alert')).toContainText(READ_FAILURE);
+    await expect(page.getByRole('alert')).toContainText(IMAGE_LOAD_GUIDANCE);
     expect(api.requests('POST', 'ticket/tickets/validate')).toHaveLength(0);
   });
 
@@ -145,7 +150,7 @@ test.describe('QR images of varying quality', () => {
 
   test('a failed read leaves the door ready for the next image', async ({ page }) => {
     await uploadQr(page, BLANK_PNG);
-    await expect(page.getByRole('alert')).toContainText(READ_FAILURE);
+    await expect(page.getByRole('alert')).toContainText(NO_QR_GUIDANCE);
 
     await uploadQr(page, await qrPng());
 

@@ -1,6 +1,13 @@
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 import { create } from 'qrcode';
+import { of } from 'rxjs';
+
+import { ApiService } from '../core/api';
+import { AuthService } from '../core/auth';
 
 import {
+  Checkin,
   currentAndFutureEvents,
   decodeQrPixels,
   canCheckIn,
@@ -156,13 +163,92 @@ describe('uploaded QR image preparation', () => {
 });
 
 describe('uploaded QR failures', () => {
+  it('shows the image-load guidance when decodeImage cannot open a fake PNG', async () => {
+    const nativeUrl = URL;
+    const api = {
+      get: vi.fn((_service: string, path: string) =>
+        path === '/helper/shifts'
+          ? of({
+              events: [{ event_id: 7, title: 'Test event', starts_at: '2099-01-01T00:00:00Z' }],
+            })
+          : of({ checkedIn: 0, issued: 0 }),
+      ),
+      post: vi.fn(() => of({ sessionToken: 'scanner-session' })),
+    };
+    const failingImage = class {
+      decoding = '';
+      naturalWidth = 0;
+      width = 0;
+      onload: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+
+      set src(_value: string) {
+        queueMicrotask(() => this.onerror?.(new Event('error')));
+      }
+    };
+    const testUrl = Object.assign(class extends nativeUrl {}, {
+      createObjectURL: vi.fn(() => 'blob:test-image'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    vi.stubGlobal('URL', testUrl);
+    vi.stubGlobal('Image', failingImage);
+    vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('unsupported')));
+
+    await TestBed.configureTestingModule({
+      imports: [Checkin],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => '7' } } } },
+        { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: { user: () => ({ email: 'helper@example.com' }) } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(Checkin);
+    try {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const component = fixture.componentInstance as unknown as {
+        decodeImage(file: File): Promise<void>;
+      };
+      await component.decodeImage(new File(['not an image'], 'ticket.png', { type: 'image/png' }));
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(
+        'That file could not be opened as an image. Save the ticket QR as a PNG or JPG and upload that.',
+      );
+      expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).not.toContain(
+        'browser console',
+      );
+    } finally {
+      fixture.destroy();
+      vi.unstubAllGlobals();
+      TestBed.resetTestingModule();
+    }
+  });
+
   it('tells the helper the file was not a usable image when decoding never started', () => {
-    expect(uploadErrorMessage(new Error('qr_image_empty'))).toContain('could not be opened');
-    expect(uploadErrorMessage(new Error('qr_image_load_failed'))).toContain('could not be opened');
+    expect(uploadErrorMessage(new Error('qr_image_empty'))).toBe(
+      'That file could not be opened as an image. Save the ticket QR as a PNG or JPG and upload that.',
+    );
+    expect(uploadErrorMessage(new Error('qr_image_load_failed'))).toBe(
+      'That file could not be opened as an image. Save the ticket QR as a PNG or JPG and upload that.',
+    );
   });
 
   it('keeps the crop advice for an image that decoded but held no QR code', () => {
-    expect(uploadErrorMessage(new Error('qr_not_found'))).toContain('No readable QR code');
-    expect(uploadErrorMessage(undefined)).toContain('No readable QR code');
+    expect(uploadErrorMessage(new Error('qr_not_found'))).toBe(
+      'No readable QR code was found. Upload the original image or a crop with a clear white border around the whole QR code.',
+    );
+    expect(uploadErrorMessage(undefined)).toBe(
+      'No readable QR code was found. Upload the original image or a crop with a clear white border around the whole QR code.',
+    );
+  });
+
+  it('uses the browser-blocked decoding guidance for a canvas failure', () => {
+    expect(uploadErrorMessage(new Error('qr_canvas_unavailable'))).toBe(
+      'This browser blocked image decoding. Use the camera or enter the QR token manually.',
+    );
   });
 });

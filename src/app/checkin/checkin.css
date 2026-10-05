@@ -66,6 +66,12 @@
   cursor: pointer;
 }
 
+.upload:has(input:focus-visible) {
+  outline: 3px solid var(--brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .upload input {
   position: absolute;
   width: 1px;
