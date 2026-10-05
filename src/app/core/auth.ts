@@ -47,6 +47,11 @@ export class AuthService {
     this.apply(null);
   }
 
+  /** Completes startup as signed out when the redirect SDK cannot finish restoring. */
+  completeAsAnonymous(): void {
+    this.apply(null);
+  }
+
   accessToken(): Promise<string | null> {
     return this.gateway.accessToken();
   }
