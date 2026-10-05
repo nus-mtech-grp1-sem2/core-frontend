@@ -185,6 +185,85 @@ test.describe('drawing zones', () => {
   });
 });
 
+test.describe('keyboard-accessible zone editing (no drag gesture needed)', () => {
+  test('"Add zone" places a zone at the first empty cell', async ({ page, api }) => {
+    stubEditor(api);
+    api.on('PUT', `inventory/events/${EVENT_ID}/inventory`, { status: 204 });
+    await page.goto(`/organiser/events/${EVENT_ID}/inventory`);
+    await expect(page.getByText('No zones yet')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Add zone' }).click();
+
+    await expect(zoneCards(page)).toHaveCount(1);
+    await expect(zoneCards(page).first()).toContainText('1 capacity');
+    await page.getByLabel('Zone name').fill('Floor');
+    await page.getByLabel('Price per seat').fill('12.5');
+    await page.getByRole('button', { name: 'Save inventory' }).click();
+
+    await page.waitForURL('**/organiser/events');
+    const [save] = api.requests('PUT', `inventory/events/${EVENT_ID}/inventory`);
+    expect(save.postDataJSON()).toEqual({
+      zones: [
+        {
+          inventoryItemId: null,
+          name: 'Floor',
+          price: 12.5,
+          color: '#2563EB',
+          gridRow: 0,
+          gridCol: 0,
+          gridRowSpan: 1,
+          gridColSpan: 1,
+        },
+      ],
+      gridRows: 6,
+      gridCols: 8,
+    });
+  });
+
+  test('typing row/column/span numbers repositions and resizes a zone', async ({ page, api }) => {
+    stubEditor(api);
+    api.on('PUT', `inventory/events/${EVENT_ID}/inventory`, { status: 204 });
+    await page.goto(`/organiser/events/${EVENT_ID}/inventory`);
+    await page.getByRole('button', { name: 'Add zone' }).click();
+    await page.getByLabel('Zone name').fill('Floor');
+
+    await page.getByLabel('Starting row index for zone 1').fill('2');
+    await page.getByLabel('Starting column index for zone 1').fill('3');
+    await page.getByLabel('Row span for zone 1').fill('2');
+    await page.getByLabel('Column span for zone 1').fill('4');
+
+    await expect(zoneCards(page).first()).toContainText('8 capacity');
+
+    await page.getByRole('button', { name: 'Save inventory' }).click();
+    await page.waitForURL('**/organiser/events');
+    const [save] = api.requests('PUT', `inventory/events/${EVENT_ID}/inventory`);
+    expect(save.postDataJSON().zones[0]).toMatchObject({
+      gridRow: 2,
+      gridCol: 3,
+      gridRowSpan: 2,
+      gridColSpan: 4,
+    });
+  });
+
+  test('typing a position that would overlap another zone is rejected, leaving both zones where they were', async ({
+    page,
+    api,
+  }) => {
+    // Occupies rows 0-1, columns 0-2, so the next "Add zone" lands at row 0, column 3.
+    stubEditor(api, { zones: [zone()] });
+    await page.goto(`/organiser/events/${EVENT_ID}/inventory`);
+    await page.getByRole('button', { name: 'Add zone' }).click();
+    await expect(zoneCards(page)).toHaveCount(2);
+
+    const added = zoneCards(page).nth(1);
+    await added.getByLabel('Starting column index for zone 2').fill('0');
+
+    await expect(page.getByRole('alert')).toContainText("Zones can't overlap");
+    await expect(added.getByLabel('Starting column index for zone 2')).toHaveValue('3');
+    await expect(zoneCards(page).nth(0).getByLabel('Zone name')).toHaveValue('Stalls');
+  });
+});
+
 test.describe('the map size', () => {
   test('rows and columns can be added, typed in and removed, and are saved', async ({
     page,

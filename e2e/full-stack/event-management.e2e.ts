@@ -204,14 +204,7 @@ test.describe('the seat map', () => {
   });
 });
 
-// Two bugs found writing these tests (backend-repo#86 and #87). Each is marked test.fail: it passes while the bug exists
-// and starts failing when it is fixed, which is the cue to delete the marker.
 test.describe('general admission zones', () => {
-  test.fail(
-    true,
-    'Known bug (backend-repo#86): a general-admission zone reports soldCount 0 and no seats whatever has been sold, so the editor lets a zone with sales be removed and the event page says "0 seats"',
-  );
-
   test('a zone with a sale in it cannot be removed', async ({ browser }) => {
     const page = await signedInPage(browser, 'organiser');
     const eventId = await createPublishedGaEvent(page.request, `E2E GA Sold ${runId}`, 6);
@@ -236,18 +229,12 @@ test.describe('general admission zones', () => {
 
     await page.goto(`/organiser/events/${eventId}`);
 
-    // Today it says "1 zone · 0 seats" and nothing about the sale.
     await expect(page.getByText('1 zone · 6 seats, 1 sold')).toBeVisible();
     await page.context().close();
   });
 });
 
 test.describe('capacity below the available buyers', () => {
-  test.fail(
-    true,
-    'Known bug (backend-repo#87): shrinking capacity below the available buyers fails with a 502 instead of an explained 4xx',
-  );
-
   test('is refused with a 4xx the organiser can act on', async ({ browser }) => {
     const page = await signedInPage(browser, 'organiser');
     // createPublishedGaEvent sets available buyers equal to the seats.
