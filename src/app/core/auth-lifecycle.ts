@@ -19,7 +19,7 @@ export class AuthLifecycleService {
       this.started = true;
       Hub.listen('auth', ({ payload }) => {
         if (payload.event === 'signedIn') {
-          this.queueRestore(true);
+          void this.queueRestore(true);
         }
       });
     }
