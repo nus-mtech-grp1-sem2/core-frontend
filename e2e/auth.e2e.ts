@@ -176,10 +176,6 @@ test.describe('coming back signed in', () => {
     page,
     api,
   }) => {
-    test.fail(
-      true,
-      'Known bug (core-frontend#60): coming back from Cognito with an error (for example the visitor pressed Cancel) leaves a blank page: the app never finishes starting',
-    );
     stubBrowsing(api);
     const cognito = await stubCognito(page, { user: customer });
     await page.goto('/login');
@@ -189,8 +185,9 @@ test.describe('coming back signed in', () => {
 
     await page.goto(`/?error=access_denied&error_description=Denied&state=${state}`);
 
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByText('Sign-in was cancelled.')).toBeVisible();
     await expect(signInLink(page)).toBeVisible();
-    await expect(page.getByText('E2E Summer Concert').first()).toBeVisible();
     expect(cognito.tokens).toHaveLength(0);
   });
 
