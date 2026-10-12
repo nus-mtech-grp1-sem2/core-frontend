@@ -70,11 +70,20 @@ export default defineConfig({
     {
       name: 'full-stack',
       testMatch: '**/full-stack/**/*.e2e.ts',
-      testIgnore: '**/full-stack/auth.setup.e2e.ts',
+      testIgnore: ['**/full-stack/auth.setup.e2e.ts', '**/full-stack/buyer-load.e2e.ts'],
       dependencies: ['full-stack-setup'],
       fullyParallel: false,
       timeout: 120_000,
       // Traces record request headers, which here carry real Cognito tokens.
+      use: { ...devices['Desktop Chrome'], trace: 'off' },
+    },
+    {
+      name: 'buyer-load',
+      testMatch: '**/full-stack/buyer-load.e2e.ts',
+      dependencies: ['full-stack-setup'],
+      fullyParallel: false,
+      timeout: 120_000,
+      // This evidence tier uses retained Cognito sessions; never persist traces with tokens.
       use: { ...devices['Desktop Chrome'], trace: 'off' },
     },
   ],
