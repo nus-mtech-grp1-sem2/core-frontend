@@ -252,6 +252,8 @@ describe('EventDetail seat map sizing', () => {
     // The grid must sit inside a container that can scroll instead of
     // visually spilling out of the purchase panel's rounded border.
     expect(seatGrid?.closest('.seat-map')).not.toBeNull();
+    // A seat map needs room to lay out without scrolling inside its own card.
+    expect(host.querySelector('.purchase')?.classList.contains('purchase--wide')).toBe(true);
   });
 });
 
@@ -923,13 +925,20 @@ describe('EventDetail completed events for a customer', () => {
 });
 
 describe('EventDetail GA ticket tiers', () => {
-  async function renderWithZones(zones: readonly {
-    inventoryItemId: number;
-    name: string;
-    priceCents: number;
-    color: string;
-    remaining: number;
-  }[]) {
+  async function renderWithZones(
+    zones: readonly {
+      inventoryItemId: number;
+      name: string;
+      priceCents: number;
+      color: string;
+      remaining: number;
+      gridRow?: number;
+      gridCol?: number;
+      gridRowSpan?: number;
+      gridColSpan?: number;
+    }[],
+    gridDims?: { gridRows: number; gridCols: number },
+  ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172')
         return of({
@@ -950,7 +959,7 @@ describe('EventDetail GA ticket tiers', () => {
       if (path === '/helper/shifts') return of({ events: [] });
       if (path === '/customers/me/orders') return of({ orders: [] });
       if (path === '/customers/me/tickets') return of({ tickets: [] });
-      if (path === '/events/172/zones') return of({ zones });
+      if (path === '/events/172/zones') return of({ ...gridDims, zones });
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
     const post = vi.fn(() => of({ order: { order_id: 42 } }));
@@ -1051,5 +1060,92 @@ describe('EventDetail GA ticket tiers', () => {
       '/orders',
       expect.objectContaining({ inventoryItemId: 2 }),
     );
+  });
+
+  it('lists ticket types from most to least expensive', async () => {
+    const roomyBlue = { ...blue, remaining: 5 };
+    const { host } = await renderWithZones([roomyBlue, red]);
+
+    const names = Array.from(host.querySelectorAll<HTMLElement>('.zone-option .zone-name')).map(
+      (el) => el.textContent?.trim(),
+    );
+    expect(names).toEqual(['Red', 'Blue']);
+  });
+
+  // The reported gap: a GA buyer saw only a flat list of zone names/prices,
+  // with no sense of where each zone actually sits — unlike TIER2_SEATED,
+  // which shows the organiser's painted layout. The fix reuses that same
+  // grid, just with each zone rendered as one read-only coloured block
+  // (no seat to pick) instead of individually clickable seats.
+  it("shows the organiser's zone layout as a read-only grid, like reserved seating but without pickable seats", async () => {
+    const floor = {
+      inventoryItemId: 1,
+      name: 'Floor',
+      priceCents: 2000,
+      color: '#2563EB',
+      remaining: 10,
+      gridRow: 0,
+      gridCol: 0,
+      gridRowSpan: 2,
+      gridColSpan: 3,
+    };
+    const balcony = {
+      inventoryItemId: 2,
+      name: 'Balcony',
+      priceCents: 5000,
+      color: '#DC2626',
+      remaining: 5,
+      gridRow: 2,
+      gridCol: 0,
+      gridRowSpan: 1,
+      gridColSpan: 4,
+    };
+    const { host } = await renderWithZones([floor, balcony], { gridRows: 6, gridCols: 8 });
+
+    const zoneMap = host.querySelector('.zone-map');
+    expect(zoneMap).not.toBeNull();
+
+    const blocks = Array.from(host.querySelectorAll<HTMLElement>('.zone-block'));
+    expect(blocks.length).toBe(2);
+
+    const floorBlock = blocks.find((block) => block.textContent?.includes('Floor'));
+    expect(floorBlock?.style.gridRow).toBe('1 / span 2');
+    expect(floorBlock?.style.gridColumn).toBe('1 / span 3');
+    expect(floorBlock?.style.backgroundColor).toBe('rgb(37, 99, 235)'); // #2563EB
+
+    const balconyBlock = blocks.find((block) => block.textContent?.includes('Balcony'));
+    expect(balconyBlock?.style.gridRow).toBe('3 / span 1');
+    expect(balconyBlock?.style.gridColumn).toBe('1 / span 4');
+
+    // Display only: no button, no click-to-select — the radio list above
+    // remains the only way to choose a tier.
+    expect(floorBlock?.tagName).toBe('DIV');
+  });
+
+  it('shows no zone map when the API has no grid layout for this event', async () => {
+    const { host } = await renderWithZones([
+      { inventoryItemId: 9, name: 'General Admission', priceCents: 2000, color: '#000', remaining: 28 },
+    ]);
+
+    expect(host.querySelector('.zone-map')).toBeNull();
+    // No map to show means no need for the wider card either.
+    expect(host.querySelector('.purchase')?.classList.contains('purchase--wide')).toBe(false);
+  });
+
+  it('widens the purchase card so the zone map does not need to scroll', async () => {
+    const floor = {
+      inventoryItemId: 1,
+      name: 'Floor',
+      priceCents: 2000,
+      color: '#2563EB',
+      remaining: 10,
+      gridRow: 0,
+      gridCol: 0,
+      gridRowSpan: 2,
+      gridColSpan: 3,
+    };
+    const { host } = await renderWithZones([floor], { gridRows: 2, gridCols: 3 });
+
+    expect(host.querySelector('.purchase')?.classList.contains('purchase--wide')).toBe(true);
   });
 });

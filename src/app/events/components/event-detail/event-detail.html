@@ -53,7 +53,11 @@
     </div>
   </section>
   } @else if (canBuy()) {
-  <section class="shell body purchase" aria-label="Buy tickets">
+  <section
+    class="shell body purchase"
+    [class.purchase--wide]="showsSeatOrZoneMap()"
+    aria-label="Buy tickets"
+  >
     @if (ownership(); as owned) {
     <div class="owned" role="status">
       <p>
@@ -138,6 +142,26 @@
       </label>
       }
     </fieldset>
+    } @if (hasZoneMap()) {
+    <div class="zone-map">
+      <div
+        class="zone-grid"
+        aria-hidden="true"
+        [style.grid-template-rows]="'repeat(' + zoneGridRows() + ', 1.75rem)'"
+        [style.grid-template-columns]="'repeat(' + zoneGridCols() + ', 1.75rem)'"
+      >
+        @for (zone of zoneOptions(); track zone.inventoryItemId) {
+        <div
+          class="zone-block"
+          [style.grid-row]="zoneBlockRow(zone)"
+          [style.grid-column]="zoneBlockColumn(zone)"
+          [style.background]="zone.color"
+        >
+          {{ zone.name }}
+        </div>
+        }
+      </div>
+    </div>
     }
     <div class="field">
       <label for="quantity">Quantity</label>

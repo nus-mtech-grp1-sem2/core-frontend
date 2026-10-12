@@ -112,9 +112,19 @@ interface ZoneOption {
   readonly priceCents: number;
   readonly color: string;
   readonly remaining: number;
+  // Grid position, mirroring SeatOption: lets a GA buyer see the same
+  // layout the organiser painted — just as a read-only block per zone
+  // instead of a clickable seat per cell. Absent on older/unconfigured
+  // events, in which case the zone map stays hidden.
+  readonly gridRow?: number;
+  readonly gridCol?: number;
+  readonly gridRowSpan?: number;
+  readonly gridColSpan?: number;
 }
 
 interface ZonesResponse {
+  readonly gridRows?: number;
+  readonly gridCols?: number;
   readonly zones: readonly ZoneOption[];
 }
 
@@ -224,11 +234,26 @@ export class EventDetail {
   protected readonly selectedZoneId = signal<number | null>(null);
   /** A single-zone GA event needs no picker — the order service already
    * defaults to that zone. Only show a choice once there's actually a
-   * choice to make, cheapest-tier-first like an airline fare table. */
+   * choice to make, priciest-tier-first so the premium options stand out. */
   protected readonly sortedZoneOptions = computed(() =>
-    [...this.zoneOptions()].sort((a, b) => a.priceCents - b.priceCents),
+    [...this.zoneOptions()].sort((a, b) => b.priceCents - a.priceCents),
   );
   protected readonly hasZoneChoice = computed(() => this.zoneOptions().length > 1);
+  // Overall grid dimensions for the read-only GA zone map (0 when the API
+  // sends none, e.g. an older/unconfigured event) — the map stays hidden
+  // until both are known, same gating as the seated seat-map's `seats()`.
+  protected readonly zoneGridRows = signal(0);
+  protected readonly zoneGridCols = signal(0);
+  protected readonly hasZoneMap = computed(
+    () => this.zoneGridRows() > 0 && this.zoneGridCols() > 0 && this.zoneOptions().length > 0,
+  );
+  /** A seat or zone map needs a wider purchase card so it isn't squeezed
+   * into horizontal scrolling — a plain quantity-only purchase stays compact. */
+  protected readonly showsSeatOrZoneMap = computed(() => {
+    const event = this.event();
+    if (!event) return false;
+    return event.tier === 'TIER2_SEATED' ? this.seats().length > 0 : this.hasZoneMap();
+  });
   protected readonly purchasing = signal(false);
   protected readonly purchaseError = signal('');
   protected readonly queueAccess = signal<QueueAccess>('checking');
@@ -593,6 +618,18 @@ export class EventDetail {
     return this.isSeatSelected(seat) ? 'var(--brand-600)' : seat.color;
   }
 
+  /** CSS grid-row/grid-column shorthand for a GA zone's block, placing it
+   * at the organiser's painted position and span — same coordinate scheme
+   * as the seated seat-map, just one block per zone instead of one button
+   * per seat. */
+  protected zoneBlockRow(zone: ZoneOption): string {
+    return `${(zone.gridRow ?? 0) + 1} / span ${zone.gridRowSpan ?? 1}`;
+  }
+
+  protected zoneBlockColumn(zone: ZoneOption): string {
+    return `${(zone.gridCol ?? 0) + 1} / span ${zone.gridColSpan ?? 1}`;
+  }
+
   protected toggleSeat(seat: SeatOption): void {
     if (seat.status !== 'AVAILABLE') return;
     this.selectedSeatIds.update((ids) => {
@@ -830,12 +867,16 @@ export class EventDetail {
         this.api.get<ZonesResponse>('inventory', `/events/${eventId}/zones`),
       );
       this.zoneOptions.set(result.zones);
+      this.zoneGridRows.set(result.gridRows ?? 0);
+      this.zoneGridCols.set(result.gridCols ?? 0);
       const cheapestAvailable = [...result.zones]
         .sort((a, b) => a.priceCents - b.priceCents)
         .find((zone) => zone.remaining > 0);
       this.selectedZoneId.set(cheapestAvailable?.inventoryItemId ?? null);
     } catch {
       this.zoneOptions.set([]);
+      this.zoneGridRows.set(0);
+      this.zoneGridCols.set(0);
       this.selectedZoneId.set(null);
     }
   }
