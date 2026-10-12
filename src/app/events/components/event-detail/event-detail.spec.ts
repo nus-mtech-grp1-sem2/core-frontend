@@ -756,6 +756,26 @@ describe('EventDetail completed events for an organiser', () => {
     }
   });
 
+  it('shows the UTC start time in local time and saves an edited time back in UTC', async () => {
+    const startsAt = '2099-01-01T12:00:00.000Z';
+    const { fixture, host, button, put } = await renderOrganiser(startsAt, 'DRAFT');
+    const input = host.querySelector<HTMLInputElement>('#starts-at')!;
+
+    expect(new Date(input.value).toISOString()).toBe(startsAt);
+
+    input.value = '2099-01-02T19:30';
+    input.dispatchEvent(new Event('input'));
+    button('Save changes')!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(put).toHaveBeenCalledWith(
+      'event',
+      '/events/172',
+      expect.objectContaining({ startsAt: new Date(2099, 0, 2, 19, 30).toISOString() }),
+    );
+  });
+
   it("locks the event's own details once published, but leaves team management and lifecycle actions available", async () => {
     const { host, button, put } = await renderOrganiser('2099-01-01 20:00:00', 'PUBLISHED');
 
