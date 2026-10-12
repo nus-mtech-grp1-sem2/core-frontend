@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom, map, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
@@ -105,6 +105,7 @@ export class Events {
   private readonly queue = inject(QueueService);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly organiserMode = this.route.snapshot.data['workspace'] === 'organiser';
   protected readonly searchTerm = toSignal(
@@ -271,9 +272,10 @@ export class Events {
     this.submitting.set(true);
     try {
       const eventId = this.editingEventId();
+      const isNewEvent = eventId === null;
       const body = this.eventForm.getRawValue();
       let targetEventId = eventId;
-      if (eventId === null) {
+      if (isNewEvent) {
         const created = await firstValueFrom(this.api.post<{ eventId: number }>('event', '/events', body));
         targetEventId = created.eventId;
       } else {
@@ -285,7 +287,14 @@ export class Events {
           mimeType: this.selectedImageMimeType,
         }));
       }
-      this.resetForm(); this.showEventForm.set(false); await this.loadEvents(this.isAdmin());
+      this.resetForm(); this.showEventForm.set(false);
+      if (isNewEvent && targetEventId !== null) {
+        // A freshly created event has no seats yet, so send the organiser
+        // straight to Configure inventory instead of back to the list.
+        await this.router.navigate(['/organiser/events', targetEventId, 'inventory']);
+      } else {
+        await this.loadEvents(this.isAdmin());
+      }
     } catch (error) { this.error.set(describeEventError(error, 'save the event')); }
     finally { this.submitting.set(false); }
   }
