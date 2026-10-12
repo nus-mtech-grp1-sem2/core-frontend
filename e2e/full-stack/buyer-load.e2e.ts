@@ -82,7 +82,11 @@ test('three retained users complete the buyer UI journey concurrently', async ({
     },
   };
   await mkdir('test-results', { recursive: true });
-  await writeFile('test-results/buyer-load-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`, {
-    mode: 0o600,
-  });
+  await writeFile(
+    'test-results/buyer-load-evidence.json',
+    `${JSON.stringify(evidence, null, 2)}\n`,
+    {
+      mode: 0o600,
+    },
+  );
 });
