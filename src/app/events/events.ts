@@ -20,7 +20,7 @@ import { cancelEventWithConfirmation, DELETE_DRAFT_PROMPT } from './event-cancel
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, readFileAsDataUrl } from './event-image';
 import { ConfirmDialogService } from '../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../core/auth';
-import { isCompleted } from '../core/event-time';
+import { fromDateTimeLocal, isCompleted } from '../core/event-time';
 import { hasSubmittedPayment } from '../core/payment-processing';
 import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
@@ -273,7 +273,10 @@ export class Events {
     this.submitting.set(true);
     try {
       const eventId = this.editingEventId();
-      const body = this.eventForm.getRawValue();
+      const body = {
+        ...this.eventForm.getRawValue(),
+        startsAt: fromDateTimeLocal(this.eventForm.controls.startsAt.value),
+      };
       let targetEventId = eventId;
       if (eventId === null) {
         const created = await firstValueFrom(
