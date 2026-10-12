@@ -744,6 +744,15 @@ describe('EventDetail completed events for an organiser', () => {
     }
   });
 
+  it('pre-fills the edit form with the Singapore wall-clock start time, not the raw UTC digits', async () => {
+    // The event service returns starts_at as the correct UTC instant for 8pm
+    // Singapore time on 6 Oct 2099. The edit form's datetime-local input must
+    // show "20:00" (8pm SGT), not "12:00" (noon, the raw UTC digits).
+    const { host } = await renderOrganiser('2099-10-06T12:00:00.000Z', 'DRAFT');
+
+    expect(host.querySelector<HTMLInputElement>('#starts-at')?.value).toBe('2099-10-06T20:00');
+  });
+
   it("locks the event's own details once published, but leaves team management and lifecycle actions available", async () => {
     const { host, button, put } = await renderOrganiser('2099-01-01 20:00:00', 'PUBLISHED');
 

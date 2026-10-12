@@ -20,7 +20,7 @@
         >
         <h1>{{ event.title }}</h1>
         <p class="where">{{ event.venue }}</p>
-        <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+        <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' : '+0800' }}</p>
         <p>{{ event.description }}</p>
         <div class="event-facts">
           <span

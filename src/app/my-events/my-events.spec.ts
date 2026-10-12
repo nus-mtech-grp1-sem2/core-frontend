@@ -35,7 +35,9 @@ describe('MyEvents tickets and orders', () => {
                   event_id: 172,
                   event_title: 'Test concert',
                   venue: 'Test Hall',
-                  starts_at: '2099-01-01T20:00:00',
+                  // 8pm Singapore time on 1 Jan 2099, as the correct UTC instant
+                  // the fixed event service now returns.
+                  starts_at: '2099-01-01T12:00:00.000Z',
                   seat_label: 'A1',
                   qr_token: 'dummy',
                   status: 'ISSUED',
@@ -54,7 +56,9 @@ describe('MyEvents tickets and orders', () => {
                   status: options.status ?? 'PAID',
                   event_title: 'Test concert',
                   venue: 'Test Hall',
-                  starts_at: '2099-01-01T20:00:00',
+                  // 8pm Singapore time on 1 Jan 2099, as the correct UTC instant
+                  // the fixed event service now returns.
+                  starts_at: '2099-01-01T12:00:00.000Z',
                   ticket_count: 1,
                   total_amount_cents: 2000,
                   currency: 'SGD',
@@ -66,7 +70,9 @@ describe('MyEvents tickets and orders', () => {
                   status: 'PAID',
                   event_title: 'Another booking',
                   venue: 'Test Hall',
-                  starts_at: '2099-01-01T20:00:00',
+                  // 8pm Singapore time on 1 Jan 2099, as the correct UTC instant
+                  // the fixed event service now returns.
+                  starts_at: '2099-01-01T12:00:00.000Z',
                   ticket_count: 1,
                   total_amount_cents: 2000,
                   currency: 'SGD',

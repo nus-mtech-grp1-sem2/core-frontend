@@ -17,7 +17,7 @@ import { firstValueFrom, timer } from 'rxjs';
 
 import { ApiService } from '../../../core/api';
 import { AuthService } from '../../../core/auth';
-import { isCompleted } from '../../../core/event-time';
+import { isCompleted, toSingaporeInputValue } from '../../../core/event-time';
 import { QueueService, QueueStatus } from '../../../core/queue';
 import { WorkspaceShell } from '../../../layout/components/workspace-shell/workspace-shell';
 
@@ -720,7 +720,7 @@ export class EventDetail {
         title: result.event.title,
         description: result.event.description ?? '',
         venue: result.event.venue,
-        startsAt: result.event.starts_at.replace(' ', 'T').slice(0, 16),
+        startsAt: toSingaporeInputValue(result.event.starts_at),
         totalSeats: result.event.total_seats,
         availableBuyers: result.event.available_buyers,
         tier: result.event.tier,
