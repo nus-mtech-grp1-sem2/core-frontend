@@ -189,7 +189,7 @@
                   [attr.aria-describedby]="zone.controls.name.invalid && zone.controls.name.touched ? 'zone-name-error-' + zoneIndex : null"
                 />
                 @if (zone.controls.name.invalid && zone.controls.name.touched) {
-                  <span class="zone-name-error" [id]="'zone-name-error-' + zoneIndex" role="alert">Please enter a zone name.</span>
+                  <span class="zone-name-error" [id]="'zone-name-error-' + zoneIndex" role="alert">Please enter group seat name.</span>
                 }
                 @if (zone.controls.code.value) {
                   <span class="zone-code-badge">#{{ zone.controls.code.value }}</span>
