@@ -254,6 +254,13 @@ describe('EventDetail seat map sizing', () => {
     expect(seatGrid?.closest('.seat-map')).not.toBeNull();
     // A seat map needs room to lay out without scrolling inside its own card.
     expect(host.querySelector('.purchase')?.classList.contains('purchase--wide')).toBe(true);
+    // The buyer has no other way to tell which way the venue faces, so the
+    // map always shows a stage marker above the seats, not below.
+    const seatMap = seatGrid?.closest('.seat-map');
+    const stage = seatMap?.querySelector('.stage-indicator');
+    expect(stage?.textContent?.trim()).toBe('Stage');
+    const position = stage!.compareDocumentPosition(seatGrid!);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -1120,6 +1127,14 @@ describe('EventDetail GA ticket tiers', () => {
     // Display only: no button, no click-to-select — the radio list above
     // remains the only way to choose a tier.
     expect(floorBlock?.tagName).toBe('DIV');
+
+    // The buyer has no other way to tell which way the venue faces, so the
+    // map always shows a stage marker above the blocks, not below.
+    const zoneGrid = host.querySelector('.zone-grid');
+    const stage = zoneMap?.querySelector('.stage-indicator');
+    expect(stage?.textContent?.trim()).toBe('Stage');
+    const position = stage!.compareDocumentPosition(zoneGrid!);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows no zone map when the API has no grid layout for this event', async () => {
