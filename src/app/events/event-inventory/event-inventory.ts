@@ -73,8 +73,12 @@ interface InventoryResponse {
 const DEFAULT_GRID_ROWS = 6;
 const DEFAULT_GRID_COLS = 8;
 const MIN_GRID_DIM = 1;
-const MAX_GRID_DIM = 100;
+const MAX_GRID_DIM = 20;
+/** General admission has no seat per cell, so its map can be as large as needed
+ * (the inventory service's guard is far beyond any venue). */
+const MAX_GA_GRID_DIM = 10_000;
 const MAX_ZONES = 50;
+const MAX_RESERVED_SEATS = 400;
 const MAX_STAGE_PIECES = 5;
 /** Max rows/cols shown in one grid page — ~1000 seats per page. */
 const PAGE_SIZE = 30;
@@ -170,6 +174,66 @@ function boundingBox(a: GridCell, b: GridCell): GridRect {
     gridRowSpan: Math.max(a.row, b.row) - gridRow + 1,
     gridColSpan: Math.max(a.col, b.col) - gridCol + 1,
   };
+}
+
+interface SectionLayout {
+  readonly sections: readonly GridRect[];
+  readonly columnCount: number;
+}
+
+/** Breaks a large drawn area into non-overlapping sections. It targets 30x30
+ * sections, then scales them evenly when a very large venue would otherwise
+ * exceed the number of zones the inventory contract permits. */
+function splitIntoSections(rect: GridRect, maxSections: number): SectionLayout {
+  if (maxSections < 1) return { sections: [], columnCount: 0 };
+  const desiredRows = Math.ceil(rect.gridRowSpan / PAGE_SIZE);
+  const desiredCols = Math.ceil(rect.gridColSpan / PAGE_SIZE);
+  let rowCount = desiredRows;
+  let columnCount = desiredCols;
+
+  if (desiredRows * desiredCols > maxSections) {
+    let bestScore = Number.POSITIVE_INFINITY;
+    const targetAspect = desiredRows / desiredCols;
+    for (let rows = 1; rows <= Math.min(desiredRows, maxSections); rows += 1) {
+      for (let cols = 1; cols <= Math.min(desiredCols, Math.floor(maxSections / rows)); cols += 1) {
+        const aspectPenalty = Math.abs(Math.log((rows / cols) / targetAspect));
+        const unusedPenalty = (maxSections - rows * cols) / maxSections;
+        const score = aspectPenalty + unusedPenalty;
+        if (score < bestScore) {
+          bestScore = score;
+          rowCount = rows;
+          columnCount = cols;
+        }
+      }
+    }
+  }
+
+  const sections: GridRect[] = [];
+  const rowEnd = rect.gridRow + rect.gridRowSpan;
+  const colEnd = rect.gridCol + rect.gridColSpan;
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const gridRow = desiredRows * desiredCols <= maxSections
+      ? rect.gridRow + rowIndex * PAGE_SIZE
+      : rect.gridRow + Math.floor((rowIndex * rect.gridRowSpan) / rowCount);
+    const nextRow = desiredRows * desiredCols <= maxSections
+      ? Math.min(gridRow + PAGE_SIZE, rowEnd)
+      : rect.gridRow + Math.floor(((rowIndex + 1) * rect.gridRowSpan) / rowCount);
+    for (let colIndex = 0; colIndex < columnCount; colIndex += 1) {
+      const gridCol = desiredRows * desiredCols <= maxSections
+        ? rect.gridCol + colIndex * PAGE_SIZE
+        : rect.gridCol + Math.floor((colIndex * rect.gridColSpan) / columnCount);
+      const nextCol = desiredRows * desiredCols <= maxSections
+        ? Math.min(gridCol + PAGE_SIZE, colEnd)
+        : rect.gridCol + Math.floor(((colIndex + 1) * rect.gridColSpan) / columnCount);
+      sections.push({
+        gridRow,
+        gridCol,
+        gridRowSpan: nextRow - gridRow,
+        gridColSpan: nextCol - gridCol,
+      });
+    }
+  }
+  return { sections, columnCount };
 }
 
 /** Which handle (if any) a cell on a zone's border corresponds to.
@@ -279,39 +343,62 @@ export class EventInventory {
   protected readonly seats = signal<readonly SeatCell[]>([]);
   protected readonly committedZoneIds = signal<ReadonlySet<number>>(new Set());
   protected readonly stagePieces = signal<readonly StagePieceDto[]>([]);
-  protected readonly drawMode = signal<'zone' | 'stage'>('zone');
+  /** 'seats' switches the dragged seats off (never sold) or back on. */
+  protected readonly drawMode = signal<'zone' | 'stage' | 'seats'>('zone');
 
   protected readonly maxZones = MAX_ZONES;
+  protected readonly maxReservedSeats = MAX_RESERVED_SEATS;
   protected readonly maxStagePieces = MAX_STAGE_PIECES;
   protected readonly minGridDim = MIN_GRID_DIM;
-  protected readonly maxGridDim = MAX_GRID_DIM;
+  protected get maxGridDim(): number {
+    return this.isSeatedTier() ? MAX_GRID_DIM : MAX_GA_GRID_DIM;
+  }
 
   protected readonly gridRowCount = signal(DEFAULT_GRID_ROWS);
   protected readonly gridColCount = signal(DEFAULT_GRID_COLS);
   protected readonly gridRows = computed(() => Array.from({ length: this.gridRowCount() }, (_, i) => i));
   protected readonly gridCols = computed(() => Array.from({ length: this.gridColCount() }, (_, i) => i));
 
-  // ── Pagination ─────────────────────────────────────────────────────────
-  protected readonly currentPageRow = signal(0);
-  protected readonly currentPageCol = signal(0);
+  // ── Sections ───────────────────────────────────────────────────────────
+  /** The map is cut into fixed PAGE_SIZE x PAGE_SIZE sections; the editor shows a
+   * rectangle of them, picked on the mini-map. Inclusive section indexes. */
+  protected readonly selectedSections = signal({ rowFrom: 0, rowTo: 0, colFrom: 0, colTo: 0 });
   protected readonly totalPageRows = computed(() => Math.max(1, Math.ceil(this.gridRowCount() / PAGE_SIZE)));
   protected readonly totalPageCols = computed(() => Math.max(1, Math.ceil(this.gridColCount() / PAGE_SIZE)));
-  protected readonly visibleRows = computed(() => {
-    const pageRow = Math.min(this.currentPageRow(), this.totalPageRows() - 1);
-    const offset = pageRow * PAGE_SIZE;
-    return this.gridRows().slice(offset, offset + PAGE_SIZE);
+  /** The selection, kept inside the map when it shrinks. */
+  private readonly sections = computed(() => {
+    const { rowFrom, rowTo, colFrom, colTo } = this.selectedSections();
+    const lastRow = this.totalPageRows() - 1;
+    const lastCol = this.totalPageCols() - 1;
+    return {
+      rowFrom: Math.min(rowFrom, lastRow), rowTo: Math.min(rowTo, lastRow),
+      colFrom: Math.min(colFrom, lastCol), colTo: Math.min(colTo, lastCol),
+    };
   });
-  protected readonly visibleCols = computed(() => {
-    const pageCol = Math.min(this.currentPageCol(), this.totalPageCols() - 1);
-    const offset = pageCol * PAGE_SIZE;
-    return this.gridCols().slice(offset, offset + PAGE_SIZE);
-  });
+  protected readonly visibleRows = computed(() =>
+    this.gridRows().slice(this.sections().rowFrom * PAGE_SIZE, (this.sections().rowTo + 1) * PAGE_SIZE),
+  );
+  protected readonly visibleCols = computed(() =>
+    this.gridCols().slice(this.sections().colFrom * PAGE_SIZE, (this.sections().colTo + 1) * PAGE_SIZE),
+  );
 
   // ── Overview mini-map ──────────────────────────────────────────────────
   private readonly zonesChanges = toSignal(this.zones.valueChanges, { initialValue: this.zones.value });
-  protected readonly overviewCellSize = computed(() =>
-    Math.max(4, Math.min(16, Math.floor(280 / Math.max(this.gridRowCount(), this.gridColCount())))),
-  );
+  protected readonly reservedSeatCount = computed(() => {
+    void this.zonesChanges();
+    if (!this.isSeatedTier()) return 0;
+    return this.zones.controls.reduce((total, group) => {
+      const controls = (group as ZoneGroup).controls;
+      return total + controls.gridRowSpan.value * controls.gridColSpan.value;
+    }, 0);
+  });
+  /** General admission is laid out on the mini-map alone, so it is drawn larger. */
+  protected readonly overviewCellSize = computed(() => {
+    const longest = Math.max(this.gridRowCount(), this.gridColCount());
+    return this.isSeatedTier()
+      ? Math.max(4, Math.min(16, Math.floor(280 / longest)))
+      : Math.min(48, 560 / longest); // scales down so even a very large map fits
+  });
   protected readonly overviewWidthPx = computed(() => this.gridColCount() * this.overviewCellSize());
   protected readonly overviewHeightPx = computed(() => this.gridRowCount() * this.overviewCellSize());
   protected readonly overviewZones = computed(() => {
@@ -330,21 +417,17 @@ export class EventInventory {
   });
   protected readonly overviewPages = computed(() => {
     const cs = this.overviewCellSize();
-    const tpr = this.totalPageRows();
-    const tpc = this.totalPageCols();
-    const rc = this.gridRowCount();
-    const cc = this.gridColCount();
-    const cpr = Math.min(this.currentPageRow(), tpr - 1);
-    const cpc = Math.min(this.currentPageCol(), tpc - 1);
+    const selected = this.sections();
     const pages = [];
-    for (let pr = 0; pr < tpr; pr++) {
-      for (let pc = 0; pc < tpc; pc++) {
+    for (let pr = 0; pr < this.totalPageRows(); pr++) {
+      for (let pc = 0; pc < this.totalPageCols(); pc++) {
         const r0 = pr * PAGE_SIZE, c0 = pc * PAGE_SIZE;
-        const r1 = Math.min(r0 + PAGE_SIZE, rc), c1 = Math.min(c0 + PAGE_SIZE, cc);
+        const r1 = Math.min(r0 + PAGE_SIZE, this.gridRowCount()), c1 = Math.min(c0 + PAGE_SIZE, this.gridColCount());
+        const isCurrent = pr >= selected.rowFrom && pr <= selected.rowTo && pc >= selected.colFrom && pc <= selected.colTo;
         pages.push({
           key: `${pr}-${pc}`, pageRow: pr, pageCol: pc,
           top: r0 * cs, left: c0 * cs, width: (c1 - c0) * cs, height: (r1 - r0) * cs,
-          isCurrent: pr === cpr && pc === cpc,
+          isCurrent,
           label: `Rows ${r0 + 1}–${r1}, cols ${c0 + 1}–${c1}`,
         });
       }
@@ -352,18 +435,252 @@ export class EventInventory {
     return pages;
   });
 
-  protected setPage(pageRow: number, pageCol: number): void {
-    this.currentPageRow.set(Math.min(pageRow, this.totalPageRows() - 1));
-    this.currentPageCol.set(Math.min(pageCol, this.totalPageCols() - 1));
+  /** Where a section selection started: the section first pressed, or last clicked. */
+  private sectionAnchor = { row: 0, col: 0 };
+
+  /** Shows every section a zone covers, so all of its seats are on screen to edit. */
+  protected showZone(index: number): void {
+    const group = this.zones.at(index) as ZoneGroup | undefined;
+    if (!group) return;
+    const { gridRow, gridCol, gridRowSpan, gridColSpan } = group.getRawValue();
+    const rowFrom = Math.floor(gridRow / PAGE_SIZE);
+    const colFrom = Math.floor(gridCol / PAGE_SIZE);
+    this.sectionAnchor = { row: rowFrom, col: colFrom };
+    this.selectedSections.set({
+      rowFrom,
+      rowTo: Math.floor((gridRow + Math.max(1, gridRowSpan) - 1) / PAGE_SIZE),
+      colFrom,
+      colTo: Math.floor((gridCol + Math.max(1, gridColSpan) - 1) / PAGE_SIZE),
+    });
+  }
+  private selectingSections = false;
+
+  private selectSectionsTo(row: number, col: number): void {
+    const anchor = this.sectionAnchor;
+    this.selectedSections.set({
+      rowFrom: Math.min(anchor.row, row), rowTo: Math.max(anchor.row, row),
+      colFrom: Math.min(anchor.col, col), colTo: Math.max(anchor.col, col),
+    });
+  }
+
+  /** The section under the pointer, kept inside the map. */
+  private sectionAt(event: PointerEvent): { row: number; col: number } {
+    const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const span = this.overviewCellSize() * PAGE_SIZE;
+    const clamp = (value: number, last: number) => Math.max(0, Math.min(Math.floor(value / span), last));
+    return {
+      row: clamp(event.clientY - bounds.top, this.totalPageRows() - 1),
+      col: clamp(event.clientX - bounds.left, this.totalPageCols() - 1),
+    };
+  }
+
+  // ── General admission: draw, move and resize sections on the mini-map ──
+  /** The map cell under the pointer, kept inside the map. */
+  private overviewCellAt(event: PointerEvent): GridCell {
+    const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const cs = this.overviewCellSize();
+    const clamp = (value: number, count: number) => Math.max(0, Math.min(Math.floor(value / cs), count - 1));
+    return {
+      row: clamp(event.clientY - bounds.top, this.gridRowCount()),
+      col: clamp(event.clientX - bounds.left, this.gridColCount()),
+    };
+  }
+
+  private overviewDragCell: string | null = null;
+  /** What dragging would do at the pointer: draw, move or resize. */
+  protected readonly overviewCursor = signal('crosshair');
+
+  private cursorAt(cell: GridCell): string {
+    if (this.locked()) return 'default';
+    const owner = this.zoneAt(cell.row, cell.col);
+    const piece = owner ? undefined : this.stagePieceAt(cell.row, cell.col);
+    const rect = owner ? this.rectOf(owner.group) : piece;
+    if (!rect || (owner && this.zoneHasCommitted(owner.index))) return owner ? 'not-allowed' : 'crosshair';
+    const kind = handleKindAt(cell.row, cell.col, rect);
+    const resize: Record<HandleKind, string> = {
+      n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
+      ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize',
+    };
+    return kind ? resize[kind] : 'move';
+  }
+
+  /** The area a drag on the mini-map will draw, move or resize to, in pixels. */
+  protected readonly overviewDragPreview = computed(() => {
+    const rect = this.dragRect();
+    if (!rect) return null;
+    const cs = this.overviewCellSize();
+    return {
+      top: rect.gridRow * cs,
+      left: rect.gridCol * cs,
+      width: rect.gridColSpan * cs,
+      height: rect.gridRowSpan * cs,
+      blocked: this.dragBlocked(),
+    };
+  });
+
+  private gaPointerDown(event: PointerEvent): void {
+    const cell = this.overviewCellAt(event);
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    this.overviewDragCell = seatKey(cell.row, cell.col);
+    this.onCellPointerDown(cell.row, cell.col, event);
+  }
+
+  private gaPointerMove(event: PointerEvent): void {
+    const cell = this.overviewCellAt(event);
+    if (this.overviewDragCell === null) {
+      this.overviewCursor.set(this.cursorAt(cell));
+      return;
+    }
+    const key = seatKey(cell.row, cell.col);
+    if (key === this.overviewDragCell) return;
+    this.overviewDragCell = key;
+    this.onCellPointerEnter(cell.row, cell.col);
+  }
+
+  private gaPointerUp(cancelled: boolean): void {
+    if (this.overviewDragCell === null) return;
+    this.overviewDragCell = null;
+    if (cancelled) {
+      this.dragStart.set(null);
+      this.dragCurrent.set(null);
+      this.resizeState.set(null);
+      this.moveState.set(null);
+      this.stageResizeState.set(null);
+      this.stageMoveState.set(null);
+      return;
+    }
+    this.finishDrag();
+  }
+
+  /** Press on a section and drag across others to show them all together. */
+  protected onOverviewPointerDown(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    if (!this.isSeatedTier()) {
+      this.gaPointerDown(event);
+      return;
+    }
+    const section = this.sectionAt(event);
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    this.sectionAnchor = section;
+    this.selectingSections = true;
+    this.selectSectionsTo(section.row, section.col);
+    event.preventDefault();
+  }
+
+  protected onOverviewPointerMove(event: PointerEvent): void {
+    if (!this.isSeatedTier()) {
+      this.gaPointerMove(event);
+      return;
+    }
+    if (!this.selectingSections) return;
+    const section = this.sectionAt(event);
+    this.selectSectionsTo(section.row, section.col);
+  }
+
+  /** Letting go of a drag across two or more sections turns each of them into a zone. */
+  protected onOverviewPointerUp(): void {
+    if (!this.isSeatedTier()) {
+      this.gaPointerUp(false);
+      return;
+    }
+    if (!this.selectingSections) return;
+    this.selectingSections = false;
+    const { rowFrom, rowTo, colFrom, colTo } = this.sections();
+    if (rowFrom === rowTo && colFrom === colTo) return; // a click just shows that section
+    this.addSectionZones(rowFrom, rowTo, colFrom, colTo);
+    // The seat map then shows the first of them; the rest are a click away.
+    this.selectedSections.set({ rowFrom, rowTo: rowFrom, colFrom, colTo: colFrom });
+  }
+
+  protected onOverviewPointerCancel(): void {
+    if (!this.isSeatedTier()) this.gaPointerUp(true);
+    this.selectingSections = false;
+  }
+
+  /**
+   * One zone per section, each filling its section ("Section A1", "Section A2", ...),
+   * ready to be named, priced and resized below. Sections that already hold a zone
+   * or stage piece are left alone, so nothing overlaps.
+   */
+  private addSectionZones(rowFrom: number, rowTo: number, colFrom: number, colTo: number): void {
+    if (this.locked()) return;
+    let skipped = 0;
+    let added = 0;
+    for (let pr = rowFrom; pr <= rowTo; pr++) {
+      for (let pc = colFrom; pc <= colTo; pc++) {
+        const rect: GridRect = {
+          gridRow: pr * PAGE_SIZE,
+          gridCol: pc * PAGE_SIZE,
+          gridRowSpan: Math.min(PAGE_SIZE, this.gridRowCount() - pr * PAGE_SIZE),
+          gridColSpan: Math.min(PAGE_SIZE, this.gridColCount() - pc * PAGE_SIZE),
+        };
+        if (this.rectOverlapsExistingZone(rect)) {
+          skipped += 1;
+          continue;
+        }
+        if (this.zones.length >= MAX_ZONES) {
+          this.error.set(`You can only have up to ${MAX_ZONES} zones.`);
+          if (added > 0) this.saved.set(false);
+          return;
+        }
+        if (this.exceedsReservedSeatLimit(rect)) {
+          this.showReservedSeatLimitError();
+          if (added > 0) this.saved.set(false);
+          return;
+        }
+        const group = buildZoneGroup(this.fb, undefined, this.zones.length, rect);
+        group.controls.name.setValue(`Section ${rowLabel(pr)}${pc + 1}`);
+        this.zones.push(group);
+        added += 1;
+      }
+    }
+    this.error.set(
+      skipped === 0
+        ? ''
+        : `${skipped} ${skipped === 1 ? 'section already has' : 'sections already have'} a zone or stage piece and ${skipped === 1 ? 'was' : 'were'} left as it is.`,
+    );
+    if (added > 0) this.saved.set(false);
+  }
+
+  /** Adds a freshly drawn zone. Large GA areas are tiled so organisers can
+   * price, name, move and resize each resulting section independently. */
+  private addDrawnZones(rect: GridRect): void {
+    const remaining = MAX_ZONES - this.zones.length;
+    if (remaining < 1) {
+      this.error.set(`You can only have up to ${MAX_ZONES} zones.`);
+      return;
+    }
+
+    const layout = this.isSeatedTier()
+      ? { sections: [rect], columnCount: 1 }
+      : splitIntoSections(rect, remaining);
+    const { sections, columnCount } = layout;
+    for (const [index, section] of sections.entries()) {
+      if (this.exceedsReservedSeatLimit(section)) {
+        this.showReservedSeatLimitError();
+        return;
+      }
+      const group = buildZoneGroup(this.fb, undefined, this.zones.length, section);
+      if (sections.length > 1) {
+        group.controls.name.setValue(`Section ${rowLabel(Math.floor(index / columnCount))}${(index % columnCount) + 1}`);
+      }
+      this.zones.push(group);
+    }
+    this.error.set('');
+    this.saved.set(false);
+  }
+
+  /** Keyboard: a section button shows that section. */
+  protected selectSection(row: number, col: number, event: MouseEvent): void {
+    if (event.detail !== 0) return; // pointer clicks are handled by the drag above
+    this.sectionAnchor = { row, col };
+    this.selectSectionsTo(row, col);
   }
 
   protected currentPageHint(): string {
-    const pr = Math.min(this.currentPageRow(), this.totalPageRows() - 1);
-    const pc = Math.min(this.currentPageCol(), this.totalPageCols() - 1);
-    const r0 = pr * PAGE_SIZE, c0 = pc * PAGE_SIZE;
-    const r1 = Math.min(r0 + PAGE_SIZE, this.gridRowCount()) - 1;
-    const c1 = Math.min(c0 + PAGE_SIZE, this.gridColCount()) - 1;
-    return `Viewing rows ${r0 + 1}–${r1 + 1}, columns ${c0 + 1}–${c1 + 1}`;
+    const rows = this.visibleRows();
+    const cols = this.visibleCols();
+    return `Viewing rows ${rows[0]! + 1}–${rows[rows.length - 1]! + 1}, columns ${cols[0]! + 1}–${cols[cols.length - 1]! + 1}`;
   }
 
   protected readonly seatsByKey = computed(() => {
@@ -428,7 +745,8 @@ export class EventInventory {
     if (rect === null) return false;
     const excludeZoneIndex = this.resizeState()?.index ?? this.moveState()?.index;
     const excludeStageIndex = this.stageResizeState()?.index ?? this.stageMoveState()?.index;
-    return this.rectOverlapsExistingZone(rect, excludeZoneIndex, excludeStageIndex);
+    const exceedsSeatLimit = this.drawMode() === 'zone' && this.exceedsReservedSeatLimit(rect, excludeZoneIndex);
+    return this.rectOverlapsExistingZone(rect, excludeZoneIndex, excludeStageIndex) || exceedsSeatLimit;
   });
 
   constructor() {
@@ -554,7 +872,83 @@ export class EventInventory {
     return false;
   }
 
-  protected setDrawMode(mode: 'zone' | 'stage'): void {
+  private exceedsReservedSeatLimit(rect: GridRect, replaceZoneIndex?: number): boolean {
+    if (!this.isSeatedTier()) return false;
+    let total = rect.gridRowSpan * rect.gridColSpan;
+    for (let index = 0; index < this.zones.length; index += 1) {
+      if (index === replaceZoneIndex) continue;
+      total += this.zoneSeatCount(index);
+    }
+    return total > MAX_RESERVED_SEATS;
+  }
+
+  private showReservedSeatLimitError(): void {
+    this.error.set(`Reserved seating is limited to ${MAX_RESERVED_SEATS} seats.`);
+  }
+
+  /**
+   * Seats switched on (true) or off (false) since loading, by grid position, so a
+   * zone that is not saved yet (and so has no seats) can be shaped straight away.
+   */
+  protected readonly seatSwitches = signal<ReadonlyMap<string, boolean>>(new Map());
+
+  /** Whether the seat at a cell is off (greyed out, never sold), counting unsaved switches. */
+  protected seatIsOff(row: number, col: number, seat: SeatCell | undefined): boolean {
+    const switched = this.seatSwitches().get(seatKey(row, col));
+    return switched === undefined ? seat?.status === 'BLOCKED' : !switched;
+  }
+
+  /**
+   * Flips every seat the drag covered: on seats go off, off seats come back on.
+   * Sold and held seats, and cells outside every zone, are left alone.
+   */
+  private switchSeats(rect: GridRect): void {
+    const switches = new Map(this.seatSwitches());
+    let flipped = 0;
+    for (let row = rect.gridRow; row < rect.gridRow + rect.gridRowSpan; row += 1) {
+      for (let col = rect.gridCol; col < rect.gridCol + rect.gridColSpan; col += 1) {
+        if (!this.zoneAt(row, col)) continue;
+        const seat = this.seatAt(row, col);
+        if (seat?.status === 'SOLD' || seat?.status === 'HELD') continue;
+        const key = seatKey(row, col);
+        const turnOn = this.seatIsOff(row, col, seat);
+        // Back to how it was saved: nothing left to send for this seat.
+        if (turnOn === (seat?.status !== 'BLOCKED')) switches.delete(key);
+        else switches.set(key, turnOn);
+        flipped += 1;
+      }
+    }
+    if (flipped === 0) {
+      this.error.set('Drag over seats inside a zone to switch them off or on.');
+      return;
+    }
+    this.seatSwitches.set(switches);
+    this.error.set('');
+    this.saved.set(false);
+  }
+
+  /**
+   * Applies the switched seats after the layout is saved: saving creates any new
+   * seats (and recreates the ones that are on), so their ids are read back first.
+   */
+  private async saveSeatSwitches(eventId: number): Promise<void> {
+    if (this.seatSwitches().size === 0) return;
+    const { seats } = await firstValueFrom(
+      this.api.get<InventoryResponse>('inventory', `/events/${eventId}/inventory`),
+    );
+    for (const available of [false, true]) {
+      const seatIds = seats
+        .filter((seat) => this.seatSwitches().get(seatKey(seat.gridRow, seat.gridCol)) === available)
+        .filter((seat) => seat.status === (available ? 'BLOCKED' : 'AVAILABLE'))
+        .map((seat) => seat.seatId);
+      if (seatIds.length > 0) {
+        await firstValueFrom(this.api.patch('inventory', `/events/${eventId}/seats`, { seatIds, available }));
+      }
+    }
+    this.seatSwitches.set(new Map());
+  }
+
+  protected setDrawMode(mode: 'zone' | 'stage' | 'seats'): void {
     this.drawMode.set(mode);
   }
 
@@ -566,13 +960,14 @@ export class EventInventory {
   /** Which resize handle (if any) a cell is for its owning zone. Zones with
    * sold/held seats can't be resized or moved, so they never expose one. */
   protected zoneHandleKind(row: number, col: number, owner: { index: number; group: ZoneGroup }): HandleKind | null {
-    if (this.zoneHasCommitted(owner.index)) return null;
+    if (this.drawMode() === 'seats' || this.zoneHasCommitted(owner.index)) return null;
     return handleKindAt(row, col, this.rectOf(owner.group));
   }
 
   /** True for a zone's interior cells — the area a user can grab to drag the
    * whole zone somewhere else, as opposed to a border cell that resizes it. */
   protected isZoneMovable(row: number, col: number, owner: { index: number; group: ZoneGroup }): boolean {
+    if (this.drawMode() === 'seats') return false; // dragging selects seats instead
     return !this.zoneHasCommitted(owner.index) && this.zoneHandleKind(row, col, owner) === null;
   }
 
@@ -608,6 +1003,12 @@ export class EventInventory {
     event.preventDefault();
     if (this.locked()) return;
     this.dragMoved.set(false);
+    if (this.drawMode() === 'seats') {
+      // Any seat can start a selection; finishDrag switches what it covers.
+      this.dragStart.set({ row, col });
+      this.dragCurrent.set({ row, col });
+      return;
+    }
     const owner = this.zoneAt(row, col);
     if (owner) {
       // Cells already claimed by a zone can't start a new zone — but a
@@ -680,6 +1081,10 @@ export class EventInventory {
         this.error.set("Zones can't overlap — pick an empty area.");
         return;
       }
+      if (this.exceedsReservedSeatLimit(rect, index)) {
+        this.showReservedSeatLimitError();
+        return;
+      }
       const group = this.zones.at(index) as ZoneGroup | undefined;
       if (!group) return;
       this.error.set('');
@@ -696,6 +1101,11 @@ export class EventInventory {
     // A plain click (mousedown+mouseup with no pointer movement at all)
     // resolves to a 1x1 "rect" at the clicked cell — that's an accidental
     // click, not an intentional draw, so it must not create a zone.
+    if (this.drawMode() === 'seats') {
+      this.switchSeats(rect);
+      return;
+    }
+
     if (!moved) return;
 
     if (this.drawMode() === 'stage') {
@@ -717,13 +1127,7 @@ export class EventInventory {
       this.error.set("Zones can't overlap — pick an empty area.");
       return;
     }
-    if (this.zones.length >= MAX_ZONES) {
-      this.error.set(`You can only have up to ${MAX_ZONES} zones.`);
-      return;
-    }
-    this.error.set('');
-    this.zones.push(buildZoneGroup(this.fb, undefined, this.zones.length, rect));
-    this.saved.set(false);
+    this.addDrawnZones(rect);
   }
 
   protected zoneHasCommitted(index: number): boolean {
@@ -760,6 +1164,10 @@ export class EventInventory {
     if (this.locked()) return;
     if (this.zones.length >= MAX_ZONES) {
       this.error.set(`You can only have up to ${MAX_ZONES} zones.`);
+      return;
+    }
+    if (this.isSeatedTier() && this.reservedSeatCount() >= MAX_RESERVED_SEATS) {
+      this.showReservedSeatLimitError();
       return;
     }
     const cell = this.firstAvailableCell();
@@ -806,6 +1214,11 @@ export class EventInventory {
 
     if (this.rectOverlapsExistingZone(next, index)) {
       this.error.set("Zones can't overlap — pick an empty area.");
+      input.value = String(current[field]);
+      return;
+    }
+    if (this.exceedsReservedSeatLimit(next, index)) {
+      this.showReservedSeatLimitError();
       input.value = String(current[field]);
       return;
     }
@@ -869,7 +1282,7 @@ export class EventInventory {
    * between MIN/MAX_GRID_DIM and never below the last row a zone occupies. */
   protected setGridRowCount(value: number): void {
     if (!Number.isFinite(value)) return;
-    const clamped = Math.min(MAX_GRID_DIM, Math.max(this.minRowsRequired(), Math.round(value)));
+    const clamped = Math.min(this.maxGridDim, Math.max(this.minRowsRequired(), Math.round(value)));
     if (clamped === this.gridRowCount()) return;
     this.gridRowCount.set(clamped);
     this.saved.set(false);
@@ -879,28 +1292,36 @@ export class EventInventory {
    * between MIN/MAX_GRID_DIM and never below the last column a zone occupies. */
   protected setGridColCount(value: number): void {
     if (!Number.isFinite(value)) return;
-    const clamped = Math.min(MAX_GRID_DIM, Math.max(this.minColsRequired(), Math.round(value)));
+    const clamped = Math.min(this.maxGridDim, Math.max(this.minColsRequired(), Math.round(value)));
     if (clamped === this.gridColCount()) return;
     this.gridColCount.set(clamped);
     this.saved.set(false);
   }
 
   protected onGridRowCountInput(event: Event): void {
-    this.setGridRowCount((event.target as HTMLInputElement).valueAsNumber);
+    const input = event.target as HTMLInputElement;
+    if (!Number.isFinite(input.valueAsNumber)) return;
+    this.setGridRowCount(input.valueAsNumber);
+    // Writing the same signal value is a no-op, so normalize the DOM as well.
+    // This keeps repeated attempts such as 21, then 200, visibly clamped to 20.
+    input.value = String(this.gridRowCount());
   }
 
   protected onGridColCountInput(event: Event): void {
-    this.setGridColCount((event.target as HTMLInputElement).valueAsNumber);
+    const input = event.target as HTMLInputElement;
+    if (!Number.isFinite(input.valueAsNumber)) return;
+    this.setGridColCount(input.valueAsNumber);
+    input.value = String(this.gridColCount());
   }
 
   protected addGridRow(): void {
-    if (this.gridRowCount() >= MAX_GRID_DIM) return;
+    if (this.gridRowCount() >= this.maxGridDim) return;
     this.gridRowCount.update((n) => n + 1);
     this.saved.set(false);
   }
 
   protected addGridCol(): void {
-    if (this.gridColCount() >= MAX_GRID_DIM) return;
+    if (this.gridColCount() >= this.maxGridDim) return;
     this.gridColCount.update((n) => n + 1);
     this.saved.set(false);
   }
@@ -925,6 +1346,11 @@ export class EventInventory {
       this.zones.markAllAsTouched();
       this.saved.set(false);
       this.error.set(zonesProblem(this.zones.controls));
+      return;
+    }
+    if (event.tier === 'TIER2_SEATED' && this.reservedSeatCount() > MAX_RESERVED_SEATS) {
+      this.saved.set(false);
+      this.showReservedSeatLimitError();
       return;
     }
 
@@ -958,6 +1384,7 @@ export class EventInventory {
           gridColSpan: p.gridColSpan,
         })),
       }));
+      await this.saveSeatSwitches(event.event_id);
       this.saved.set(true);
       // Saving is the end of this workflow, not a mid-edit checkpoint — send
       // the organiser back to their events list rather than reloading and
@@ -1038,6 +1465,9 @@ function describeSaveError(error: unknown): string {
     if (code === 'capacity_below_available_buyers') {
       const availableBuyers = (error.error as { availableBuyers?: number }).availableBuyers;
       return `Total capacity must be at least ${availableBuyers} — that many buyers are already allowed for this event.`;
+    }
+    if (code === 'reserved_seat_limit_exceeded') {
+      return `Reserved seating is limited to ${MAX_RESERVED_SEATS} seats.`;
     }
     if (code === 'duplicate_seat_label' || code === 'invalid_inventory_payload') {
       return 'Check that every zone has a name and colour, then try again.';

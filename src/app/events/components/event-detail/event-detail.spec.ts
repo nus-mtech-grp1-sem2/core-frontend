@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
@@ -15,6 +15,20 @@ import {
   purchaseErrorMessage,
   seatsWithFallbackLayout,
 } from './event-detail';
+
+/** Both tiers sell through the waiting room; this customer has already been admitted. */
+const admittedQueue = () => ({
+  provide: QueueService,
+  useValue: {
+    status: vi.fn().mockResolvedValue({
+      status: 'ADMITTED',
+      admissionToken: 'test-admission',
+      tokenExpiresAt: '2099-01-01T20:00:00Z',
+    }),
+    admissionTokenFor: () => 'test-admission',
+    clear: vi.fn(),
+  },
+});
 
 describe('EventDetail checkout navigation', () => {
   it.each(['TIER1_GA', 'TIER2_SEATED'] as const)(
@@ -130,7 +144,7 @@ describe('EventDetail checkout navigation', () => {
         eventId: 172,
         quantity: 1,
         seatIds: tier === 'TIER2_SEATED' ? [8] : undefined,
-        admissionToken: tier === 'TIER2_SEATED' ? 'test-admission' : undefined,
+        admissionToken: 'test-admission',
         inventoryItemId: tier === 'TIER1_GA' ? 5 : undefined,
         customerEmail: 'test@example.com',
         customerName: 'Test',
@@ -308,7 +322,7 @@ describe('EventDetail inventory summary', () => {
             user: signal({ sub: 'owner', email: 'owner@example.com', name: 'Owner', groups: [] }),
           },
         },
-        { provide: QueueService, useValue: { status: vi.fn(), admissionTokenFor: () => null, clear: vi.fn() } },
+        admittedQueue(),
       ],
     }).compileComponents();
     const fixture = TestBed.createComponent(EventDetail);
@@ -403,6 +417,7 @@ describe('EventDetail event-team purchases', () => {
       imports: [EventDetail],
       providers: [
         provideRouter([]),
+        admittedQueue(),
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { data: { workspace: 'customer' } } },
@@ -762,8 +777,8 @@ describe('EventDetail completed events for an organiser', () => {
     expect(host.querySelector<HTMLInputElement>('#starts-at')?.value).toBe('2099-10-06T20:00');
   });
 
-  it("locks the event's own details once published, but leaves team management and lifecycle actions available", async () => {
-    const { host, button, put } = await renderOrganiser('2099-01-01 20:00:00', 'PUBLISHED');
+  it('keeps only available buyers editable after publishing', async () => {
+    const { fixture, host, button, put } = await renderOrganiser('2099-01-01 20:00:00', 'PUBLISHED');
 
     // Still on sale and upcoming — not the "completed" lock.
     expect(host.textContent).not.toContain('This event has completed');
@@ -772,9 +787,9 @@ describe('EventDetail completed events for an organiser', () => {
 
     expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(true);
     expect(host.querySelector<HTMLInputElement>('#venue')?.disabled).toBe(true);
-    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.disabled).toBe(false);
     expect(host.querySelector<HTMLInputElement>('#seats')?.disabled).toBe(true);
-    expect(button('Save changes')?.disabled).toBe(true);
+    expect(button('Save available buyers')?.disabled).toBe(false);
 
     // Team management and the event's own lifecycle actions are unaffected —
     // only its own details (title/venue/etc.) and inventory are locked.
@@ -783,8 +798,15 @@ describe('EventDetail completed events for an organiser', () => {
     expect(button('Invite')?.disabled).toBe(false);
     expect(button('Remove')?.disabled).toBe(false);
 
-    button('Save changes')?.click();
-    expect(put).not.toHaveBeenCalled();
+    const availableBuyers = host.querySelector<HTMLInputElement>('#available-buyers')!;
+    availableBuyers.value = '4';
+    availableBuyers.dispatchEvent(new Event('input'));
+    button('Save available buyers')?.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    expect(put).toHaveBeenCalledWith('event', '/events/172/available-buyers', {
+      availableBuyers: 4,
+    });
   });
 
   it('shows total seats read-only even on a draft, since the zones in Configure inventory set it', async () => {
@@ -803,6 +825,7 @@ describe('EventDetail completed events for a customer', () => {
     startsAt: string;
     tier?: 'TIER1_GA' | 'TIER2_SEATED';
     ownedTickets?: number;
+    admitted?: boolean;
   }) {
     const requested: string[] = [];
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
@@ -836,6 +859,11 @@ describe('EventDetail completed events for a customer', () => {
         });
       }
       if (path === '/events/172/seats') return of({ seats: [] });
+      if (path === '/events/172/queue/me') {
+        return options.admitted
+          ? of({ status: 'ADMITTED', admissionToken: 'test-admission', tokenExpiresAt: '2099-01-01T20:00:00Z' })
+          : throwError(() => new HttpErrorResponse({ status: 404 }));
+      }
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
     const post = vi.fn(() => of({}));
@@ -916,12 +944,49 @@ describe('EventDetail completed events for a customer', () => {
     expect(hasControl('View my tickets')).toBe(false);
   });
 
-  it('still lets customers buy while the event is upcoming', async () => {
-    const { host, hasControl } = await renderCustomer({ startsAt: '2099-01-01 20:00:00' });
+  it('sends a general-admission customer through the waiting room before they can buy', async () => {
+    const { hasControl } = await renderCustomer({ startsAt: '2099-01-01 20:00:00' });
+
+    expect(hasControl('Join waiting room')).toBe(true);
+    expect(hasControl('Buy tickets')).toBe(false);
+  });
+
+  it('still lets customers buy while the event is upcoming, once admitted', async () => {
+    const { host, hasControl } = await renderCustomer({ startsAt: '2099-01-01 20:00:00', admitted: true });
 
     expect(hasControl('Buy tickets')).toBe(true);
     expect(host.textContent).not.toContain('This event has already taken place');
     expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('On sale');
+  });
+
+  it('sends a ticket holder who wants more straight into the waiting room', async () => {
+    const { host } = await renderCustomer({ startsAt: '2099-01-01 20:00:00', ownedTickets: 2 });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    const buyMore = Array.from(host.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Buy more tickets',
+    );
+    buyMore!.click();
+
+    expect(navigate).toHaveBeenCalledWith(['/events', '172', 'queue']);
+  });
+
+  it('lets an already-admitted ticket holder buy more without queueing again', async () => {
+    const { host, hasControl } = await renderCustomer({
+      startsAt: '2099-01-01 20:00:00',
+      ownedTickets: 2,
+      admitted: true,
+    });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    Array.from(host.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Buy more tickets')
+      ?.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(hasControl('Buy tickets')).toBe(true);
   });
 
   it('explains the server refusing an order for a completed event', () => {
@@ -984,7 +1049,7 @@ describe('EventDetail GA ticket tiers', () => {
             user: signal({ sub: 'customer', email: 'test@example.com', name: 'Test', groups: [] }),
           },
         },
-        { provide: QueueService, useValue: { status: vi.fn(), admissionTokenFor: () => null, clear: vi.fn() } },
+        admittedQueue(),
       ],
     }).compileComponents();
     const fixture = TestBed.createComponent(EventDetail);
@@ -1163,6 +1228,32 @@ describe('EventDetail GA ticket tiers', () => {
 
     expect(host.querySelector('.purchase')?.classList.contains('purchase--wide')).toBe(true);
   });
+
+  it('scales a high-capacity GA layout into a bounded customer map', async () => {
+    const section = {
+      inventoryItemId: 1,
+      name: 'Section A1',
+      priceCents: 2000,
+      color: '#2563EB',
+      remaining: 20_449,
+      gridRow: 0,
+      gridCol: 0,
+      gridRowSpan: 143,
+      gridColSpan: 143,
+    };
+    const { host } = await renderWithZones([section], { gridRows: 1000, gridCols: 1000 });
+
+    const grid = host.querySelector<HTMLElement>('.zone-grid');
+    expect(grid).not.toBeNull();
+    expect(grid?.style.gridTemplateRows).toContain('repeat(1000');
+    expect(grid?.style.gridTemplateColumns).toContain('repeat(1000');
+
+    const cellRem = Number(/repeat\(1000, ([\d.]+)rem\)/.exec(grid?.style.gridTemplateRows ?? '')?.[1]);
+    const gapRem = Number(grid?.style.gap.replace('rem', ''));
+    const renderedHeightRem = 1000 * cellRem + 999 * gapRem;
+    expect(cellRem).toBeLessThan(0.05);
+    expect(renderedHeightRem).toBeLessThanOrEqual(32.001);
+  });
 });
 
 describe('EventDetail stage pieces', () => {
@@ -1210,7 +1301,7 @@ describe('EventDetail stage pieces', () => {
             user: signal({ sub: 'customer', email: 'test@example.com', name: 'Test', groups: [] }),
           },
         },
-        { provide: QueueService, useValue: { status: vi.fn(), admissionTokenFor: () => null, clear: vi.fn() } },
+        admittedQueue(),
       ],
     }).compileComponents();
 
@@ -1222,15 +1313,18 @@ describe('EventDetail stage pieces', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  it('shows stage piece cells on the zone map when the API returns stage pieces', async () => {
+  it('shows merged stage geometry on the zone map when the API returns stage pieces', async () => {
     const host = await renderWithStage([{ gridRow: 4, gridCol: 0, gridRowSpan: 1, gridColSpan: 4 }]);
     const zoneMap = host.querySelector('.zone-map');
 
-    const stagePieceCells = zoneMap?.querySelectorAll('.stage-piece-cell');
-    expect(stagePieceCells?.length).toBe(1);
-    const cell = stagePieceCells![0] as HTMLElement;
-    expect(cell.style.gridRow).toBe('5 / span 1');
-    expect(cell.style.gridColumn).toBe('1 / span 4');
+    const stageCells = zoneMap?.querySelectorAll<HTMLElement>('.stage-cell');
+    expect(stageCells?.length).toBe(4);
+    expect(stageCells?.[0]?.style.top).toBe('8.5rem');
+    expect(stageCells?.[0]?.style.left).toBe('0rem');
+    expect(stageCells?.[0]?.style.width).toBe('2.125rem');
+    expect(stageCells?.[3]?.style.left).toBe('6.375rem');
+    expect(stageCells?.[3]?.style.width).toBe('1.75rem');
+    expect(zoneMap?.querySelector('.stage-label')?.textContent?.trim()).toBe('Stage');
 
     // Static fallback bar should be replaced
     expect(zoneMap?.querySelector('.stage-indicator')).toBeNull();
@@ -1241,6 +1335,6 @@ describe('EventDetail stage pieces', () => {
     const zoneMap = host.querySelector('.zone-map');
 
     expect(zoneMap?.querySelector('.stage-indicator')).not.toBeNull();
-    expect(zoneMap?.querySelectorAll('.stage-piece-cell').length).toBe(0);
+    expect(zoneMap?.querySelectorAll('.stage-cell').length).toBe(0);
   });
 });

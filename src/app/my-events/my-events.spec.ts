@@ -110,6 +110,22 @@ describe('MyEvents tickets and orders', () => {
     expect(card?.textContent).not.toContain('1 Aug 2026');
   });
 
+  it('shows the auto-assigned section number for a general-admission ticket', async () => {
+    const host = await render({
+      tickets: [
+        {
+          ...ticketFixture(1, 'General admission', 7),
+          seat_label: 'AA12',
+        },
+      ],
+      orders: [],
+    });
+
+    const card = host.querySelector('.ticket-list .ticket-card');
+    expect(card?.textContent).toContain('Seat');
+    expect(card?.textContent).toContain('AA12');
+  });
+
   it('shows the date while a paid order is awaiting ticket issuance', async () => {
     const host = await render();
     const card = host.querySelector('[aria-label="Paid orders awaiting tickets"] .ticket-card');

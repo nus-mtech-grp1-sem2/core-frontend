@@ -353,7 +353,6 @@
 
 .zone-grid {
   display: grid;
-  gap: 0.375rem;
 }
 
 .zone-block {

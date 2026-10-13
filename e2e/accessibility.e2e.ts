@@ -326,7 +326,8 @@ test.describe('organiser pages', () => {
           seats: [],
         },
       })
-      .on('GET', 'ticket/events/7/checkin-stats', { json: { checkedIn: 1, issued: 2 } });
+      .on('GET', 'ticket/events/7/checkin-stats', { json: { checkedIn: 1, issued: 2 } })
+      .on('GET', 'queue/events/7/queue', { status: 404, json: { error: 'queue_not_configured' } });
   };
 
   test('workspace home', async ({ page, api }) => {

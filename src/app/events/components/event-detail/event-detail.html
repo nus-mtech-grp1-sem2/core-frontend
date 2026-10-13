@@ -31,13 +31,11 @@
           >
           <span>{{ event.total_seats }} seats</span>
           <span>{{ priceLabel(event.price_cents) }} per ticket</span>
-          @if (event.tier === 'TIER2_SEATED') {
           <span>
             Up to {{ buyerCapacity(event.total_seats, event.available_buyers) }} {{
             buyerCapacity(event.total_seats, event.available_buyers) === 1 ? 'buyer' : 'buyers' }}
             at a time
           </span>
-          }
         </div>
       </div>
     </div>
@@ -69,7 +67,7 @@
       <div class="queue-actions">
         <a class="btn btn-primary" routerLink="/my-events">View my tickets</a>
         @if (!showPurchaseFlow()) {
-        <button type="button" class="btn btn-ghost" (click)="buyingMore.set(true)">
+        <button type="button" class="btn btn-ghost" (click)="buyMore()">
           Buy more tickets
         </button>
         }
@@ -109,7 +107,7 @@
     } @default {
     <p>Tickets for this event are released through the waiting room.</p>
     <button type="button" class="btn btn-primary" (click)="goToQueue()">Join waiting room</button>
-    } } } @else { @if (event.tier === 'TIER2_SEATED') {
+    } } } @else {
     <div class="admission-window" role="status">
       <p><strong>It is your turn.</strong> Complete checkout within {{ admissionTimeLabel() }}.</p>
       <button
@@ -121,7 +119,6 @@
         {{ leavingQueue() ? 'Releasing...' : 'Release my place' }}
       </button>
     </div>
-    }
     @if (hasZoneMap()) {
     <div class="zone-map">
       <div class="map-stack">
@@ -140,8 +137,9 @@
           <div
             class="zone-grid"
             aria-hidden="true"
-            [style.grid-template-rows]="'repeat(' + zoneGridRows() + ', 1.75rem)'"
-            [style.grid-template-columns]="'repeat(' + zoneGridCols() + ', 1.75rem)'"
+            [style.gap.rem]="zoneMapScale().gapRem"
+            [style.grid-template-rows]="'repeat(' + zoneGridRows() + ', ' + zoneMapScale().cellRem + 'rem)'"
+            [style.grid-template-columns]="'repeat(' + zoneGridCols() + ', ' + zoneMapScale().cellRem + 'rem)'"
           >
             @for (zone of zoneOptions(); track zone.inventoryItemId) {
             <div
@@ -258,7 +256,7 @@
     </p>
     } @else if (detailsLocked()) {
     <p class="owner-note" role="status">
-      This event has already been published — its details can no longer be edited. Use Configure
+      This event has already been published. Available buyers can still be adjusted; use Configure
       inventory to add or remove seats and change prices, or manage its team below.
     </p>
     }
@@ -328,9 +326,15 @@
         <button
           type="submit"
           class="btn btn-primary"
-          [disabled]="saving() || readOnly() || detailsLocked()"
+          [disabled]="saving() || !canEditAvailableBuyers()"
         >
-          {{ saving() ? 'Saving...' : 'Save changes' }}
+          {{
+            saving()
+              ? 'Saving...'
+              : canEditAvailableBuyers() && detailsLocked()
+                ? 'Save available buyers'
+                : 'Save changes'
+          }}
         </button>
         @if (event.status === 'DRAFT') {
         <button
@@ -449,7 +453,6 @@
       }
     </section>
 
-    @if (event.tier === 'TIER2_SEATED') {
     <section class="team" aria-labelledby="queue-heading">
       <h2 id="queue-heading">Waiting room</h2>
       @if (queueManagement(); as queue) {
@@ -490,7 +493,6 @@
         </button>
       </div>
     </section>
-    }
   </section>
   } } @else {
   <section class="shell body not-found">

@@ -80,11 +80,18 @@
             </div>
           </div>
 
-          <div class="overview-wrapper" role="group" aria-label="Venue overview — click a section to navigate to it">
+          <div class="overview-wrapper">
+            <!-- Click a section to edit it; drag across several to turn each into a zone. -->
             <div
               class="overview-map"
+              style="touch-action: none"
+              [style.cursor]="isSeatedTier() ? null : overviewCursor()"
               [style.width.px]="overviewWidthPx()"
               [style.height.px]="overviewHeightPx()"
+              (pointerdown)="onOverviewPointerDown($event)"
+              (pointermove)="onOverviewPointerMove($event)"
+              (pointerup)="onOverviewPointerUp()"
+              (pointercancel)="onOverviewPointerCancel()"
             >
               @for (zone of overviewZones(); track zone.i) {
                 <div
@@ -107,22 +114,45 @@
                   aria-hidden="true"
                 >Stage</div>
               }
+              @if (!isSeatedTier()) {
+                @if (overviewDragPreview(); as preview) {
+                <div
+                  aria-hidden="true"
+                  style="position: absolute; pointer-events: none; border-radius: 3px; border: 2px solid; z-index: 2"
+                  [style.border-color]="preview.blocked ? '#b42318' : '#111827'"
+                  [style.background]="preview.blocked ? 'rgb(254 228 226 / 0.6)' : 'rgb(17 24 39 / 0.15)'"
+                  [style.top.px]="preview.top"
+                  [style.left.px]="preview.left"
+                  [style.width.px]="preview.width"
+                  [style.height.px]="preview.height"
+                ></div>
+                }
+              } @else {
               @for (page of overviewPages(); track page.key) {
                 <button
                   type="button"
                   class="overview-page"
                   [class.current]="page.isCurrent"
+                  style="box-shadow: inset 0 0 0 1px rgb(99 102 241 / 0.25)"
                   [style.top.px]="page.top"
                   [style.left.px]="page.left"
                   [style.width.px]="page.width"
                   [style.height.px]="page.height"
-                  [attr.aria-label]="page.label + (page.isCurrent ? ' (current view)' : '')"
+                  [attr.aria-label]="page.label + (page.isCurrent ? ' (showing)' : '')"
                   [attr.aria-pressed]="page.isCurrent"
-                  (click)="setPage(page.pageRow, page.pageCol)"
+                  (click)="selectSection(page.pageRow, page.pageCol, $event)"
                 ></button>
               }
+              }
             </div>
+            @if (isSeatedTier()) {
             <p class="overview-hint">{{ currentPageHint() }}</p>
+            <p class="overview-hint">Click a section to edit it. Drag across several to make each one a zone.</p>
+            } @else {
+            <p class="overview-hint">
+              Drag an empty area to add sections. Large areas split into up to {{ maxZones }} adjustable sections.
+            </p>
+            }
           </div>
         </div>
 
@@ -144,9 +174,46 @@
             [class.btn-ghost]="drawMode() !== 'stage'"
             (click)="setDrawMode('stage')"
           >Draw stage</button>
+          @if (isSeatedTier()) {
+          <button
+            type="button"
+            class="btn btn-sm"
+            data-tool="customise-seats"
+            [class.btn-primary]="drawMode() === 'seats'"
+            [class.btn-ghost]="drawMode() !== 'seats'"
+            (click)="setDrawMode('seats')"
+          >Select seats</button>
+          }
         </div>
 
-        <p class="grid-map-title">Drag across empty cells to draw a new zone or stage piece. Use the + bars to grow the map.</p>
+        <!-- General admission is laid out on the mini-map alone; the seat map is for reserved seating. -->
+        @if (isSeatedTier()) {
+        <p class="grid-map-title">
+          @if (drawMode() === 'seats') {
+          Drag over seats to switch them off (greyed out, never sold) or back on. Changes are kept when you save.
+          } @else {
+          Drag across empty cells to draw a new zone or stage piece. Use the + bars to grow the map.
+          }
+        </p>
+
+        @if (overviewZones().length > 0) {
+        <nav
+          aria-label="Go to a zone"
+          style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem"
+        >
+          <span>Go to zone:</span>
+          @for (zone of overviewZones(); track zone.i) {
+          <button type="button" class="btn btn-sm btn-ghost" (click)="showZone(zone.i)">
+            <span
+              aria-hidden="true"
+              style="display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 2px; margin-right: 0.35rem"
+              [style.background]="zone.color"
+            ></span>
+            {{ zone.name.trim() || 'Zone ' + (zone.i + 1) }}
+          </button>
+          }
+        </nav>
+        }
 
         <!-- Paginated grid canvas (scroll area contains indexes + body together) -->
         <div class="grid-map-canvas">
@@ -190,7 +257,7 @@
                         class="seat-cell"
                         [class.sold]="seat?.status === 'SOLD'"
                         [class.held]="seat?.status === 'HELD'"
-                        [class.blocked]="seat?.status === 'BLOCKED'"
+                        [class.blocked]="seatIsOff(row, col, seat)"
                         [class.tag-accessible]="seat?.tag === 'ACCESSIBLE'"
                         [class.tag-maintenance]="seat?.tag === 'MAINTENANCE'"
                         [class.handle-nw]="zoneHandleKind(row, col, owner) === 'nw'"
@@ -202,6 +269,8 @@
                         [class.handle-sw]="zoneHandleKind(row, col, owner) === 'sw'"
                         [class.handle-w]="zoneHandleKind(row, col, owner) === 'w'"
                         [class.zone-movable]="isZoneMovable(row, col, owner)"
+                        [style.outline]="drawMode() === 'seats' && isDragPreview(row, col) ? '3px solid #111827' : null"
+                        [style.outline-offset.px]="-3"
                         [style.grid-row]="rowIdx + 1"
                         [style.grid-column]="colIdx + 1"
                         [style.background]="owner.group.controls.color.value"
@@ -225,6 +294,8 @@
                         [class.handle-sw]="zoneHandleKind(row, col, owner) === 'sw'"
                         [class.handle-w]="zoneHandleKind(row, col, owner) === 'w'"
                         [class.zone-movable]="isZoneMovable(row, col, owner)"
+                        [style.outline]="drawMode() === 'seats' && isDragPreview(row, col) ? '3px solid #111827' : null"
+                        [style.outline-offset.px]="-3"
                         [style.grid-row]="rowIdx + 1"
                         [style.grid-column]="colIdx + 1"
                         [style.background]="owner.group.controls.color.value"
@@ -259,7 +330,9 @@
         @if (isSeatedTier()) {
           <div class="seat-toolbar">
             <p class="toolbar-hint">Drag across an empty area to draw a new zone. Each cell becomes one seat.</p>
+            <p class="toolbar-hint">Reserved seats: {{ reservedSeatCount() }} / {{ maxReservedSeats }}</p>
           </div>
+        }
         }
       </div>
 
