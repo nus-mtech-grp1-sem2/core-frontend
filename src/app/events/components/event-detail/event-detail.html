@@ -190,7 +190,9 @@
     @if (event.tier === 'TIER2_SEATED') { @if (seats().length > 0) {
     <div class="seat-map">
       <div class="map-stack">
-        <div class="stage-indicator" aria-hidden="true">Stage</div>
+        @if (stagePieces().length === 0) {
+          <div class="stage-indicator" aria-hidden="true">Stage</div>
+        }
         <div
           class="seat-grid"
           role="group"
@@ -198,6 +200,14 @@
           [style.grid-template-rows]="'repeat(' + gridRows().length + ', 1.75rem)'"
           [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'"
         >
+          @for (piece of stagePieces(); track $index) {
+            <div
+              class="stage-piece-cell"
+              [style.grid-row]="stagePieceSeatRow(piece)"
+              [style.grid-column]="stagePieceSeatCol(piece)"
+              aria-hidden="true"
+            ></div>
+          }
           @for (row of gridRows(); track row; let rowIndex = $index) { @for (col of gridCols();
           track col; let colIndex = $index) { @let seat = seatAt(row, col); @if (seat) {
           <button

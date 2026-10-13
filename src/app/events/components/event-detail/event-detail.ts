@@ -229,8 +229,20 @@ export class EventDetail {
   protected readonly error = signal('');
   protected readonly seats = signal<readonly SeatOption[]>([]);
   protected readonly displaySeats = computed(() => seatsWithFallbackLayout(this.seats()));
-  protected readonly gridRows = computed(() => occupiedGridAxis(this.displaySeats(), 'gridRow'));
-  protected readonly gridCols = computed(() => occupiedGridAxis(this.displaySeats(), 'gridCol'));
+  protected readonly gridRows = computed(() => {
+    const seatRows = occupiedGridAxis(this.displaySeats(), 'gridRow');
+    const stageRows = this.stagePieces().flatMap((p) =>
+      Array.from({ length: p.gridRowSpan }, (_, i) => p.gridRow + i),
+    );
+    return [...new Set([...seatRows, ...stageRows])].sort((a, b) => a - b);
+  });
+  protected readonly gridCols = computed(() => {
+    const seatCols = occupiedGridAxis(this.displaySeats(), 'gridCol');
+    const stageCols = this.stagePieces().flatMap((p) =>
+      Array.from({ length: p.gridColSpan }, (_, i) => p.gridCol + i),
+    );
+    return [...new Set([...seatCols, ...stageCols])].sort((a, b) => a - b);
+  });
   protected readonly seatsByKey = computed(() => {
     const map = new Map<string, SeatOption>();
     for (const seat of this.displaySeats()) map.set(seatKey(seat.gridRow, seat.gridCol), seat);
@@ -811,7 +823,7 @@ export class EventDetail {
   private async loadCustomerPurchaseState(event: EventDetailData): Promise<void> {
     if (!this.customerMode) return;
     if (this.auth.isAuthenticated()) await this.loadOwnership(event.event_id);
-    if (event.tier === 'TIER1_GA' && !this.completed()) await this.loadZones(event.event_id);
+    if (!this.completed()) await this.loadZones(event.event_id);
     if (event.tier !== 'TIER2_SEATED' || this.completed()) return;
     if (this.auth.isAuthenticated()) await this.loadQueueAccess(event.event_id);
     else this.queueAccess.set('not-joined');
@@ -888,7 +900,18 @@ export class EventDetail {
       this.zoneGridRows.set(0);
       this.zoneGridCols.set(0);
       this.selectedZoneId.set(null);
+      this.stagePieces.set([]);
     }
+  }
+
+  protected stagePieceSeatRow(piece: StagePieceDto): string {
+    const start = this.gridRows().indexOf(piece.gridRow) + 1;
+    return `${start} / span ${piece.gridRowSpan}`;
+  }
+
+  protected stagePieceSeatCol(piece: StagePieceDto): string {
+    const start = this.gridCols().indexOf(piece.gridCol) + 1;
+    return `${start} / span ${piece.gridColSpan}`;
   }
 
   private async loadSeats(eventId: number): Promise<void> {

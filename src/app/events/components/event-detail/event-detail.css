@@ -253,6 +253,11 @@
 
 /* A rectangle the same width as the grid it sits above, so a buyer can
  * always tell which way the venue faces without guessing from seat labels. */
+.stage-piece-cell {
+  border-radius: 4px 4px 2px 2px;
+  background: linear-gradient(135deg, #1f2937, #111827);
+}
+
 .stage-indicator {
   display: flex;
   align-items: center;
