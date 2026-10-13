@@ -1164,3 +1164,83 @@ describe('EventDetail GA ticket tiers', () => {
     expect(host.querySelector('.purchase')?.classList.contains('purchase--wide')).toBe(true);
   });
 });
+
+describe('EventDetail stage pieces', () => {
+  async function renderWithStage(stagePieces?: readonly { gridRow: number; gridCol: number; gridRowSpan: number; gridColSpan: number }[]) {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172')
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner',
+            title: 'Test event',
+            description: '',
+            venue: 'Test Hall',
+            starts_at: '2099-01-01 20:00:00',
+            total_seats: 10,
+            available_buyers: 2,
+            tier: 'TIER1_GA',
+            status: 'PUBLISHED',
+            price_cents: 2000,
+          },
+        });
+      if (path === '/helper/shifts') return of({ events: [] });
+      if (path === '/customers/me/orders') return of({ orders: [] });
+      if (path === '/customers/me/tickets') return of({ tickets: [] });
+      if (path === '/events/172/zones')
+        return of({
+          gridRows: 5,
+          gridCols: 4,
+          zones: [{ inventoryItemId: 1, name: 'Floor', priceCents: 2000, color: '#2563EB', remaining: 10, gridRow: 0, gridCol: 0, gridRowSpan: 4, gridColSpan: 4 }],
+          ...(stagePieces !== undefined ? { stagePieces } : {}),
+        });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
+        { provide: ApiService, useValue: { get, post: vi.fn(() => of({ order: { order_id: 42 } })), url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => true,
+            user: signal({ sub: 'customer', email: 'test@example.com', name: 'Test', groups: [] }),
+          },
+        },
+        { provide: QueueService, useValue: { status: vi.fn(), admissionTokenFor: () => null, clear: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('shows stage piece cells on the zone map when the API returns stage pieces', async () => {
+    const host = await renderWithStage([{ gridRow: 4, gridCol: 0, gridRowSpan: 1, gridColSpan: 4 }]);
+    const zoneMap = host.querySelector('.zone-map');
+
+    const stagePieceCells = zoneMap?.querySelectorAll('.stage-piece-cell');
+    expect(stagePieceCells?.length).toBe(1);
+    const cell = stagePieceCells![0] as HTMLElement;
+    expect(cell.style.gridRow).toBe('5 / span 1');
+    expect(cell.style.gridColumn).toBe('1 / span 4');
+
+    // Static fallback bar should be replaced
+    expect(zoneMap?.querySelector('.stage-indicator')).toBeNull();
+  });
+
+  it('falls back to the static stage bar when no stage pieces are configured', async () => {
+    const host = await renderWithStage([]);
+    const zoneMap = host.querySelector('.zone-map');
+
+    expect(zoneMap?.querySelector('.stage-indicator')).not.toBeNull();
+    expect(zoneMap?.querySelectorAll('.stage-piece-cell').length).toBe(0);
+  });
+});

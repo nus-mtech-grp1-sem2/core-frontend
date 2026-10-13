@@ -122,10 +122,18 @@ interface ZoneOption {
   readonly gridColSpan?: number;
 }
 
+interface StagePieceDto {
+  readonly gridRow: number;
+  readonly gridCol: number;
+  readonly gridRowSpan: number;
+  readonly gridColSpan: number;
+}
+
 interface ZonesResponse {
   readonly gridRows?: number;
   readonly gridCols?: number;
   readonly zones: readonly ZoneOption[];
+  readonly stagePieces?: readonly StagePieceDto[];
 }
 
 interface ZoneSummary {
@@ -244,6 +252,7 @@ export class EventDetail {
   // until both are known, same gating as the seated seat-map's `seats()`.
   protected readonly zoneGridRows = signal(0);
   protected readonly zoneGridCols = signal(0);
+  protected readonly stagePieces = signal<readonly StagePieceDto[]>([]);
   protected readonly hasZoneMap = computed(
     () => this.zoneGridRows() > 0 && this.zoneGridCols() > 0 && this.zoneOptions().length > 0,
   );
@@ -869,6 +878,7 @@ export class EventDetail {
       this.zoneOptions.set(result.zones);
       this.zoneGridRows.set(result.gridRows ?? 0);
       this.zoneGridCols.set(result.gridCols ?? 0);
+      this.stagePieces.set(result.stagePieces ?? []);
       const cheapestAvailable = [...result.zones]
         .sort((a, b) => a.priceCents - b.priceCents)
         .find((zone) => zone.remaining > 0);
