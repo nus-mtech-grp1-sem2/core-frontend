@@ -146,6 +146,10 @@
   flex-shrink: 0;
 }
 
+.overview-map.ga-overview {
+  border-radius: 0;
+}
+
 .overview-zone {
   position: absolute;
   border-radius: 2px;

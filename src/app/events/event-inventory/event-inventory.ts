@@ -465,7 +465,7 @@ export class EventInventory {
 
   /** The section under the pointer, kept inside the map. */
   private sectionAt(event: PointerEvent): { row: number; col: number } {
-    const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const bounds = this.overviewMapBounds(event);
     const span = this.overviewCellSize() * PAGE_SIZE;
     const clamp = (value: number, last: number) => Math.max(0, Math.min(Math.floor(value / span), last));
     return {
@@ -475,14 +475,23 @@ export class EventInventory {
   }
 
   // ── General admission: draw, move and resize sections on the mini-map ──
+  /** The visible map bounds, even when the event starts in its larger GA hit area. */
+  private overviewMapBounds(event: PointerEvent): DOMRect {
+    const current = event.currentTarget as HTMLElement;
+    const map = current.classList.contains('overview-map') ? current : current.querySelector<HTMLElement>('.overview-map');
+    return (map ?? current).getBoundingClientRect();
+  }
+
   /** The map cell under the pointer, kept inside the map. */
   private overviewCellAt(event: PointerEvent): GridCell {
-    const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const cs = this.overviewCellSize();
-    const clamp = (value: number, count: number) => Math.max(0, Math.min(Math.floor(value / cs), count - 1));
+    const bounds = this.overviewMapBounds(event);
+    const cellAt = (position: number, start: number, size: number, count: number) => {
+      const ratio = size > 0 ? (position - start) / size : 0;
+      return Math.max(0, Math.min(Math.floor(ratio * count), count - 1));
+    };
     return {
-      row: clamp(event.clientY - bounds.top, this.gridRowCount()),
-      col: clamp(event.clientX - bounds.left, this.gridColCount()),
+      row: cellAt(event.clientY, bounds.top, bounds.height, this.gridRowCount()),
+      col: cellAt(event.clientX, bounds.left, bounds.width, this.gridColCount()),
     };
   }
 
@@ -537,8 +546,16 @@ export class EventInventory {
     this.onCellPointerEnter(cell.row, cell.col);
   }
 
-  private gaPointerUp(cancelled: boolean): void {
+  private gaPointerUp(cancelled: boolean, event?: PointerEvent): void {
     if (this.overviewDragCell === null) return;
+    if (!cancelled && event) {
+      const cell = this.overviewCellAt(event);
+      const key = seatKey(cell.row, cell.col);
+      if (key !== this.overviewDragCell) {
+        this.overviewDragCell = key;
+        this.onCellPointerEnter(cell.row, cell.col);
+      }
+    }
     this.overviewDragCell = null;
     if (cancelled) {
       this.dragStart.set(null);
@@ -578,9 +595,9 @@ export class EventInventory {
   }
 
   /** Letting go of a drag across two or more sections turns each of them into a zone. */
-  protected onOverviewPointerUp(): void {
+  protected onOverviewPointerUp(event: PointerEvent): void {
     if (!this.isSeatedTier()) {
-      this.gaPointerUp(false);
+      this.gaPointerUp(false, event);
       return;
     }
     if (!this.selectingSections) return;
@@ -668,6 +685,40 @@ export class EventInventory {
     }
     this.error.set('');
     this.saved.set(false);
+  }
+
+  /** GA shortcut for covering a new, empty map without a precision drag. */
+  protected selectEntireGaMap(): void {
+    if (this.locked() || this.isSeatedTier()) return;
+    const entireMap: GridRect = {
+      gridRow: 0,
+      gridCol: 0,
+      gridRowSpan: this.gridRowCount(),
+      gridColSpan: this.gridColCount(),
+    };
+    if (this.rectOverlapsExistingZone(entireMap)) {
+      this.error.set('Select entire map is available only while the GA map is empty.');
+      return;
+    }
+    this.addDrawnZones(entireMap);
+  }
+
+  /** Removes every GA section that has no sold or held tickets. */
+  protected removeAllGaSections(): void {
+    if (this.locked() || this.isSeatedTier()) return;
+    let removed = 0;
+    for (let index = this.zones.length - 1; index >= 0; index -= 1) {
+      if (this.zoneHasCommitted(index)) continue;
+      this.zones.removeAt(index);
+      removed += 1;
+    }
+    const retained = this.zones.length;
+    this.error.set(
+      retained > 0
+        ? `${retained} ${retained === 1 ? 'section has' : 'sections have'} sold or held tickets and could not be removed.`
+        : '',
+    );
+    if (removed > 0) this.saved.set(false);
   }
 
   /** Keyboard: a section button shows that section. */

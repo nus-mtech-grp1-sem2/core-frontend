@@ -107,6 +107,64 @@ function setInputValue(host: HTMLElement, selector: string, value: string): void
 }
 
 describe('EventInventory', () => {
+  it('uses square overview corners for GA only', async () => {
+    const ga = await renderFor(GA_EVENT);
+    expect(ga.host.querySelector('.overview-map')?.classList.contains('ga-overview')).toBe(true);
+    ga.fixture.destroy();
+
+    const seated = await renderFor(SEATED_EVENT);
+    expect(seated.host.querySelector('.overview-map')?.classList.contains('ga-overview')).toBe(false);
+  });
+
+  it('lets GA organisers select the entire map without dragging', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT);
+    const selectEntireMap = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Select entire map',
+    );
+
+    expect(selectEntireMap).toBeDefined();
+    selectEntireMap?.click();
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.zone-card')).toHaveLength(1);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Row span for zone 1"]')?.value).toBe('6');
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Column span for zone 1"]')?.value).toBe('8');
+  });
+
+  it('removes all removable GA sections at once', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT);
+    const buttonNamed = (name: string) => Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === name,
+    );
+
+    buttonNamed('Select entire map')?.click();
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.zone-card')).toHaveLength(1);
+
+    buttonNamed('Remove all')?.click();
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.zone-card')).toHaveLength(0);
+  });
+
+  it('allows a fast full-map GA drag to start and finish outside the map', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT);
+    const map = host.querySelector<HTMLElement>('.overview-map');
+    const hitArea = host.querySelector<HTMLElement>('.overview-hit-area');
+    if (!map || !hitArea) throw new Error('no GA overview map');
+    const width = 384;
+    const height = 288;
+    map.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: width, bottom: height, width, height, toJSON: () => ({}) }) as DOMRect;
+
+    hitArea.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: -12, clientY: -12 }));
+    hitArea.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0, clientX: width + 12, clientY: height + 12 }));
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.zone-card')).toHaveLength(1);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Row span for zone 1"]')?.value).toBe('6');
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Column span for zone 1"]')?.value).toBe('8');
+  });
+
   it('labels every cell of a freshly drawn zone with its seat coordinate, even before saving', async () => {
     const { fixture, host } = await renderFor(SEATED_EVENT);
 

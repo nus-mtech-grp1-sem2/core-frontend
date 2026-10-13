@@ -83,15 +83,23 @@
           <div class="overview-wrapper">
             <!-- Click a section to edit it; drag across several to turn each into a zone. -->
             <div
-              class="overview-map"
-              style="touch-action: none"
+              class="overview-hit-area"
+              [style.padding]="isSeatedTier() ? null : '1rem'"
+              [style.margin]="isSeatedTier() ? null : '-1rem'"
               [style.cursor]="isSeatedTier() ? null : overviewCursor()"
-              [style.width.px]="overviewWidthPx()"
-              [style.height.px]="overviewHeightPx()"
+              style="position: relative; z-index: 1; touch-action: none"
               (pointerdown)="onOverviewPointerDown($event)"
               (pointermove)="onOverviewPointerMove($event)"
-              (pointerup)="onOverviewPointerUp()"
+              (pointerup)="onOverviewPointerUp($event)"
               (pointercancel)="onOverviewPointerCancel()"
+            >
+            <div
+              class="overview-map"
+              [class.ga-overview]="!isSeatedTier()"
+              [style.background-image]="isSeatedTier() ? null : 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)'"
+              [style.background-size]="isSeatedTier() ? null : overviewCellSize() + 'px ' + overviewCellSize() + 'px'"
+              [style.width.px]="overviewWidthPx()"
+              [style.height.px]="overviewHeightPx()"
             >
               @for (zone of overviewZones(); track zone.i) {
                 <div
@@ -145,6 +153,7 @@
               }
               }
             </div>
+            </div>
             @if (isSeatedTier()) {
             <p class="overview-hint">{{ currentPageHint() }}</p>
             <p class="overview-hint">Click a section to edit it. Drag across several to make each one a zone.</p>
@@ -174,6 +183,20 @@
             [class.btn-ghost]="drawMode() !== 'stage'"
             (click)="setDrawMode('stage')"
           >Draw stage</button>
+          @if (!isSeatedTier()) {
+          <button
+            type="button"
+            class="btn btn-sm btn-ghost"
+            [disabled]="locked()"
+            (click)="selectEntireGaMap()"
+          >Select entire map</button>
+          <button
+            type="button"
+            class="btn btn-sm btn-ghost delete"
+            [disabled]="locked() || zones.length === 0"
+            (click)="removeAllGaSections()"
+          >Remove all</button>
+          }
           @if (isSeatedTier()) {
           <button
             type="button"
