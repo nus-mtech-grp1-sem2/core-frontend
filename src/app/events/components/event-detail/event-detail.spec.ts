@@ -884,7 +884,11 @@ describe('EventDetail completed events for a customer', () => {
       if (path === '/events/172/seats') return of({ seats: [] });
       if (path === '/events/172/queue/me') {
         return options.admitted
-          ? of({ status: 'ADMITTED', admissionToken: 'test-admission', tokenExpiresAt: '2099-01-01T20:00:00Z' })
+          ? of({
+              status: 'ADMITTED',
+              admissionToken: 'test-admission',
+              tokenExpiresAt: '2099-01-01T20:00:00Z',
+            })
           : throwError(() => new HttpErrorResponse({ status: 404 }));
       }
       return throwError(() => new Error(`Unexpected GET ${path}`));
@@ -981,7 +985,10 @@ describe('EventDetail completed events for a customer', () => {
   });
 
   it('still lets customers buy while the event is upcoming, once admitted', async () => {
-    const { host, hasControl } = await renderCustomer({ startsAt: '2099-01-01 20:00:00', admitted: true });
+    const { host, hasControl } = await renderCustomer({
+      startsAt: '2099-01-01 20:00:00',
+      admitted: true,
+    });
 
     expect(hasControl('Buy tickets')).toBe(true);
     expect(host.textContent).not.toContain('This event has already taken place');
@@ -1247,7 +1254,13 @@ describe('EventDetail GA ticket tiers', () => {
 
   it('shows no zone map when the API has no grid layout for this event', async () => {
     const { host } = await renderWithZones([
-      { inventoryItemId: 9, name: 'General Admission', priceCents: 2000, color: '#000', remaining: 28 },
+      {
+        inventoryItemId: 9,
+        name: 'General Admission',
+        priceCents: 2000,
+        color: '#000',
+        remaining: 28,
+      },
     ]);
 
     expect(host.querySelector('.zone-map')).toBeNull();
@@ -1291,7 +1304,9 @@ describe('EventDetail GA ticket tiers', () => {
     expect(grid?.style.gridTemplateRows).toContain('repeat(1000');
     expect(grid?.style.gridTemplateColumns).toContain('repeat(1000');
 
-    const cellRem = Number(/repeat\(1000, ([\d.]+)rem\)/.exec(grid?.style.gridTemplateRows ?? '')?.[1]);
+    const cellRem = Number(
+      /repeat\(1000, ([\d.]+)rem\)/.exec(grid?.style.gridTemplateRows ?? '')?.[1],
+    );
     const gapRem = Number(grid?.style.gap.replace('rem', ''));
     const renderedHeightRem = 1000 * cellRem + 999 * gapRem;
     expect(cellRem).toBeLessThan(0.05);
@@ -1300,7 +1315,14 @@ describe('EventDetail GA ticket tiers', () => {
 });
 
 describe('EventDetail stage pieces', () => {
-  async function renderWithStage(stagePieces?: readonly { gridRow: number; gridCol: number; gridRowSpan: number; gridColSpan: number }[]) {
+  async function renderWithStage(
+    stagePieces?: readonly {
+      gridRow: number;
+      gridCol: number;
+      gridRowSpan: number;
+      gridColSpan: number;
+    }[],
+  ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172')
         return of({
@@ -1325,7 +1347,19 @@ describe('EventDetail stage pieces', () => {
         return of({
           gridRows: 5,
           gridCols: 4,
-          zones: [{ inventoryItemId: 1, name: 'Floor', priceCents: 2000, color: '#2563EB', remaining: 10, gridRow: 0, gridCol: 0, gridRowSpan: 4, gridColSpan: 4 }],
+          zones: [
+            {
+              inventoryItemId: 1,
+              name: 'Floor',
+              priceCents: 2000,
+              color: '#2563EB',
+              remaining: 10,
+              gridRow: 0,
+              gridCol: 0,
+              gridRowSpan: 4,
+              gridColSpan: 4,
+            },
+          ],
           ...(stagePieces !== undefined ? { stagePieces } : {}),
         });
       return throwError(() => new Error(`Unexpected GET ${path}`));
@@ -1336,7 +1370,14 @@ describe('EventDetail stage pieces', () => {
       providers: [
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
-        { provide: ApiService, useValue: { get, post: vi.fn(() => of({ order: { order_id: 42 } })), url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: ApiService,
+          useValue: {
+            get,
+            post: vi.fn(() => of({ order: { order_id: 42 } })),
+            url: vi.fn(() => 'mock-image-url'),
+          },
+        },
         {
           provide: AuthService,
           useValue: {
@@ -1357,7 +1398,9 @@ describe('EventDetail stage pieces', () => {
   }
 
   it('shows merged stage geometry on the zone map when the API returns stage pieces', async () => {
-    const host = await renderWithStage([{ gridRow: 4, gridCol: 0, gridRowSpan: 1, gridColSpan: 4 }]);
+    const host = await renderWithStage([
+      { gridRow: 4, gridCol: 0, gridRowSpan: 1, gridColSpan: 4 },
+    ]);
     const zoneMap = host.querySelector('.zone-map');
 
     const stageCells = zoneMap?.querySelectorAll<HTMLElement>('.stage-cell');

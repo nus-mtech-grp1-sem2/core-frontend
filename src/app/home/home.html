@@ -62,7 +62,9 @@
             @for (purchase of upcomingPurchases(); track purchase.key) {
               <li>
                 <div class="order-when">
-                  <span class="order-date">{{ purchase.startsAt | date: 'd MMM y' : '+0800' }}</span>
+                  <span class="order-date">{{
+                    purchase.startsAt | date: 'd MMM y' : '+0800'
+                  }}</span>
                   <span class="order-time">{{ purchase.startsAt | date: 'h:mm a' : '+0800' }}</span>
                 </div>
                 <div class="order-what">
@@ -309,4 +311,3 @@
     </section>
   }
 </app-workspace-shell>
-

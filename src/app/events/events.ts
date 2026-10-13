@@ -280,7 +280,7 @@ export class Events {
         startsAt: fromDateTimeLocal(this.eventForm.controls.startsAt.value),
       };
       let targetEventId = eventId;
-        if (isNewEvent) {
+      if (isNewEvent) {
         const created = await firstValueFrom(
           this.api.post<{ eventId: number }>('event', '/events', body),
         );

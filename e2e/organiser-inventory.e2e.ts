@@ -106,21 +106,29 @@ test.describe('general admission, laid out on the mini-map', () => {
     const [x1, y1] = at(from);
     const [x2, y2] = at(to);
     if (dispatchDirectly) {
-      await map.evaluate((element, points) => {
-        Object.defineProperty(element, 'setPointerCapture', { value: () => undefined, configurable: true });
-        const dispatch = (type: string, x: number, y: number) =>
-          element.dispatchEvent(new PointerEvent(type, {
-            bubbles: true,
-            button: 0,
-            pointerId: 1,
-            pointerType: 'mouse',
-            clientX: x,
-            clientY: y,
-          }));
-        dispatch('pointerdown', points.x1, points.y1);
-        dispatch('pointermove', points.x2, points.y2);
-        dispatch('pointerup', points.x2, points.y2);
-      }, { x1: x1!, y1: y1!, x2: x2!, y2: y2! });
+      await map.evaluate(
+        (element, points) => {
+          Object.defineProperty(element, 'setPointerCapture', {
+            value: () => undefined,
+            configurable: true,
+          });
+          const dispatch = (type: string, x: number, y: number) =>
+            element.dispatchEvent(
+              new PointerEvent(type, {
+                bubbles: true,
+                button: 0,
+                pointerId: 1,
+                pointerType: 'mouse',
+                clientX: x,
+                clientY: y,
+              }),
+            );
+          dispatch('pointerdown', points.x1, points.y1);
+          dispatch('pointermove', points.x2, points.y2);
+          dispatch('pointerup', points.x2, points.y2);
+        },
+        { x1: x1!, y1: y1!, x2: x2!, y2: y2! },
+      );
       return;
     }
     await page.mouse.move(x1!, y1!);
@@ -165,7 +173,10 @@ test.describe('general admission, laid out on the mini-map', () => {
     await expect(page.locator('.overview-map')).toBeVisible();
   });
 
-  test('a high-capacity drag uses larger sections to stay within the section limit', async ({ page, api }) => {
+  test('a high-capacity drag uses larger sections to stay within the section limit', async ({
+    page,
+    api,
+  }) => {
     stubEditor(api, { event: { tier: 'TIER1_GA' }, gridRows: 300, gridCols: 300 });
     await page.setViewportSize({ width: 1280, height: 1200 });
     await page.goto(`/organiser/events/${EVENT_ID}/inventory`);
@@ -178,7 +189,9 @@ test.describe('general admission, laid out on the mini-map', () => {
     await expect(page.getByLabel('Zone name').last()).toHaveValue('Section G7');
     const firstRowSpan = page.getByRole('spinbutton', { name: 'Row span for zone 1', exact: true });
     await expect(firstRowSpan).toHaveValue('42');
-    await expect(page.getByRole('spinbutton', { name: 'Column span for zone 49', exact: true })).toHaveValue('43');
+    await expect(
+      page.getByRole('spinbutton', { name: 'Column span for zone 49', exact: true }),
+    ).toHaveValue('43');
 
     await firstRowSpan.fill('30');
     await expect(firstRowSpan).toHaveValue('30');

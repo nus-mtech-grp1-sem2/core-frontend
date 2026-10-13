@@ -5,7 +5,7 @@ import { ManagedEvent } from '../../event.models';
 import { EventCard } from './event-card';
 
 describe('EventCard', () => {
-  it('shows the Singapore wall-clock start time, regardless of the viewer\'s own timezone', () => {
+  it("shows the Singapore wall-clock start time, regardless of the viewer's own timezone", () => {
     const event: ManagedEvent = {
       event_id: 1,
       title: 'Test Event',

@@ -1,499 +1,673 @@
 <app-workspace-shell workspace="organiser">
-@if (loading()) {
-  <section class="shell body"><p class="empty">Loading inventory...</p></section>
-} @else if (event(); as event) {
-  <section class="page-head">
-    <div class="shell head-copy">
-      <a class="back" [routerLink]="['/organiser/events', event.event_id]">Back to {{ event.title }}</a>
-      <h1>Configure inventory</h1>
-      <p class="lead">
-        Drag across an empty area of the map to draw a zone, or use "Add zone" and the row/column fields below for
-        keyboard entry — row 0 is closest to the stage. The zone's capacity is the size of its rectangle. Zones
-        can't overlap.
-      </p>
-      @if (locked()) {
-        <p class="pill status lock-note">
-          {{
-            event.status === 'CANCELLED'
-              ? 'This event has been cancelled — its inventory can no longer be edited.'
-              : 'This event has already started — its inventory can no longer be edited.'
-          }}
-        </p>
-      } @else if (live()) {
-        <p class="pill status lock-note">
-          This event is on sale. You can add or remove seats and change prices; tickets already sold or on hold
-          stay as they are, and new prices apply to new purchases only.
-        </p>
-      } @else if (hasCommittedSeats()) {
-        <p class="pill status lock-note">Some zones have sold or held seats — those zones can't be resized or removed. Everything else stays editable.</p>
-      }
-    </div>
-  </section>
-
-  <section class="shell body">
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-    @if (saved()) { <p class="form-notice" role="status">Inventory saved.</p> }
-
-    <div class="builder">
-      <div class="grid-map">
-
-        <!-- Map size controls + overview mini-map -->
-        <div class="map-config">
-          <div class="map-size-bar">
-            <span class="map-size-label">Map size</span>
-            <div class="map-size-controls">
-              <div class="map-dim">
-                @if (canRemoveGridRow()) {
-                  <button type="button" class="grid-remove-btn" (click)="removeGridRow()" aria-label="Remove last row">&minus;</button>
-                }
-                <input
-                  type="number"
-                  class="grid-dim-input"
-                  [attr.min]="minGridDim"
-                  [attr.max]="maxGridDim"
-                  step="5"
-                  [value]="gridRowCount()"
-                  (input)="onGridRowCountInput($event)"
-                  aria-label="Number of rows"
-                />
-                <button type="button" class="grid-add-btn" (click)="addGridRow()" [disabled]="gridRowCount() >= maxGridDim" aria-label="Add row">+</button>
-                <span class="map-dim-label">rows</span>
-              </div>
-              <span class="map-dim-sep">×</span>
-              <div class="map-dim">
-                @if (canRemoveGridCol()) {
-                  <button type="button" class="grid-remove-btn" (click)="removeGridCol()" aria-label="Remove last column">&minus;</button>
-                }
-                <input
-                  type="number"
-                  class="grid-dim-input"
-                  [attr.min]="minGridDim"
-                  [attr.max]="maxGridDim"
-                  step="5"
-                  [value]="gridColCount()"
-                  (input)="onGridColCountInput($event)"
-                  aria-label="Number of columns"
-                />
-                <button type="button" class="grid-add-btn" (click)="addGridCol()" [disabled]="gridColCount() >= maxGridDim" aria-label="Add column">+</button>
-                <span class="map-dim-label">cols</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="overview-wrapper">
-            <!-- Click a section to edit it; drag across several to turn each into a zone. -->
-            <div
-              class="overview-hit-area"
-              [style.padding]="isSeatedTier() ? null : '1rem'"
-              [style.margin]="isSeatedTier() ? null : '-1rem'"
-              [style.cursor]="isSeatedTier() ? null : overviewCursor()"
-              style="position: relative; z-index: 1; touch-action: none"
-              (pointerdown)="onOverviewPointerDown($event)"
-              (pointermove)="onOverviewPointerMove($event)"
-              (pointerup)="onOverviewPointerUp($event)"
-              (pointercancel)="onOverviewPointerCancel()"
-            >
-            <div
-              class="overview-map"
-              [class.ga-overview]="!isSeatedTier()"
-              [style.background-image]="isSeatedTier() ? null : 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)'"
-              [style.background-size]="isSeatedTier() ? null : overviewCellSize() + 'px ' + overviewCellSize() + 'px'"
-              [style.width.px]="overviewWidthPx()"
-              [style.height.px]="overviewHeightPx()"
-            >
-              @for (zone of overviewZones(); track zone.i) {
-                <div
-                  class="overview-zone"
-                  [style.background]="zone.color"
-                  [style.top.px]="zone.top"
-                  [style.left.px]="zone.left"
-                  [style.width.px]="zone.width"
-                  [style.height.px]="zone.height"
-                  aria-hidden="true"
-                >{{ zone.name }}</div>
-              }
-              @for (piece of overviewStages(); track piece.i) {
-                <div
-                  class="overview-stage"
-                  [style.top.px]="piece.top"
-                  [style.left.px]="piece.left"
-                  [style.width.px]="piece.width"
-                  [style.height.px]="piece.height"
-                  aria-hidden="true"
-                >Stage</div>
-              }
-              @if (!isSeatedTier()) {
-                @if (overviewDragPreview(); as preview) {
-                <div
-                  aria-hidden="true"
-                  style="position: absolute; pointer-events: none; border-radius: 3px; border: 2px solid; z-index: 2"
-                  [style.border-color]="preview.blocked ? '#b42318' : '#111827'"
-                  [style.background]="preview.blocked ? 'rgb(254 228 226 / 0.6)' : 'rgb(17 24 39 / 0.15)'"
-                  [style.top.px]="preview.top"
-                  [style.left.px]="preview.left"
-                  [style.width.px]="preview.width"
-                  [style.height.px]="preview.height"
-                ></div>
-                }
-              } @else {
-              @for (page of overviewPages(); track page.key) {
-                <button
-                  type="button"
-                  class="overview-page"
-                  [class.current]="page.isCurrent"
-                  style="box-shadow: inset 0 0 0 1px rgb(99 102 241 / 0.25)"
-                  [style.top.px]="page.top"
-                  [style.left.px]="page.left"
-                  [style.width.px]="page.width"
-                  [style.height.px]="page.height"
-                  [attr.aria-label]="page.label + (page.isCurrent ? ' (showing)' : '')"
-                  [attr.aria-pressed]="page.isCurrent"
-                  (click)="selectSection(page.pageRow, page.pageCol, $event)"
-                ></button>
-              }
-              }
-            </div>
-            </div>
-            @if (isSeatedTier()) {
-            <p class="overview-hint">{{ currentPageHint() }}</p>
-            <p class="overview-hint">Click a section to edit it. Drag across several to make each one a zone.</p>
-            } @else {
-            <p class="overview-hint">
-              Drag an empty area to add sections. Large areas split into up to {{ maxZones }} adjustable sections.
-            </p>
-            }
-          </div>
-        </div>
-
-        <!-- Draw tools -->
-        <div class="draw-tool-bar" role="toolbar" aria-label="Drawing tool">
-          <button
-            type="button"
-            class="btn btn-sm"
-            data-tool="draw-zone"
-            [class.btn-primary]="drawMode() === 'zone'"
-            [class.btn-ghost]="drawMode() !== 'zone'"
-            (click)="setDrawMode('zone')"
-          >Draw zone</button>
-          <button
-            type="button"
-            class="btn btn-sm"
-            data-tool="draw-stage"
-            [class.btn-primary]="drawMode() === 'stage'"
-            [class.btn-ghost]="drawMode() !== 'stage'"
-            (click)="setDrawMode('stage')"
-          >Draw stage</button>
-          @if (!isSeatedTier()) {
-          <button
-            type="button"
-            class="btn btn-sm btn-ghost"
-            [disabled]="locked()"
-            (click)="selectEntireGaMap()"
-          >Select entire map</button>
-          <button
-            type="button"
-            class="btn btn-sm btn-ghost delete"
-            [disabled]="locked() || zones.length === 0"
-            (click)="removeAllGaSections()"
-          >Remove all</button>
-          }
-          @if (isSeatedTier()) {
-          <button
-            type="button"
-            class="btn btn-sm"
-            data-tool="customise-seats"
-            [class.btn-primary]="drawMode() === 'seats'"
-            [class.btn-ghost]="drawMode() !== 'seats'"
-            (click)="setDrawMode('seats')"
-          >Select seats</button>
-          }
-        </div>
-
-        <!-- General admission is laid out on the mini-map alone; the seat map is for reserved seating. -->
-        @if (isSeatedTier()) {
-        <p class="grid-map-title">
-          @if (drawMode() === 'seats') {
-          Drag over seats to switch them off (greyed out, never sold) or back on. Changes are kept when you save.
-          } @else {
-          Drag across empty cells to draw a new zone or stage piece. Use the + bars to grow the map.
-          }
-        </p>
-
-        @if (overviewZones().length > 0) {
-        <nav
-          aria-label="Go to a zone"
-          style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem"
+  @if (loading()) {
+    <section class="shell body"><p class="empty">Loading inventory...</p></section>
+  } @else if (event(); as event) {
+    <section class="page-head">
+      <div class="shell head-copy">
+        <a class="back" [routerLink]="['/organiser/events', event.event_id]"
+          >Back to {{ event.title }}</a
         >
-          <span>Go to zone:</span>
-          @for (zone of overviewZones(); track zone.i) {
-          <button type="button" class="btn btn-sm btn-ghost" (click)="showZone(zone.i)">
-            <span
-              aria-hidden="true"
-              style="display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 2px; margin-right: 0.35rem"
-              [style.background]="zone.color"
-            ></span>
-            {{ zone.name.trim() || 'Zone ' + (zone.i + 1) }}
-          </button>
-          }
-        </nav>
+        <h1>Configure inventory</h1>
+        <p class="lead">
+          Drag across an empty area of the map to draw a zone, or use "Add zone" and the row/column
+          fields below for keyboard entry — row 0 is closest to the stage. The zone's capacity is
+          the size of its rectangle. Zones can't overlap.
+        </p>
+        @if (locked()) {
+          <p class="pill status lock-note">
+            {{
+              event.status === 'CANCELLED'
+                ? 'This event has been cancelled — its inventory can no longer be edited.'
+                : 'This event has already started — its inventory can no longer be edited.'
+            }}
+          </p>
+        } @else if (live()) {
+          <p class="pill status lock-note">
+            This event is on sale. You can add or remove seats and change prices; tickets already
+            sold or on hold stay as they are, and new prices apply to new purchases only.
+          </p>
+        } @else if (hasCommittedSeats()) {
+          <p class="pill status lock-note">
+            Some zones have sold or held seats — those zones can't be resized or removed. Everything
+            else stays editable.
+          </p>
         }
+      </div>
+    </section>
 
-        <!-- Paginated grid canvas (scroll area contains indexes + body together) -->
-        <div class="grid-map-canvas">
-          <div class="grid-scroll-area">
-            <div class="col-index-row" [style.grid-template-columns]="'repeat(' + visibleCols().length + ', 1.75rem)'" aria-hidden="true">
-              @for (col of visibleCols(); track col) {
-                <span class="col-index-label">{{ col + 1 }}</span>
-              }
-            </div>
-            <div class="row-index-col" [style.grid-template-rows]="'repeat(' + visibleRows().length + ', 1.75rem)'" aria-hidden="true">
-              @for (row of visibleRows(); track row) {
-                <span class="row-index-label">{{ row + 1 }}</span>
-              }
-            </div>
-            <div
-              class="grid-body"
-              [style.grid-template-rows]="'repeat(' + visibleRows().length + ', 1.75rem)'"
-              [style.grid-template-columns]="'repeat(' + visibleCols().length + ', 1.75rem)'"
-            >
-              @for (row of visibleRows(); track row; let rowIdx = $index) {
-                @for (col of visibleCols(); track col; let colIdx = $index) {
-                  @let owner = zoneAt(row, col);
-                  @let stagePiece = stagePieceAt(row, col);
-                  @if (stagePiece) {
+    <section class="shell body">
+      @if (error()) {
+        <p class="error" role="alert">{{ error() }}</p>
+      }
+      @if (saved()) {
+        <p class="form-notice" role="status">Inventory saved.</p>
+      }
+
+      <div class="builder">
+        <div class="grid-map">
+          <!-- Map size controls + overview mini-map -->
+          <div class="map-config">
+            <div class="map-size-bar">
+              <span class="map-size-label">Map size</span>
+              <div class="map-size-controls">
+                <div class="map-dim">
+                  @if (canRemoveGridRow()) {
                     <button
                       type="button"
-                      class="stage-piece-cell"
-                      [style.grid-row]="rowIdx + 1"
-                      [style.grid-column]="colIdx + 1"
-                      [attr.data-grid-row]="row"
-                      [attr.data-grid-col]="col"
-                      [disabled]="locked()"
-                      (click)="removeStagePiece(row, col)"
-                      [attr.aria-label]="row === stagePiece.gridRow && col === stagePiece.gridCol ? 'Stage area — click to remove' : 'Stage area'"
-                    >{{ row === stagePiece.gridRow && col === stagePiece.gridCol ? 'Stage' : '' }}</button>
-                  } @else if (owner) {
-                    @if (isSeatedTier()) {
-                      @let seat = seatAt(row, col);
-                      <button
-                        type="button"
-                        class="seat-cell"
-                        [class.sold]="seat?.status === 'SOLD'"
-                        [class.held]="seat?.status === 'HELD'"
-                        [class.blocked]="seatIsOff(row, col, seat)"
-                        [class.tag-accessible]="seat?.tag === 'ACCESSIBLE'"
-                        [class.tag-maintenance]="seat?.tag === 'MAINTENANCE'"
-                        [class.handle-nw]="zoneHandleKind(row, col, owner) === 'nw'"
-                        [class.handle-n]="zoneHandleKind(row, col, owner) === 'n'"
-                        [class.handle-ne]="zoneHandleKind(row, col, owner) === 'ne'"
-                        [class.handle-e]="zoneHandleKind(row, col, owner) === 'e'"
-                        [class.handle-se]="zoneHandleKind(row, col, owner) === 'se'"
-                        [class.handle-s]="zoneHandleKind(row, col, owner) === 's'"
-                        [class.handle-sw]="zoneHandleKind(row, col, owner) === 'sw'"
-                        [class.handle-w]="zoneHandleKind(row, col, owner) === 'w'"
-                        [class.zone-movable]="isZoneMovable(row, col, owner)"
-                        [style.outline]="drawMode() === 'seats' && isDragPreview(row, col) ? '3px solid #111827' : null"
-                        [style.outline-offset.px]="-3"
-                        [style.grid-row]="rowIdx + 1"
-                        [style.grid-column]="colIdx + 1"
-                        [style.background]="owner.group.controls.color.value"
-                        [attr.data-grid-row]="row"
-                        [attr.data-grid-col]="col"
-                        [attr.aria-label]="cellLabel(row, col) + ' — ' + seatTagLabel(seat?.tag ?? 'NONE')"
-                        [title]="cellLabel(row, col) + ' — ' + seatTagLabel(seat?.tag ?? 'NONE')"
-                        (mousedown)="onCellPointerDown(row, col, $event)"
-                        (mouseenter)="onCellPointerEnter(row, col)"
-                      >{{ cellLabel(row, col) }}</button>
-                    } @else {
-                      <button
-                        type="button"
-                        class="zone-block-cell"
-                        [class.handle-nw]="zoneHandleKind(row, col, owner) === 'nw'"
-                        [class.handle-n]="zoneHandleKind(row, col, owner) === 'n'"
-                        [class.handle-ne]="zoneHandleKind(row, col, owner) === 'ne'"
-                        [class.handle-e]="zoneHandleKind(row, col, owner) === 'e'"
-                        [class.handle-se]="zoneHandleKind(row, col, owner) === 'se'"
-                        [class.handle-s]="zoneHandleKind(row, col, owner) === 's'"
-                        [class.handle-sw]="zoneHandleKind(row, col, owner) === 'sw'"
-                        [class.handle-w]="zoneHandleKind(row, col, owner) === 'w'"
-                        [class.zone-movable]="isZoneMovable(row, col, owner)"
-                        [style.outline]="drawMode() === 'seats' && isDragPreview(row, col) ? '3px solid #111827' : null"
-                        [style.outline-offset.px]="-3"
-                        [style.grid-row]="rowIdx + 1"
-                        [style.grid-column]="colIdx + 1"
-                        [style.background]="owner.group.controls.color.value"
-                        [attr.data-grid-row]="row"
-                        [attr.data-grid-col]="col"
-                        [attr.aria-label]="owner.group.controls.name.value || 'Zone'"
-                        (mousedown)="onCellPointerDown(row, col, $event)"
-                        (mouseenter)="onCellPointerEnter(row, col)"
-                      >{{ row === owner.group.controls.gridRow.value && col === owner.group.controls.gridCol.value ? (owner.group.controls.name.value || 'Zone') : '' }}</button>
+                      class="grid-remove-btn"
+                      (click)="removeGridRow()"
+                      aria-label="Remove last row"
+                    >
+                      &minus;
+                    </button>
+                  }
+                  <input
+                    type="number"
+                    class="grid-dim-input"
+                    [attr.min]="minGridDim"
+                    [attr.max]="maxGridDim"
+                    step="5"
+                    [value]="gridRowCount()"
+                    (input)="onGridRowCountInput($event)"
+                    aria-label="Number of rows"
+                  />
+                  <button
+                    type="button"
+                    class="grid-add-btn"
+                    (click)="addGridRow()"
+                    [disabled]="gridRowCount() >= maxGridDim"
+                    aria-label="Add row"
+                  >
+                    +
+                  </button>
+                  <span class="map-dim-label">rows</span>
+                </div>
+                <span class="map-dim-sep">×</span>
+                <div class="map-dim">
+                  @if (canRemoveGridCol()) {
+                    <button
+                      type="button"
+                      class="grid-remove-btn"
+                      (click)="removeGridCol()"
+                      aria-label="Remove last column"
+                    >
+                      &minus;
+                    </button>
+                  }
+                  <input
+                    type="number"
+                    class="grid-dim-input"
+                    [attr.min]="minGridDim"
+                    [attr.max]="maxGridDim"
+                    step="5"
+                    [value]="gridColCount()"
+                    (input)="onGridColCountInput($event)"
+                    aria-label="Number of columns"
+                  />
+                  <button
+                    type="button"
+                    class="grid-add-btn"
+                    (click)="addGridCol()"
+                    [disabled]="gridColCount() >= maxGridDim"
+                    aria-label="Add column"
+                  >
+                    +
+                  </button>
+                  <span class="map-dim-label">cols</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="overview-wrapper">
+              <!-- Click a section to edit it; drag across several to turn each into a zone. -->
+              <div
+                class="overview-hit-area"
+                [style.padding]="isSeatedTier() ? null : '1rem'"
+                [style.margin]="isSeatedTier() ? null : '-1rem'"
+                [style.cursor]="isSeatedTier() ? null : overviewCursor()"
+                style="position: relative; z-index: 1; touch-action: none"
+                (pointerdown)="onOverviewPointerDown($event)"
+                (pointermove)="onOverviewPointerMove($event)"
+                (pointerup)="onOverviewPointerUp($event)"
+                (pointercancel)="onOverviewPointerCancel()"
+              >
+                <div
+                  class="overview-map"
+                  [class.ga-overview]="!isSeatedTier()"
+                  [style.background-image]="
+                    isSeatedTier()
+                      ? null
+                      : 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)'
+                  "
+                  [style.background-size]="
+                    isSeatedTier() ? null : overviewCellSize() + 'px ' + overviewCellSize() + 'px'
+                  "
+                  [style.width.px]="overviewWidthPx()"
+                  [style.height.px]="overviewHeightPx()"
+                >
+                  @for (zone of overviewZones(); track zone.i) {
+                    <div
+                      class="overview-zone"
+                      [style.background]="zone.color"
+                      [style.top.px]="zone.top"
+                      [style.left.px]="zone.left"
+                      [style.width.px]="zone.width"
+                      [style.height.px]="zone.height"
+                      aria-hidden="true"
+                    >
+                      {{ zone.name }}
+                    </div>
+                  }
+                  @for (piece of overviewStages(); track piece.i) {
+                    <div
+                      class="overview-stage"
+                      [style.top.px]="piece.top"
+                      [style.left.px]="piece.left"
+                      [style.width.px]="piece.width"
+                      [style.height.px]="piece.height"
+                      aria-hidden="true"
+                    >
+                      Stage
+                    </div>
+                  }
+                  @if (!isSeatedTier()) {
+                    @if (overviewDragPreview(); as preview) {
+                      <div
+                        aria-hidden="true"
+                        style="
+                          position: absolute;
+                          pointer-events: none;
+                          border-radius: 3px;
+                          border: 2px solid;
+                          z-index: 2;
+                        "
+                        [style.border-color]="preview.blocked ? '#b42318' : '#111827'"
+                        [style.background]="
+                          preview.blocked ? 'rgb(254 228 226 / 0.6)' : 'rgb(17 24 39 / 0.15)'
+                        "
+                        [style.top.px]="preview.top"
+                        [style.left.px]="preview.left"
+                        [style.width.px]="preview.width"
+                        [style.height.px]="preview.height"
+                      ></div>
                     }
                   } @else {
-                    <button
-                      type="button"
-                      class="grid-cell"
-                      [class.drawing]="isDragPreview(row, col)"
-                      [class.blocked]="isDragPreview(row, col) && dragBlocked()"
-                      [style.grid-row]="rowIdx + 1"
-                      [style.grid-column]="colIdx + 1"
-                      [attr.data-grid-row]="row"
-                      [attr.data-grid-col]="col"
-                      (mousedown)="onCellPointerDown(row, col, $event)"
-                      (mouseenter)="onCellPointerEnter(row, col)"
-                      [attr.aria-label]="'Start a zone at row ' + (row + 1) + ', column ' + (col + 1)"
-                    >+</button>
+                    @for (page of overviewPages(); track page.key) {
+                      <button
+                        type="button"
+                        class="overview-page"
+                        [class.current]="page.isCurrent"
+                        style="box-shadow: inset 0 0 0 1px rgb(99 102 241 / 0.25)"
+                        [style.top.px]="page.top"
+                        [style.left.px]="page.left"
+                        [style.width.px]="page.width"
+                        [style.height.px]="page.height"
+                        [attr.aria-label]="page.label + (page.isCurrent ? ' (showing)' : '')"
+                        [attr.aria-pressed]="page.isCurrent"
+                        (click)="selectSection(page.pageRow, page.pageCol, $event)"
+                      ></button>
+                    }
                   }
-                }
+                </div>
+              </div>
+              @if (isSeatedTier()) {
+                <p class="overview-hint">{{ currentPageHint() }}</p>
+                <p class="overview-hint">
+                  Click a section to edit it. Drag across several to make each one a zone.
+                </p>
+              } @else {
+                <p class="overview-hint">
+                  Drag an empty area to add sections. Large areas split into up to
+                  {{ maxZones }} adjustable sections.
+                </p>
               }
             </div>
           </div>
-        </div>
 
-        @if (isSeatedTier()) {
-          <div class="seat-toolbar">
-            <p class="toolbar-hint">Drag across an empty area to draw a new zone. Each cell becomes one seat.</p>
-            <p class="toolbar-hint">Reserved seats: {{ reservedSeatCount() }} / {{ maxReservedSeats }}</p>
+          <!-- Draw tools -->
+          <div class="draw-tool-bar" role="toolbar" aria-label="Drawing tool">
+            <button
+              type="button"
+              class="btn btn-sm"
+              data-tool="draw-zone"
+              [class.btn-primary]="drawMode() === 'zone'"
+              [class.btn-ghost]="drawMode() !== 'zone'"
+              (click)="setDrawMode('zone')"
+            >
+              Draw zone
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm"
+              data-tool="draw-stage"
+              [class.btn-primary]="drawMode() === 'stage'"
+              [class.btn-ghost]="drawMode() !== 'stage'"
+              (click)="setDrawMode('stage')"
+            >
+              Draw stage
+            </button>
+            @if (!isSeatedTier()) {
+              <button
+                type="button"
+                class="btn btn-sm btn-ghost"
+                [disabled]="locked()"
+                (click)="selectEntireGaMap()"
+              >
+                Select entire map
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-ghost delete"
+                [disabled]="locked() || zones.length === 0"
+                (click)="removeAllGaSections()"
+              >
+                Remove all
+              </button>
+            }
+            @if (isSeatedTier()) {
+              <button
+                type="button"
+                class="btn btn-sm"
+                data-tool="customise-seats"
+                [class.btn-primary]="drawMode() === 'seats'"
+                [class.btn-ghost]="drawMode() !== 'seats'"
+                (click)="setDrawMode('seats')"
+              >
+                Select seats
+              </button>
+            }
           </div>
-        }
-        }
-      </div>
 
-      <div class="zone-list-actions">
-        <button type="button" class="btn btn-ghost btn-sm" [disabled]="locked()" (click)="addZone()">Add zone</button>
-      </div>
-      <ul class="zone-list" [formArray]="zones">
-        @for (zone of zones.controls; track zone; let zoneIndex = $index) {
-          <li class="zone-card" [class.has-error]="zone.controls.name.invalid && zone.controls.name.touched" [formGroupName]="zoneIndex">
-            <header class="zone-card-head">
-              <span class="zone-swatch-picker">
-                <input type="color" formControlName="color" aria-label="Zone colour" />
-              </span>
-              <div class="zone-card-titles">
-                <input
-                  class="zone-name-input"
-                  type="text"
-                  formControlName="name"
-                  placeholder="Zone name"
-                  aria-label="Zone name"
-                  [class.invalid]="zone.controls.name.invalid && zone.controls.name.touched"
-                  [attr.aria-invalid]="zone.controls.name.invalid && zone.controls.name.touched ? true : null"
-                  [attr.aria-describedby]="zone.controls.name.invalid && zone.controls.name.touched ? 'zone-name-error-' + zoneIndex : null"
-                />
-                @if (zone.controls.name.invalid && zone.controls.name.touched) {
-                  <span class="zone-name-error" [id]="'zone-name-error-' + zoneIndex" role="alert">Please enter group seat name.</span>
+          <!-- General admission is laid out on the mini-map alone; the seat map is for reserved seating. -->
+          @if (isSeatedTier()) {
+            <p class="grid-map-title">
+              @if (drawMode() === 'seats') {
+                Drag over seats to switch them off (greyed out, never sold) or back on. Changes are
+                kept when you save.
+              } @else {
+                Drag across empty cells to draw a new zone or stage piece. Use the + bars to grow
+                the map.
+              }
+            </p>
+
+            @if (overviewZones().length > 0) {
+              <nav
+                aria-label="Go to a zone"
+                style="
+                  display: flex;
+                  flex-wrap: wrap;
+                  align-items: center;
+                  gap: 0.5rem;
+                  margin-bottom: 0.75rem;
+                "
+              >
+                <span>Go to zone:</span>
+                @for (zone of overviewZones(); track zone.i) {
+                  <button type="button" class="btn btn-sm btn-ghost" (click)="showZone(zone.i)">
+                    <span
+                      aria-hidden="true"
+                      style="
+                        display: inline-block;
+                        width: 0.75rem;
+                        height: 0.75rem;
+                        border-radius: 2px;
+                        margin-right: 0.35rem;
+                      "
+                      [style.background]="zone.color"
+                    ></span>
+                    {{ zone.name.trim() || 'Zone ' + (zone.i + 1) }}
+                  </button>
                 }
-                @if (zone.controls.code.value) {
-                  <span class="zone-code-badge">#{{ zone.controls.code.value }}</span>
-                }
-              </div>
-              <button type="button" class="btn btn-ghost btn-sm delete" [disabled]="zoneHasCommitted(zoneIndex)" (click)="removeZone(zoneIndex)">Remove</button>
-            </header>
-            <div class="zone-card-position">
-              <div class="position-group" role="group" [attr.aria-label]="'Price and capacity for zone ' + (zoneIndex + 1)">
-                <span class="position-group-label">Ticket</span>
-                <div class="position-fields">
-                  <label class="position-field">
-                    <span class="position-field-label">$</span>
-                    <input type="number" class="zone-price-input" min="0" step="0.01" formControlName="price" aria-label="Price per seat" />
-                  </label>
-                  @if (!isSeatedTier()) {
-                    <label class="position-field">
-                      <input
-                        type="number"
-                        class="zone-quantity-input"
-                        formControlName="quantity"
-                        min="1"
-                        [disabled]="locked()"
-                        [attr.aria-label]="'Capacity for zone ' + (zoneIndex + 1)"
-                      />
-                      <span class="position-field-label">seats</span>
-                    </label>
-                  } @else {
-                    <span class="zone-seat-total">{{ zoneSeatCount(zoneIndex) }} seats</span>
+              </nav>
+            }
+
+            <!-- Paginated grid canvas (scroll area contains indexes + body together) -->
+            <div class="grid-map-canvas">
+              <div class="grid-scroll-area">
+                <div
+                  class="col-index-row"
+                  [style.grid-template-columns]="'repeat(' + visibleCols().length + ', 1.75rem)'"
+                  aria-hidden="true"
+                >
+                  @for (col of visibleCols(); track col) {
+                    <span class="col-index-label">{{ col + 1 }}</span>
+                  }
+                </div>
+                <div
+                  class="row-index-col"
+                  [style.grid-template-rows]="'repeat(' + visibleRows().length + ', 1.75rem)'"
+                  aria-hidden="true"
+                >
+                  @for (row of visibleRows(); track row) {
+                    <span class="row-index-label">{{ row + 1 }}</span>
+                  }
+                </div>
+                <div
+                  class="grid-body"
+                  [style.grid-template-rows]="'repeat(' + visibleRows().length + ', 1.75rem)'"
+                  [style.grid-template-columns]="'repeat(' + visibleCols().length + ', 1.75rem)'"
+                >
+                  @for (row of visibleRows(); track row; let rowIdx = $index) {
+                    @for (col of visibleCols(); track col; let colIdx = $index) {
+                      @let owner = zoneAt(row, col);
+                      @let stagePiece = stagePieceAt(row, col);
+                      @if (stagePiece) {
+                        <button
+                          type="button"
+                          class="stage-piece-cell"
+                          [style.grid-row]="rowIdx + 1"
+                          [style.grid-column]="colIdx + 1"
+                          [attr.data-grid-row]="row"
+                          [attr.data-grid-col]="col"
+                          [disabled]="locked()"
+                          (click)="removeStagePiece(row, col)"
+                          [attr.aria-label]="
+                            row === stagePiece.gridRow && col === stagePiece.gridCol
+                              ? 'Stage area — click to remove'
+                              : 'Stage area'
+                          "
+                        >
+                          {{
+                            row === stagePiece.gridRow && col === stagePiece.gridCol ? 'Stage' : ''
+                          }}
+                        </button>
+                      } @else if (owner) {
+                        @if (isSeatedTier()) {
+                          @let seat = seatAt(row, col);
+                          <button
+                            type="button"
+                            class="seat-cell"
+                            [class.sold]="seat?.status === 'SOLD'"
+                            [class.held]="seat?.status === 'HELD'"
+                            [class.blocked]="seatIsOff(row, col, seat)"
+                            [class.tag-accessible]="seat?.tag === 'ACCESSIBLE'"
+                            [class.tag-maintenance]="seat?.tag === 'MAINTENANCE'"
+                            [class.handle-nw]="zoneHandleKind(row, col, owner) === 'nw'"
+                            [class.handle-n]="zoneHandleKind(row, col, owner) === 'n'"
+                            [class.handle-ne]="zoneHandleKind(row, col, owner) === 'ne'"
+                            [class.handle-e]="zoneHandleKind(row, col, owner) === 'e'"
+                            [class.handle-se]="zoneHandleKind(row, col, owner) === 'se'"
+                            [class.handle-s]="zoneHandleKind(row, col, owner) === 's'"
+                            [class.handle-sw]="zoneHandleKind(row, col, owner) === 'sw'"
+                            [class.handle-w]="zoneHandleKind(row, col, owner) === 'w'"
+                            [class.zone-movable]="isZoneMovable(row, col, owner)"
+                            [style.outline]="
+                              drawMode() === 'seats' && isDragPreview(row, col)
+                                ? '3px solid #111827'
+                                : null
+                            "
+                            [style.outline-offset.px]="-3"
+                            [style.grid-row]="rowIdx + 1"
+                            [style.grid-column]="colIdx + 1"
+                            [style.background]="owner.group.controls.color.value"
+                            [attr.data-grid-row]="row"
+                            [attr.data-grid-col]="col"
+                            [attr.aria-label]="
+                              cellLabel(row, col) + ' — ' + seatTagLabel(seat?.tag ?? 'NONE')
+                            "
+                            [title]="
+                              cellLabel(row, col) + ' — ' + seatTagLabel(seat?.tag ?? 'NONE')
+                            "
+                            (mousedown)="onCellPointerDown(row, col, $event)"
+                            (mouseenter)="onCellPointerEnter(row, col)"
+                          >
+                            {{ cellLabel(row, col) }}
+                          </button>
+                        } @else {
+                          <button
+                            type="button"
+                            class="zone-block-cell"
+                            [class.handle-nw]="zoneHandleKind(row, col, owner) === 'nw'"
+                            [class.handle-n]="zoneHandleKind(row, col, owner) === 'n'"
+                            [class.handle-ne]="zoneHandleKind(row, col, owner) === 'ne'"
+                            [class.handle-e]="zoneHandleKind(row, col, owner) === 'e'"
+                            [class.handle-se]="zoneHandleKind(row, col, owner) === 'se'"
+                            [class.handle-s]="zoneHandleKind(row, col, owner) === 's'"
+                            [class.handle-sw]="zoneHandleKind(row, col, owner) === 'sw'"
+                            [class.handle-w]="zoneHandleKind(row, col, owner) === 'w'"
+                            [class.zone-movable]="isZoneMovable(row, col, owner)"
+                            [style.outline]="
+                              drawMode() === 'seats' && isDragPreview(row, col)
+                                ? '3px solid #111827'
+                                : null
+                            "
+                            [style.outline-offset.px]="-3"
+                            [style.grid-row]="rowIdx + 1"
+                            [style.grid-column]="colIdx + 1"
+                            [style.background]="owner.group.controls.color.value"
+                            [attr.data-grid-row]="row"
+                            [attr.data-grid-col]="col"
+                            [attr.aria-label]="owner.group.controls.name.value || 'Zone'"
+                            (mousedown)="onCellPointerDown(row, col, $event)"
+                            (mouseenter)="onCellPointerEnter(row, col)"
+                          >
+                            {{
+                              row === owner.group.controls.gridRow.value &&
+                              col === owner.group.controls.gridCol.value
+                                ? owner.group.controls.name.value || 'Zone'
+                                : ''
+                            }}
+                          </button>
+                        }
+                      } @else {
+                        <button
+                          type="button"
+                          class="grid-cell"
+                          [class.drawing]="isDragPreview(row, col)"
+                          [class.blocked]="isDragPreview(row, col) && dragBlocked()"
+                          [style.grid-row]="rowIdx + 1"
+                          [style.grid-column]="colIdx + 1"
+                          [attr.data-grid-row]="row"
+                          [attr.data-grid-col]="col"
+                          (mousedown)="onCellPointerDown(row, col, $event)"
+                          (mouseenter)="onCellPointerEnter(row, col)"
+                          [attr.aria-label]="
+                            'Start a zone at row ' + (row + 1) + ', column ' + (col + 1)
+                          "
+                        >
+                          +
+                        </button>
+                      }
+                    }
                   }
                 </div>
               </div>
-              <div class="position-group" role="group" aria-label="Starting position">
-                <span class="position-group-label">Starts at</span>
-                <div class="position-fields">
-                  <label class="position-field">
-                    <span class="position-field-label">Row index</span>
-                    <input
-                      type="number"
-                      class="zone-row-input"
-                      [attr.min]="0"
-                      [attr.max]="gridRowCount() - 1"
-                      [value]="zone.controls.gridRow.value"
-                      [disabled]="locked() || zoneHasCommitted(zoneIndex)"
-                      (input)="onZoneRectInput(zoneIndex, 'gridRow', $event)"
-                      [attr.aria-label]="'Starting row index for zone ' + (zoneIndex + 1)"
-                    />
-                  </label>
-                  <label class="position-field">
-                    <span class="position-field-label">Column index</span>
-                    <input
-                      type="number"
-                      class="zone-col-input"
-                      [attr.min]="0"
-                      [attr.max]="gridColCount() - 1"
-                      [value]="zone.controls.gridCol.value"
-                      [disabled]="locked() || zoneHasCommitted(zoneIndex)"
-                      (input)="onZoneRectInput(zoneIndex, 'gridCol', $event)"
-                      [attr.aria-label]="'Starting column index for zone ' + (zoneIndex + 1)"
-                    />
-                  </label>
-                </div>
-              </div>
-              <div class="position-group" role="group" aria-label="Zone size">
-                <span class="position-group-label">Size</span>
-                <div class="position-fields">
-                  <label class="position-field">
-                    <span class="position-field-label">Rows tall</span>
-                    <input
-                      type="number"
-                      class="zone-row-span-input"
-                      [attr.min]="1"
-                      [attr.max]="gridRowCount()"
-                      [value]="zone.controls.gridRowSpan.value"
-                      [disabled]="locked() || zoneHasCommitted(zoneIndex)"
-                      (input)="onZoneRectInput(zoneIndex, 'gridRowSpan', $event)"
-                      [attr.aria-label]="'Row span for zone ' + (zoneIndex + 1)"
-                    />
-                  </label>
-                  <label class="position-field">
-                    <span class="position-field-label">Columns wide</span>
-                    <input
-                      type="number"
-                      class="zone-col-span-input"
-                      [attr.min]="1"
-                      [attr.max]="gridColCount()"
-                      [value]="zone.controls.gridColSpan.value"
-                      [disabled]="locked() || zoneHasCommitted(zoneIndex)"
-                      (input)="onZoneRectInput(zoneIndex, 'gridColSpan', $event)"
-                      [attr.aria-label]="'Column span for zone ' + (zoneIndex + 1)"
-                    />
-                  </label>
-                </div>
-              </div>
             </div>
-          </li>
-        } @empty {
-          <li class="empty">No zones yet — drag across the map above to draw one, or use "Add zone" for keyboard entry.</li>
-        }
-      </ul>
-    </div>
 
-    <div class="form-actions">
-      <button type="button" class="btn btn-primary" [disabled]="saving() || locked()" (click)="save()">{{ saving() ? 'Saving...' : 'Save inventory' }}</button>
-    </div>
-  </section>
-} @else {
-  <section class="shell body not-found">
-    <h1>Event not found</h1>
-    <p>{{ error() || 'It may have been removed or the link is out of date.' }}</p>
-    <a class="btn btn-primary" routerLink="/organiser/events">Back to managed events</a>
-  </section>
-}
+            @if (isSeatedTier()) {
+              <div class="seat-toolbar">
+                <p class="toolbar-hint">
+                  Drag across an empty area to draw a new zone. Each cell becomes one seat.
+                </p>
+                <p class="toolbar-hint">
+                  Reserved seats: {{ reservedSeatCount() }} / {{ maxReservedSeats }}
+                </p>
+              </div>
+            }
+          }
+        </div>
+
+        <div class="zone-list-actions">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            [disabled]="locked()"
+            (click)="addZone()"
+          >
+            Add zone
+          </button>
+        </div>
+        <ul class="zone-list" [formArray]="zones">
+          @for (zone of zones.controls; track zone; let zoneIndex = $index) {
+            <li
+              class="zone-card"
+              [class.has-error]="zone.controls.name.invalid && zone.controls.name.touched"
+              [formGroupName]="zoneIndex"
+            >
+              <header class="zone-card-head">
+                <span class="zone-swatch-picker">
+                  <input type="color" formControlName="color" aria-label="Zone colour" />
+                </span>
+                <div class="zone-card-titles">
+                  <input
+                    class="zone-name-input"
+                    type="text"
+                    formControlName="name"
+                    placeholder="Zone name"
+                    aria-label="Zone name"
+                    [class.invalid]="zone.controls.name.invalid && zone.controls.name.touched"
+                    [attr.aria-invalid]="
+                      zone.controls.name.invalid && zone.controls.name.touched ? true : null
+                    "
+                    [attr.aria-describedby]="
+                      zone.controls.name.invalid && zone.controls.name.touched
+                        ? 'zone-name-error-' + zoneIndex
+                        : null
+                    "
+                  />
+                  @if (zone.controls.name.invalid && zone.controls.name.touched) {
+                    <span class="zone-name-error" [id]="'zone-name-error-' + zoneIndex" role="alert"
+                      >Please enter group seat name.</span
+                    >
+                  }
+                  @if (zone.controls.code.value) {
+                    <span class="zone-code-badge">#{{ zone.controls.code.value }}</span>
+                  }
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm delete"
+                  [disabled]="zoneHasCommitted(zoneIndex)"
+                  (click)="removeZone(zoneIndex)"
+                >
+                  Remove
+                </button>
+              </header>
+              <div class="zone-card-position">
+                <div
+                  class="position-group"
+                  role="group"
+                  [attr.aria-label]="'Price and capacity for zone ' + (zoneIndex + 1)"
+                >
+                  <span class="position-group-label">Ticket</span>
+                  <div class="position-fields">
+                    <label class="position-field">
+                      <span class="position-field-label">$</span>
+                      <input
+                        type="number"
+                        class="zone-price-input"
+                        min="0"
+                        step="0.01"
+                        formControlName="price"
+                        aria-label="Price per seat"
+                      />
+                    </label>
+                    @if (!isSeatedTier()) {
+                      <label class="position-field">
+                        <input
+                          type="number"
+                          class="zone-quantity-input"
+                          formControlName="quantity"
+                          min="1"
+                          [disabled]="locked()"
+                          [attr.aria-label]="'Capacity for zone ' + (zoneIndex + 1)"
+                        />
+                        <span class="position-field-label">seats</span>
+                      </label>
+                    } @else {
+                      <span class="zone-seat-total">{{ zoneSeatCount(zoneIndex) }} seats</span>
+                    }
+                  </div>
+                </div>
+                <div class="position-group" role="group" aria-label="Starting position">
+                  <span class="position-group-label">Starts at</span>
+                  <div class="position-fields">
+                    <label class="position-field">
+                      <span class="position-field-label">Row index</span>
+                      <input
+                        type="number"
+                        class="zone-row-input"
+                        [attr.min]="0"
+                        [attr.max]="gridRowCount() - 1"
+                        [value]="zone.controls.gridRow.value"
+                        [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                        (input)="onZoneRectInput(zoneIndex, 'gridRow', $event)"
+                        [attr.aria-label]="'Starting row index for zone ' + (zoneIndex + 1)"
+                      />
+                    </label>
+                    <label class="position-field">
+                      <span class="position-field-label">Column index</span>
+                      <input
+                        type="number"
+                        class="zone-col-input"
+                        [attr.min]="0"
+                        [attr.max]="gridColCount() - 1"
+                        [value]="zone.controls.gridCol.value"
+                        [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                        (input)="onZoneRectInput(zoneIndex, 'gridCol', $event)"
+                        [attr.aria-label]="'Starting column index for zone ' + (zoneIndex + 1)"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div class="position-group" role="group" aria-label="Zone size">
+                  <span class="position-group-label">Size</span>
+                  <div class="position-fields">
+                    <label class="position-field">
+                      <span class="position-field-label">Rows tall</span>
+                      <input
+                        type="number"
+                        class="zone-row-span-input"
+                        [attr.min]="1"
+                        [attr.max]="gridRowCount()"
+                        [value]="zone.controls.gridRowSpan.value"
+                        [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                        (input)="onZoneRectInput(zoneIndex, 'gridRowSpan', $event)"
+                        [attr.aria-label]="'Row span for zone ' + (zoneIndex + 1)"
+                      />
+                    </label>
+                    <label class="position-field">
+                      <span class="position-field-label">Columns wide</span>
+                      <input
+                        type="number"
+                        class="zone-col-span-input"
+                        [attr.min]="1"
+                        [attr.max]="gridColCount()"
+                        [value]="zone.controls.gridColSpan.value"
+                        [disabled]="locked() || zoneHasCommitted(zoneIndex)"
+                        (input)="onZoneRectInput(zoneIndex, 'gridColSpan', $event)"
+                        [attr.aria-label]="'Column span for zone ' + (zoneIndex + 1)"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </li>
+          } @empty {
+            <li class="empty">
+              No zones yet — drag across the map above to draw one, or use "Add zone" for keyboard
+              entry.
+            </li>
+          }
+        </ul>
+      </div>
+
+      <div class="form-actions">
+        <button
+          type="button"
+          class="btn btn-primary"
+          [disabled]="saving() || locked()"
+          (click)="save()"
+        >
+          {{ saving() ? 'Saving...' : 'Save inventory' }}
+        </button>
+      </div>
+    </section>
+  } @else {
+    <section class="shell body not-found">
+      <h1>Event not found</h1>
+      <p>{{ error() || 'It may have been removed or the link is out of date.' }}</p>
+      <a class="btn btn-primary" routerLink="/organiser/events">Back to managed events</a>
+    </section>
+  }
 </app-workspace-shell>
-

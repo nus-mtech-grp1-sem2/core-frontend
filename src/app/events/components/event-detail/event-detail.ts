@@ -341,7 +341,12 @@ export class EventDetail {
   /** Published events may still tune waiting-room concurrency; cancelled or completed events may not. */
   protected readonly canEditAvailableBuyers = computed(() => {
     const event = this.event();
-    return this.organiserMode && !this.readOnly() && !!event && ['DRAFT', 'PUBLISHED'].includes(event.status);
+    return (
+      this.organiserMode &&
+      !this.readOnly() &&
+      !!event &&
+      ['DRAFT', 'PUBLISHED'].includes(event.status)
+    );
   });
   protected readonly form = this.fb.group({
     title: this.fb.control('', Validators.required),
@@ -998,7 +1003,11 @@ export class EventDetail {
     visualColOf: (c: number) => number,
     cellRem = EventDetail.CELL_REM,
     gapRem = EventDetail.GAP_REM,
-  ): { cells: readonly { x: string; y: string; w: string; h: string }[]; labelX: string; labelY: string } | null {
+  ): {
+    cells: readonly { x: string; y: string; w: string; h: string }[];
+    labelX: string;
+    labelY: string;
+  } | null {
     if (pieces.length === 0) return null;
     const STEP = cellRem + gapRem;
     const occupied = new Set<string>();
@@ -1011,7 +1020,10 @@ export class EventDetail {
         }
       }
     }
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     const cells: { x: string; y: string; w: string; h: string }[] = [];
     for (const key of occupied) {
       const [r, c] = key.split(',').map(Number);
@@ -1020,8 +1032,10 @@ export class EventDetail {
       const w = cellRem + (occupied.has(`${r},${c + 1}`) ? gapRem : 0);
       const h = cellRem + (occupied.has(`${r + 1},${c}`) ? gapRem : 0);
       cells.push({ x: `${x}rem`, y: `${y}rem`, w: `${w}rem`, h: `${h}rem` });
-      minX = Math.min(minX, x); maxX = Math.max(maxX, x + w);
-      minY = Math.min(minY, y); maxY = Math.max(maxY, y + h);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x + w);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y + h);
     }
     return { cells, labelX: `${(minX + maxX) / 2}rem`, labelY: `${(minY + maxY) / 2}rem` };
   }

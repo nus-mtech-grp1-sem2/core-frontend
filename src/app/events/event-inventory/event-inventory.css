@@ -188,7 +188,9 @@
   border-radius: 3px;
   background: transparent;
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 
 .overview-page:hover {
@@ -224,7 +226,9 @@
   justify-content: center;
   overflow: hidden;
   padding: 0;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .stage-piece-cell:hover:not(:disabled) {

@@ -30,13 +30,13 @@ describe('isCompleted', () => {
 const EIGHT_PM_SGT = '2026-10-06T12:00:00.000Z';
 
 describe('formatEventDate', () => {
-  it('always shows the Singapore calendar date, regardless of the viewer\'s own timezone', () => {
+  it("always shows the Singapore calendar date, regardless of the viewer's own timezone", () => {
     expect(formatEventDate(EIGHT_PM_SGT)).toBe('6 Oct 2026');
   });
 });
 
 describe('formatEventTime', () => {
-  it('always shows the Singapore wall-clock time, regardless of the viewer\'s own timezone', () => {
+  it("always shows the Singapore wall-clock time, regardless of the viewer's own timezone", () => {
     expect(formatEventTime(EIGHT_PM_SGT)).toBe('8:00 pm');
   });
 });
