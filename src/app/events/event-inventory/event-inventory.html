@@ -199,7 +199,21 @@
                 <span class="currency">$</span>
                 <input type="number" min="0" step="0.01" formControlName="price" aria-label="Price per seat" />
               </label>
-              <span class="zone-seat-total">{{ zoneSeatCount(zoneIndex) }} {{ isSeatedTier() ? 'seats' : 'capacity' }}</span>
+              @if (!isSeatedTier()) {
+                <label class="zone-quantity-label">
+                  <input
+                    type="number"
+                    class="zone-quantity-input"
+                    formControlName="quantity"
+                    min="1"
+                    [disabled]="locked()"
+                    [attr.aria-label]="'Capacity for zone ' + (zoneIndex + 1)"
+                  />
+                  <span class="zone-qty-suffix">capacity</span>
+                </label>
+              } @else {
+                <span class="zone-seat-total">{{ zoneSeatCount(zoneIndex) }} seats</span>
+              }
               <button type="button" class="btn btn-ghost btn-sm delete" [disabled]="zoneHasCommitted(zoneIndex)" (click)="removeZone(zoneIndex)">Remove</button>
             </header>
             <div class="zone-card-position">

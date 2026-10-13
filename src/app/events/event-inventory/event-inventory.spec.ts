@@ -229,11 +229,12 @@ describe('EventInventory', () => {
     );
     expect(toggle).toBeUndefined();
 
-    dragRectangle(host, 0, 0, 1, 2); // 2 rows x 3 cols = capacity 6
+    dragRectangle(host, 0, 0, 1, 2); // 2 rows x 3 cols = default quantity 6
     fixture.detectChanges();
 
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
-    expect(host.querySelector('.zone-seat-total')?.textContent?.trim()).toBe('6 capacity');
+    // GA zones show a quantity input (defaulting to the rectangle area) instead of a static label.
+    expect(host.querySelector<HTMLInputElement>('.zone-quantity-input')?.value).toBe('6');
 
     setInputValue(host, '.zone-name-input', 'General Admission');
     setInputValue(host, '.zone-price input', '25');
@@ -246,9 +247,9 @@ describe('EventInventory', () => {
     fixture.detectChanges();
 
     const putReq = httpMock.expectOne(`/api/inventory/events/${GA_EVENT.event_id}/inventory`);
-    const body = putReq.request.body as { zones: unknown[]; seats?: unknown };
+    const body = putReq.request.body as { zones: { quantity: number }[]; seats?: unknown };
     expect(body.zones[0]).toEqual(
-      expect.objectContaining({ name: 'General Admission', gridRow: 0, gridCol: 0, gridRowSpan: 2, gridColSpan: 3 }),
+      expect.objectContaining({ name: 'General Admission', gridRow: 0, gridCol: 0, gridRowSpan: 2, gridColSpan: 3, quantity: 6 }),
     );
     expect(body.seats).toBeUndefined();
 
@@ -256,6 +257,33 @@ describe('EventInventory', () => {
     await settle(fixture);
 
     httpMock.verify();
+  });
+
+  it('GA zone shows a quantity input; the explicit value (not the area) is sent in the PUT body', async () => {
+    const { fixture, httpMock, host } = await renderFor(GA_EVENT);
+
+    dragRectangle(host, 0, 0, 1, 2); // 2 rows x 3 cols; area = 6
+    fixture.detectChanges();
+
+    const qtyInput = host.querySelector<HTMLInputElement>('.zone-quantity-input');
+    expect(qtyInput).not.toBeNull();
+
+    // Override the quantity to something that doesn't match the area.
+    setInputValue(host, '.zone-name-input', 'General Admission');
+    setInputValue(host, '.zone-price input', '25');
+    setInputValue(host, '.zone-quantity-input', '500');
+    fixture.detectChanges();
+
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.trim().startsWith('Save'),
+    );
+    saveButton?.click();
+    fixture.detectChanges();
+
+    const putReq = httpMock.expectOne(`/api/inventory/events/${GA_EVENT.event_id}/inventory`);
+    const body = putReq.request.body as { zones: { quantity: number }[] };
+    expect(body.zones[0].quantity).toBe(500);
+    putReq.flush(null, { status: 204, statusText: 'No Content' });
   });
 
   it('adds a zone at the first empty cell via a button, with no drag gesture needed', async () => {

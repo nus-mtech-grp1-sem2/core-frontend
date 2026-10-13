@@ -98,6 +98,7 @@ interface GridRect {
 
 function buildZoneGroup(fb: NonNullableFormBuilder, zone?: ZoneDto, colorIndex = 0, rect?: GridRect) {
   const bounds: GridRect = zone ?? rect ?? { gridRow: 0, gridCol: 0, gridRowSpan: 1, gridColSpan: 1 };
+  const defaultQuantity = zone?.seatCount ?? bounds.gridRowSpan * bounds.gridColSpan;
   return fb.group({
     inventoryItemId: fb.control<number | null>(zone?.inventoryItemId ?? null),
     code: fb.control({ value: zone?.code ?? '', disabled: true }),
@@ -109,6 +110,7 @@ function buildZoneGroup(fb: NonNullableFormBuilder, zone?: ZoneDto, colorIndex =
     gridCol: fb.control(bounds.gridCol),
     gridRowSpan: fb.control(bounds.gridRowSpan),
     gridColSpan: fb.control(bounds.gridColSpan),
+    quantity: fb.control(defaultQuantity, [Validators.required, Validators.min(1)]),
   });
 }
 
@@ -587,6 +589,7 @@ export class EventInventory {
   protected zoneSeatCount(index: number): number {
     const group = this.zones.at(index) as ZoneGroup | undefined;
     if (!group) return 0;
+    if (!this.isSeatedTier()) return group.controls.quantity.value;
     return group.controls.gridRowSpan.value * group.controls.gridColSpan.value;
   }
 
@@ -701,6 +704,7 @@ export class EventInventory {
     this.saved.set(false);
     this.error.set('');
     try {
+      const isGa = event.tier === 'TIER1_GA';
       const zonesPayload = this.zones.getRawValue().map((zone) => ({
         inventoryItemId: zone.inventoryItemId,
         name: zone.name,
@@ -710,6 +714,7 @@ export class EventInventory {
         gridCol: zone.gridCol,
         gridRowSpan: zone.gridRowSpan,
         gridColSpan: zone.gridColSpan,
+        ...(isGa ? { quantity: zone.quantity } : {}),
       }));
       const body = {
         zones: zonesPayload,
