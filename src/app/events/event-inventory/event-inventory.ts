@@ -378,6 +378,16 @@ export class EventInventory {
     return this.stagePieces().some((p) => rectContains(p, row, col));
   }
 
+  protected stagePieceAt(row: number, col: number): StagePieceDto | undefined {
+    return this.stagePieces().find((p) => rectContains(p, row, col));
+  }
+
+  protected removeStagePiece(row: number, col: number): void {
+    if (this.locked()) return;
+    this.stagePieces.update((pieces) => pieces.filter((p) => !rectContains(p, row, col)));
+    this.saved.set(false);
+  }
+
   private rectOverlapsExistingZone(rect: GridRect, excludeIndex?: number): boolean {
     for (let r = rect.gridRow; r < rect.gridRow + rect.gridRowSpan; r += 1) {
       for (let c = rect.gridCol; c < rect.gridCol + rect.gridColSpan; c += 1) {
@@ -554,7 +564,7 @@ export class EventInventory {
   private firstAvailableCell(): GridCell | null {
     for (let row = 0; row < this.gridRowCount(); row += 1) {
       for (let col = 0; col < this.gridColCount(); col += 1) {
-        if (!this.zoneAt(row, col)) return { row, col };
+        if (!this.zoneAt(row, col) && !this.stageAt(row, col)) return { row, col };
       }
     }
     return null;

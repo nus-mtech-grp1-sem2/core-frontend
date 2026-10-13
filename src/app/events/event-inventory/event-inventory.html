@@ -37,12 +37,25 @@
     <div class="builder">
       <div class="grid-map">
         <div class="draw-tool-bar" role="toolbar" aria-label="Drawing tool">
-          <button type="button" data-tool="draw-zone" [class.active]="drawMode() === 'zone'" (click)="setDrawMode('zone')">Draw zone</button>
-          <button type="button" data-tool="draw-stage" [class.active]="drawMode() === 'stage'" (click)="setDrawMode('stage')">Draw stage</button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            data-tool="draw-zone"
+            [class.btn-primary]="drawMode() === 'zone'"
+            [class.btn-ghost]="drawMode() !== 'zone'"
+            (click)="setDrawMode('zone')"
+          >Draw zone</button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            data-tool="draw-stage"
+            [class.btn-primary]="drawMode() === 'stage'"
+            [class.btn-ghost]="drawMode() !== 'stage'"
+            (click)="setDrawMode('stage')"
+          >Draw stage</button>
         </div>
         <p class="grid-map-title">Drag across empty cells to draw a new zone or stage piece. Use the + bars to grow the map.</p>
         <div class="grid-map-canvas">
-          <div class="stage-bar">Stage</div>
           <div class="col-index-row" [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'" aria-hidden="true">
             @for (col of gridCols(); track col) {
               <span class="col-index-label">{{ col }}</span>
@@ -61,15 +74,19 @@
             @for (row of gridRows(); track row) {
               @for (col of gridCols(); track col) {
                 @let owner = zoneAt(row, col);
-                @if (stageAt(row, col)) {
-                  <div
+                @let stagePiece = stagePieceAt(row, col);
+                @if (stagePiece) {
+                  <button
+                    type="button"
                     class="stage-piece-cell"
                     [style.grid-row]="row + 1"
                     [style.grid-column]="col + 1"
                     [attr.data-grid-row]="row"
                     [attr.data-grid-col]="col"
-                    aria-label="Stage area"
-                  ></div>
+                    [disabled]="locked()"
+                    (click)="removeStagePiece(row, col)"
+                    [attr.aria-label]="row === stagePiece.gridRow && col === stagePiece.gridCol ? 'Stage area — click to remove' : 'Stage area'"
+                  >{{ row === stagePiece.gridRow && col === stagePiece.gridCol ? 'Stage' : '' }}</button>
                 } @else if (owner) {
                   @if (isSeatedTier()) {
                     @let seat = seatAt(row, col);
