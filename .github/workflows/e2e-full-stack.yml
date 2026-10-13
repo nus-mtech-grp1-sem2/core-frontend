@@ -6,7 +6,13 @@ name: E2E (full stack, weekly)
 on:
   schedule:
     - cron: '0 2 * * 1' # Mondays 02:00 UTC
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      run_browser_load:
+        description: Run the three-user Playwright buyer-load evidence overlay
+        required: false
+        type: boolean
+        default: false
 
 permissions: {contents: read}
 
@@ -62,6 +68,24 @@ jobs:
           E2E_ORGANISER_PASSWORD: ${{ secrets.E2E_ORGANISER_PASSWORD }}
           E2E_HELPER_PASSWORD: ${{ secrets.E2E_HELPER_PASSWORD }}
         run: npm run test:e2e:full
+
+      - name: Run the browser-load evidence overlay
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_browser_load }}
+        env:
+          E2E_CUSTOMER_PASSWORD: ${{ secrets.E2E_CUSTOMER_PASSWORD }}
+          E2E_CUSTOMER2_PASSWORD: ${{ secrets.E2E_CUSTOMER2_PASSWORD }}
+          E2E_ORGANISER_PASSWORD: ${{ secrets.E2E_ORGANISER_PASSWORD }}
+          E2E_HELPER_PASSWORD: ${{ secrets.E2E_HELPER_PASSWORD }}
+        run: npm run test:e2e:buyer-load
+
+      - name: Upload browser-load evidence
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_browser_load }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-buyer-load-${{ github.run_id }}
+          path: test-results/buyer-load-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
 
       # Screenshots and page snapshots only. The HTML report and traces are not uploaded: this
       # tier signs in for real, and those can carry tokens.
