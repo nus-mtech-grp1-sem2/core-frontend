@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -75,6 +76,8 @@ const MIN_GRID_DIM = 1;
 const MAX_GRID_DIM = 100;
 const MAX_ZONES = 50;
 const MAX_STAGE_PIECES = 5;
+/** Max rows/cols shown in one grid page — ~1000 seats per page. */
+const PAGE_SIZE = 30;
 
 const DEFAULT_ZONE_COLORS = ['#2563EB', '#DC2626', '#059669', '#D97706', '#7C3AED', '#DB2777', '#0891B2', '#65A30D'];
 
@@ -286,6 +289,81 @@ export class EventInventory {
   protected readonly gridColCount = signal(DEFAULT_GRID_COLS);
   protected readonly gridRows = computed(() => Array.from({ length: this.gridRowCount() }, (_, i) => i));
   protected readonly gridCols = computed(() => Array.from({ length: this.gridColCount() }, (_, i) => i));
+
+  // ── Pagination ─────────────────────────────────────────────────────────
+  protected readonly currentPageRow = signal(0);
+  protected readonly currentPageCol = signal(0);
+  protected readonly totalPageRows = computed(() => Math.max(1, Math.ceil(this.gridRowCount() / PAGE_SIZE)));
+  protected readonly totalPageCols = computed(() => Math.max(1, Math.ceil(this.gridColCount() / PAGE_SIZE)));
+  protected readonly visibleRows = computed(() => {
+    const pageRow = Math.min(this.currentPageRow(), this.totalPageRows() - 1);
+    const offset = pageRow * PAGE_SIZE;
+    return this.gridRows().slice(offset, offset + PAGE_SIZE);
+  });
+  protected readonly visibleCols = computed(() => {
+    const pageCol = Math.min(this.currentPageCol(), this.totalPageCols() - 1);
+    const offset = pageCol * PAGE_SIZE;
+    return this.gridCols().slice(offset, offset + PAGE_SIZE);
+  });
+
+  // ── Overview mini-map ──────────────────────────────────────────────────
+  private readonly zonesChanges = toSignal(this.zones.valueChanges, { initialValue: this.zones.value });
+  protected readonly overviewCellSize = computed(() =>
+    Math.max(4, Math.min(16, Math.floor(280 / Math.max(this.gridRowCount(), this.gridColCount())))),
+  );
+  protected readonly overviewWidthPx = computed(() => this.gridColCount() * this.overviewCellSize());
+  protected readonly overviewHeightPx = computed(() => this.gridRowCount() * this.overviewCellSize());
+  protected readonly overviewZones = computed(() => {
+    void this.zonesChanges();
+    const cs = this.overviewCellSize();
+    return this.zones.controls.map((g, i) => {
+      const c = (g as ZoneGroup).controls;
+      return { i, name: c.name.value as string, color: c.color.value, top: c.gridRow.value * cs, left: c.gridCol.value * cs, width: c.gridColSpan.value * cs, height: c.gridRowSpan.value * cs };
+    });
+  });
+  protected readonly overviewStages = computed(() => {
+    const cs = this.overviewCellSize();
+    return this.stagePieces().map((p, i) => ({
+      i, top: p.gridRow * cs, left: p.gridCol * cs, width: p.gridColSpan * cs, height: p.gridRowSpan * cs,
+    }));
+  });
+  protected readonly overviewPages = computed(() => {
+    const cs = this.overviewCellSize();
+    const tpr = this.totalPageRows();
+    const tpc = this.totalPageCols();
+    const rc = this.gridRowCount();
+    const cc = this.gridColCount();
+    const cpr = Math.min(this.currentPageRow(), tpr - 1);
+    const cpc = Math.min(this.currentPageCol(), tpc - 1);
+    const pages = [];
+    for (let pr = 0; pr < tpr; pr++) {
+      for (let pc = 0; pc < tpc; pc++) {
+        const r0 = pr * PAGE_SIZE, c0 = pc * PAGE_SIZE;
+        const r1 = Math.min(r0 + PAGE_SIZE, rc), c1 = Math.min(c0 + PAGE_SIZE, cc);
+        pages.push({
+          key: `${pr}-${pc}`, pageRow: pr, pageCol: pc,
+          top: r0 * cs, left: c0 * cs, width: (c1 - c0) * cs, height: (r1 - r0) * cs,
+          isCurrent: pr === cpr && pc === cpc,
+          label: `Rows ${r0 + 1}–${r1}, cols ${c0 + 1}–${c1}`,
+        });
+      }
+    }
+    return pages;
+  });
+
+  protected setPage(pageRow: number, pageCol: number): void {
+    this.currentPageRow.set(Math.min(pageRow, this.totalPageRows() - 1));
+    this.currentPageCol.set(Math.min(pageCol, this.totalPageCols() - 1));
+  }
+
+  protected currentPageHint(): string {
+    const pr = Math.min(this.currentPageRow(), this.totalPageRows() - 1);
+    const pc = Math.min(this.currentPageCol(), this.totalPageCols() - 1);
+    const r0 = pr * PAGE_SIZE, c0 = pc * PAGE_SIZE;
+    const r1 = Math.min(r0 + PAGE_SIZE, this.gridRowCount()) - 1;
+    const c1 = Math.min(c0 + PAGE_SIZE, this.gridColCount()) - 1;
+    return `Viewing rows ${r0 + 1}–${r1 + 1}, columns ${c0 + 1}–${c1 + 1}`;
+  }
 
   protected readonly seatsByKey = computed(() => {
     const map = new Map<string, SeatCell>();

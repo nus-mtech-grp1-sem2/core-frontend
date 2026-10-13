@@ -128,30 +128,32 @@
         @if (stagePieces().length === 0) {
           <div class="stage-indicator" aria-hidden="true">Stage</div>
         }
-        <div
-          class="zone-grid"
-          aria-hidden="true"
-          [style.grid-template-rows]="'repeat(' + zoneGridRows() + ', 1.75rem)'"
-          [style.grid-template-columns]="'repeat(' + zoneGridCols() + ', 1.75rem)'"
-        >
-          @for (piece of stagePieces(); track $index) {
-            <div
-              class="stage-piece-cell"
-              [style.grid-row]="(piece.gridRow + 1) + ' / span ' + piece.gridRowSpan"
-              [style.grid-column]="(piece.gridCol + 1) + ' / span ' + piece.gridColSpan"
-              aria-hidden="true"
-            ></div>
+        <div class="grid-container">
+          @if (zoneMapStageData(); as sd) {
+            <div class="stage-layer" aria-hidden="true">
+              @for (cell of sd.cells; track $index) {
+                <div class="stage-cell" [style.top]="cell.y" [style.left]="cell.x" [style.width]="cell.w" [style.height]="cell.h"></div>
+              }
+              <span class="stage-label" [style.top]="sd.labelY" [style.left]="sd.labelX">Stage</span>
+            </div>
           }
-          @for (zone of zoneOptions(); track zone.inventoryItemId) {
           <div
-            class="zone-block"
-            [style.grid-row]="zoneBlockRow(zone)"
-            [style.grid-column]="zoneBlockColumn(zone)"
-            [style.background]="zone.color"
+            class="zone-grid"
+            aria-hidden="true"
+            [style.grid-template-rows]="'repeat(' + zoneGridRows() + ', 1.75rem)'"
+            [style.grid-template-columns]="'repeat(' + zoneGridCols() + ', 1.75rem)'"
           >
-            {{ zone.name }}
+            @for (zone of zoneOptions(); track zone.inventoryItemId) {
+            <div
+              class="zone-block"
+              [style.grid-row]="zoneBlockRow(zone)"
+              [style.grid-column]="zoneBlockColumn(zone)"
+              [style.background]="zone.color"
+            >
+              {{ zone.name }}
+            </div>
+            }
           </div>
-          }
         </div>
       </div>
     </div>
@@ -193,45 +195,47 @@
         @if (stagePieces().length === 0) {
           <div class="stage-indicator" aria-hidden="true">Stage</div>
         }
-        <div
-          class="seat-grid"
-          role="group"
-          aria-label="Choose your seats"
-          [style.grid-template-rows]="'repeat(' + gridRows().length + ', 1.75rem)'"
-          [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'"
-        >
-          @for (piece of stagePieces(); track $index) {
-            <div
-              class="stage-piece-cell"
-              [style.grid-row]="stagePieceSeatRow(piece)"
-              [style.grid-column]="stagePieceSeatCol(piece)"
-              aria-hidden="true"
-            ></div>
+        <div class="grid-container">
+          @if (seatMapStageData(); as sd) {
+            <div class="stage-layer" aria-hidden="true">
+              @for (cell of sd.cells; track $index) {
+                <div class="stage-cell" [style.top]="cell.y" [style.left]="cell.x" [style.width]="cell.w" [style.height]="cell.h"></div>
+              }
+              <span class="stage-label" [style.top]="sd.labelY" [style.left]="sd.labelX">Stage</span>
+            </div>
           }
-          @for (row of gridRows(); track row; let rowIndex = $index) { @for (col of gridCols();
-          track col; let colIndex = $index) { @let seat = seatAt(row, col); @if (seat) {
-          <button
-            type="button"
-            class="seat"
-            [class.selected]="isSeatSelected(seat)"
-            [style.grid-row]="rowIndex + 1"
-            [style.grid-column]="colIndex + 1"
-            [style.background]="seatBackground(seat)"
-            [disabled]="seat.status !== 'AVAILABLE'"
-            [attr.aria-pressed]="isSeatSelected(seat)"
-            [attr.aria-label]="seatName(seat)"
-            [title]="seatName(seat)"
-            (click)="toggleSeat(seat)"
+          <div
+            class="seat-grid"
+            role="group"
+            aria-label="Choose your seats"
+            [style.grid-template-rows]="'repeat(' + gridRows().length + ', 1.75rem)'"
+            [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'"
           >
-            {{ seat.seatLabel }}
-          </button>
-          } @else {
-          <span
-            class="seat-gap"
-            [style.grid-row]="rowIndex + 1"
-            [style.grid-column]="colIndex + 1"
-          ></span>
-          } } }
+            @for (row of gridRows(); track row; let rowIndex = $index) { @for (col of gridCols();
+            track col; let colIndex = $index) { @let seat = seatAt(row, col); @if (seat) {
+            <button
+              type="button"
+              class="seat"
+              [class.selected]="isSeatSelected(seat)"
+              [style.grid-row]="rowIndex + 1"
+              [style.grid-column]="colIndex + 1"
+              [style.background]="seatBackground(seat)"
+              [disabled]="seat.status !== 'AVAILABLE'"
+              [attr.aria-pressed]="isSeatSelected(seat)"
+              [attr.aria-label]="seatName(seat)"
+              [title]="seatName(seat)"
+              (click)="toggleSeat(seat)"
+            >
+              {{ seat.seatLabel }}
+            </button>
+            } @else {
+            <span
+              class="seat-gap"
+              [style.grid-row]="rowIndex + 1"
+              [style.grid-column]="colIndex + 1"
+            ></span>
+            } } }
+          </div>
         </div>
       </div>
     </div>

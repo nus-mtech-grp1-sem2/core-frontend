@@ -904,14 +904,58 @@ export class EventDetail {
     }
   }
 
-  protected stagePieceSeatRow(piece: StagePieceDto): string {
-    const start = this.gridRows().indexOf(piece.gridRow) + 1;
-    return `${start} / span ${piece.gridRowSpan}`;
-  }
+  private static readonly CELL_REM = 1.75;
+  private static readonly GAP_REM = 0.375;
+  private static readonly STEP_REM = 1.75 + 0.375; // 2.125
 
-  protected stagePieceSeatCol(piece: StagePieceDto): string {
-    const start = this.gridCols().indexOf(piece.gridCol) + 1;
-    return `${start} / span ${piece.gridColSpan}`;
+  protected readonly seatMapStageData = computed(() =>
+    this.computeStageMapData(
+      this.stagePieces(),
+      (r) => this.gridRows().indexOf(r),
+      (c) => this.gridCols().indexOf(c),
+    ),
+  );
+
+  protected readonly zoneMapStageData = computed(() =>
+    this.computeStageMapData(
+      this.stagePieces(),
+      (r) => r,
+      (c) => c,
+    ),
+  );
+
+  private computeStageMapData(
+    pieces: readonly StagePieceDto[],
+    visualRowOf: (r: number) => number,
+    visualColOf: (c: number) => number,
+  ): { cells: ReadonlyArray<{ x: string; y: string; w: string; h: string }>; labelX: string; labelY: string } | null {
+    if (pieces.length === 0) return null;
+    const STEP = EventDetail.STEP_REM;
+    const CELL = EventDetail.CELL_REM;
+    const GAP = EventDetail.GAP_REM;
+    const occupied = new Set<string>();
+    for (const p of pieces) {
+      const vr0 = visualRowOf(p.gridRow);
+      const vc0 = visualColOf(p.gridCol);
+      for (let dr = 0; dr < p.gridRowSpan; dr++) {
+        for (let dc = 0; dc < p.gridColSpan; dc++) {
+          if (vr0 + dr >= 0 && vc0 + dc >= 0) occupied.add(`${vr0 + dr},${vc0 + dc}`);
+        }
+      }
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const cells: Array<{ x: string; y: string; w: string; h: string }> = [];
+    for (const key of occupied) {
+      const [r, c] = key.split(',').map(Number);
+      const x = c * STEP;
+      const y = r * STEP;
+      const w = CELL + (occupied.has(`${r},${c + 1}`) ? GAP : 0);
+      const h = CELL + (occupied.has(`${r + 1},${c}`) ? GAP : 0);
+      cells.push({ x: `${x}rem`, y: `${y}rem`, w: `${w}rem`, h: `${h}rem` });
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x + w);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y + h);
+    }
+    return { cells, labelX: `${(minX + maxX) / 2}rem`, labelY: `${(minY + maxY) / 2}rem` };
   }
 
   private async loadSeats(eventId: number): Promise<void> {
