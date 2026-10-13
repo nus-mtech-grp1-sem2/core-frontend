@@ -225,28 +225,33 @@
                   <span class="zone-code-badge">#{{ zone.controls.code.value }}</span>
                 }
               </div>
-              <label class="zone-price">
-                <span class="currency">$</span>
-                <input type="number" min="0" step="0.01" formControlName="price" aria-label="Price per seat" />
-              </label>
-              @if (!isSeatedTier()) {
-                <label class="zone-quantity-label">
-                  <input
-                    type="number"
-                    class="zone-quantity-input"
-                    formControlName="quantity"
-                    min="1"
-                    [disabled]="locked()"
-                    [attr.aria-label]="'Capacity for zone ' + (zoneIndex + 1)"
-                  />
-                  <span class="zone-qty-suffix">capacity</span>
-                </label>
-              } @else {
-                <span class="zone-seat-total">{{ zoneSeatCount(zoneIndex) }} seats</span>
-              }
               <button type="button" class="btn btn-ghost btn-sm delete" [disabled]="zoneHasCommitted(zoneIndex)" (click)="removeZone(zoneIndex)">Remove</button>
             </header>
             <div class="zone-card-position">
+              <div class="position-group" role="group" [attr.aria-label]="'Price and capacity for zone ' + (zoneIndex + 1)">
+                <span class="position-group-label">Ticket</span>
+                <div class="position-fields">
+                  <label class="position-field">
+                    <span class="position-field-label">$</span>
+                    <input type="number" class="zone-price-input" min="0" step="0.01" formControlName="price" aria-label="Price per seat" />
+                  </label>
+                  @if (!isSeatedTier()) {
+                    <label class="position-field">
+                      <input
+                        type="number"
+                        class="zone-quantity-input"
+                        formControlName="quantity"
+                        min="1"
+                        [disabled]="locked()"
+                        [attr.aria-label]="'Capacity for zone ' + (zoneIndex + 1)"
+                      />
+                      <span class="position-field-label">seats</span>
+                    </label>
+                  } @else {
+                    <span class="zone-seat-total">{{ zoneSeatCount(zoneIndex) }} seats</span>
+                  }
+                </div>
+              </div>
               <div class="position-group" role="group" aria-label="Starting position">
                 <span class="position-group-label">Starts at</span>
                 <div class="position-fields">

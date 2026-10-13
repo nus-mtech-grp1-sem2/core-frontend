@@ -141,7 +141,7 @@ describe('EventInventory', () => {
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
 
     setInputValue(host, '.zone-name-input', 'Front Stalls');
-    setInputValue(host, '.zone-price input', '75');
+    setInputValue(host, '.zone-price-input', '75');
     fixture.detectChanges();
 
     const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
@@ -176,7 +176,7 @@ describe('EventInventory', () => {
     dragRectangle(host, 0, 0, 1, 2);
     fixture.detectChanges();
     setInputValue(host, '.zone-name-input', 'Front Stalls');
-    setInputValue(host, '.zone-price input', '75');
+    setInputValue(host, '.zone-price-input', '75');
     fixture.detectChanges();
 
     const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
@@ -203,7 +203,7 @@ describe('EventInventory', () => {
     dragRectangle(host, 0, 0, 0, 4); // 1 row x 5 cols
     fixture.detectChanges();
     setInputValue(host, '.zone-name-input', 'General Admission');
-    setInputValue(host, '.zone-price input', '25');
+    setInputValue(host, '.zone-price-input', '25');
     fixture.detectChanges();
 
     const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
@@ -241,7 +241,7 @@ describe('EventInventory', () => {
     expect(host.querySelector<HTMLInputElement>('.zone-quantity-input')?.value).toBe('6');
 
     setInputValue(host, '.zone-name-input', 'General Admission');
-    setInputValue(host, '.zone-price input', '25');
+    setInputValue(host, '.zone-price-input', '25');
     fixture.detectChanges();
 
     const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
@@ -276,7 +276,7 @@ describe('EventInventory', () => {
 
     // Override the quantity to something that doesn't match the area.
     setInputValue(host, '.zone-name-input', 'General Admission');
-    setInputValue(host, '.zone-price input', '25');
+    setInputValue(host, '.zone-price-input', '25');
     setInputValue(host, '.zone-quantity-input', '500');
     fixture.detectChanges();
 
@@ -832,7 +832,7 @@ describe('EventInventory', () => {
     dragRectangle(host, 1, 0, 1, 2);
     fixture.detectChanges();
     setInputValue(host, '.zone-name-input', 'Stalls');
-    setInputValue(host, '.zone-price input', '50');
+    setInputValue(host, '.zone-price-input', '50');
     fixture.detectChanges();
 
     // Switch to stage mode and draw a stage piece.
