@@ -91,7 +91,9 @@
                     <a [routerLink]="['/events', order.event_id]">{{ order.event_title }}</a>
                   </h2>
                   <p>Venue: {{ order.venue }}</p>
-                  <p>Start time: {{ order.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+                  <p>
+                    Start time: {{ order.starts_at | date: 'EEE d MMM y, h:mm a' : '+0800' }}
+                  </p>
                   <dl>
                     <div>
                       <dt>Tickets</dt>
@@ -133,7 +135,10 @@
                     <a [routerLink]="['/events', ticket.event_id]">{{ ticket.event_title }}</a>
                   </h2>
                   <p>Venue: {{ ticket.venue }}</p>
-                  <p>Event Time: {{ ticket.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+                  <p>
+                    Event Time:
+                    {{ ticket.starts_at | date: 'EEE d MMM y, h:mm a' : '+0800' }}
+                  </p>
                   <dl>
                     <div>
                       <dt>Bought on</dt>
