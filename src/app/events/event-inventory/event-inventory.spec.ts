@@ -715,6 +715,20 @@ describe('EventInventory', () => {
     httpMock.verify();
   });
 
+  it('accepts grid dimensions above the old 20-cap and clamps at the new 100 limit', async () => {
+    const { fixture, host } = await renderFor(SEATED_EVENT); // default 6 rows x 8 cols
+
+    // 50 is above the old MAX_GRID_DIM (20) — should now be accepted rather than clamped.
+    setInputValue(host, '.grid-col-count-input', '50');
+    fixture.detectChanges();
+    expect(host.querySelectorAll('[data-grid-row="0"]').length).toBe(50);
+
+    // Values above 100 must still be clamped to 100.
+    setInputValue(host, '.grid-col-count-input', '150');
+    fixture.detectChanges();
+    expect(host.querySelectorAll('[data-grid-row="0"]').length).toBe(100);
+  });
+
   it('no longer offers a "Tag seats" mode for a seated event — deferred to a later cycle', async () => {
     const zone = {
       inventoryItemId: 9,

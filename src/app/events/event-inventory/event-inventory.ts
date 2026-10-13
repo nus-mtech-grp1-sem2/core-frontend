@@ -64,7 +64,7 @@ interface InventoryResponse {
 const DEFAULT_GRID_ROWS = 6;
 const DEFAULT_GRID_COLS = 8;
 const MIN_GRID_DIM = 1;
-const MAX_GRID_DIM = 20;
+const MAX_GRID_DIM = 100;
 const MAX_ZONES = 50;
 
 const DEFAULT_ZONE_COLORS = ['#2563EB', '#DC2626', '#059669', '#D97706', '#7C3AED', '#DB2777', '#0891B2', '#65A30D'];
