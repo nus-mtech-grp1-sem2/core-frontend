@@ -59,6 +59,8 @@ async function drag(page: Page, from: [number, number], to: [number, number]) {
 }
 
 const zoneCard = (page: Page, index: number) => page.locator('.zone-card').nth(index);
+/** The app's own confirmation dialog, used in place of window.confirm. */
+const confirmation = (page: Page) => page.getByRole('dialog');
 
 test.describe('the seat map', () => {
   const title = `E2E Seat Map ${runId}`;
@@ -198,7 +200,8 @@ test.describe('the seat map', () => {
     await page.waitForURL('**/organiser/events');
     const after = await inventoryOf(page, eventId);
     expect(after.zones[0].name).toBe('Front stalls');
-    expect(after.zones[0].soldCount).toBe('1');
+    // MySQL returns SUM() as a DECIMAL string, so normalise before comparing.
+    expect(Number(after.zones[0].soldCount)).toBe(1);
     expect(after.seats.filter((seat) => seat.status === 'SOLD')).toHaveLength(1);
     await page.context().close();
   });
@@ -327,8 +330,8 @@ test.describe('an event through its life', () => {
     const page = await signedInPage(browser, 'organiser');
     await page.goto('/organiser/events');
     const card = page.getByRole('listitem').filter({ hasText: renamed });
-    page.once('dialog', (dialog) => void dialog.accept());
     await card.getByRole('button', { name: 'Publish' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Yes, publish' }).click();
 
     await expect(page.getByRole('alert')).toContainText('Configure inventory before publishing');
     await expect(card).not.toContainText('On sale');
@@ -341,14 +344,15 @@ test.describe('an event through its life', () => {
     const doomedId = await createEvent(page, { title: doomed, tier: 'TIER1_GA' });
 
     await page.goto(`/organiser/events/${doomedId}`);
-    page.once('dialog', (dialog) => void dialog.dismiss());
-    await page.getByRole('button', { name: 'Delete draft' }).click();
+    await page.getByRole('button', { name: 'Delete draft', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'No, keep draft' }).click();
+    await expect(confirmation(page)).toBeHidden();
     expect(sql(`SELECT COUNT(*) FROM event_inventory.events WHERE event_id = ${doomedId}`)).toBe(
       '1',
     );
 
-    page.once('dialog', (dialog) => void dialog.accept());
-    await page.getByRole('button', { name: 'Delete draft' }).click();
+    await page.getByRole('button', { name: 'Delete draft', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'Yes, delete draft' }).click();
     await page.waitForURL('**/organiser/events');
     await expect(page.getByRole('listitem').filter({ hasText: doomed })).toHaveCount(0);
     expect(sql(`SELECT COUNT(*) FROM event_inventory.events WHERE event_id = ${doomedId}`)).toBe(
@@ -403,12 +407,13 @@ test.describe('an event through its life', () => {
     const page = await signedInPage(browser, 'organiser');
     await page.goto(`/organiser/events/${eventId}`);
 
-    page.once('dialog', (dialog) => void dialog.dismiss());
-    await page.getByRole('button', { name: 'Cancel event' }).click();
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'No, keep event' }).click();
+    await expect(confirmation(page)).toBeHidden();
     expect(await publicTitles(page)).toContain(renamed);
 
-    page.once('dialog', (dialog) => void dialog.accept());
-    await page.getByRole('button', { name: 'Cancel event' }).click();
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'Yes, cancel event' }).click();
     await expect(page.getByRole('button', { name: 'Re-publish event' })).toBeVisible();
     expect(await publicTitles(page)).not.toContain(renamed);
 
@@ -428,8 +433,8 @@ test.describe('an event through its life', () => {
     await expect(page.getByRole('button', { name: 'Save inventory' })).toBeDisabled();
 
     await page.goto(`/organiser/events/${eventId}`);
-    page.once('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: 'Re-publish event' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Yes, re-publish' }).click();
     await expect(page.getByRole('button', { name: 'Cancel event' })).toBeVisible();
     expect(await publicTitles(page)).toContain(renamed);
     await page.context().close();

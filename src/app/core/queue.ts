@@ -32,7 +32,7 @@ export class QueueService {
 
   admissionTokenFor(eventId: number): string | null {
     const entry = this.statusFor(eventId);
-    return entry?.status === 'ADMITTED' ? entry.admissionToken ?? null : null;
+    return entry?.status === 'ADMITTED' ? (entry.admissionToken ?? null) : null;
   }
 
   summary(eventId: number): Promise<QueueSummary> {
@@ -48,9 +48,9 @@ export class QueueService {
   }
 
   status(eventId: number): Promise<QueueStatus> {
-    return firstValueFrom(
-      this.api.get<QueueStatus>('queue', `/events/${eventId}/queue/me`),
-    ).then((status) => this.apply(eventId, status));
+    return firstValueFrom(this.api.get<QueueStatus>('queue', `/events/${eventId}/queue/me`)).then(
+      (status) => this.apply(eventId, status),
+    );
   }
 
   async leave(eventId: number): Promise<void> {

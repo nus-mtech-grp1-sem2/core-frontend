@@ -70,7 +70,7 @@ function stubEvent(
       json: {
         gridRows: 1,
         gridCols: 4,
-        zones: [{ inventoryItemId: 1, soldCount: 2, heldCount: 0 }],
+        zones: [{ inventoryItemId: 1, seatCount: 4, soldCount: 2, heldCount: 0 }],
         seats: [{}, {}, {}, {}],
       },
     })
@@ -80,25 +80,27 @@ function stubEvent(
       status: 404,
       json: { error: 'queue_not_configured' },
     })
+    .on('GET', `event/events/${EVENT_ID}/cancellation-impact`, {
+      json: { eventId: EVENT_ID, customers: 0, ticketsSold: 0, requiresConfirmation: false },
+    })
     .on('GET', 'event/events/manage', () => ({ json: { events: [state.event] } }));
   return state;
 }
 
+/** Native browser dialogs seen in a test. The app confirms in its own dialog, so this stays empty. */
 const dialogs: string[] = [];
-/** Answers the next confirmation prompt, remembering what it asked. */
-function answerNext(page: Page, accept: boolean) {
-  page.once('dialog', async (dialog: Dialog) => {
-    dialogs.push(dialog.message());
-    if (accept) await dialog.accept();
-    else await dialog.dismiss();
-  });
-}
 
 const management = (page: Page) => page.getByRole('region', { name: 'Event management' });
+/** The app's own confirmation dialog, used in place of window.confirm. */
+const confirmation = (page: Page) => page.getByRole('dialog');
 const row = (page: Page, email: string) => page.getByRole('listitem').filter({ hasText: email });
 
 test.beforeEach(async ({ page }) => {
   dialogs.length = 0;
+  page.on('dialog', async (dialog: Dialog) => {
+    dialogs.push(dialog.message());
+    await dialog.dismiss();
+  });
   await signInAs(page, organiser);
 });
 
@@ -188,10 +190,14 @@ test.describe('the event photo', () => {
       mimeType: 'image/png',
       buffer: PNG,
     });
-    await expect(page.getByRole('img', { name: 'Selected event photo preview' })).toBeVisible();
+    await expect(
+      page.getByRole('img', { name: 'Preview of the selected event cover' }),
+    ).toBeVisible();
     await page.getByRole('button', { name: 'Save changes' }).click();
 
-    await expect(page.getByRole('img', { name: 'Selected event photo preview' })).toHaveCount(0);
+    await expect(
+      page.getByRole('img', { name: 'Preview of the selected event cover' }),
+    ).toHaveCount(0);
     const [upload] = api.requests('PUT', `event/events/${EVENT_ID}/image`);
     const body = upload.postDataJSON() as { imageBase64: string; mimeType: string };
     expect(body.mimeType).toBe('image/png');
@@ -211,7 +217,9 @@ test.describe('the event photo', () => {
     await expect(management(page).getByRole('alert')).toContainText(
       'Please choose a JPEG, PNG or WebP image.',
     );
-    await expect(page.getByRole('img', { name: 'Selected event photo preview' })).toHaveCount(0);
+    await expect(
+      page.getByRole('img', { name: 'Preview of the selected event cover' }),
+    ).toHaveCount(0);
   });
 
   test('a photo over 5 MB is refused', async ({ page, api }) => {
@@ -236,19 +244,19 @@ test.describe('deleting a draft', () => {
     api.on('DELETE', `event/events/${EVENT_ID}`, { status: 204 });
     await page.goto(`/organiser/events/${EVENT_ID}`);
 
-    answerNext(page, false);
-    await page.getByRole('button', { name: 'Delete draft' }).click();
+    await page.getByRole('button', { name: 'Delete draft', exact: true }).click();
+    await expect(confirmation(page).getByRole('heading')).toHaveText('Delete this draft event?');
+    await expect(confirmation(page)).toContainText('This cannot be undone.');
+    await confirmation(page).getByRole('button', { name: 'No, keep draft' }).click();
+    await expect(confirmation(page)).toBeHidden();
     await expect(page).toHaveURL(new RegExp(`/organiser/events/${EVENT_ID}$`));
     expect(api.requests('DELETE', `event/events/${EVENT_ID}`)).toHaveLength(0);
 
-    answerNext(page, true);
-    await page.getByRole('button', { name: 'Delete draft' }).click();
+    await page.getByRole('button', { name: 'Delete draft', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'Yes, delete draft' }).click();
     await page.waitForURL('**/organiser/events');
     expect(api.requests('DELETE', `event/events/${EVENT_ID}`)).toHaveLength(1);
-    expect(dialogs).toEqual([
-      'Delete this draft event? This cannot be undone.',
-      'Delete this draft event? This cannot be undone.',
-    ]);
+    expect(dialogs).toEqual([]);
   });
 
   test('an event with reservation history cannot be deleted, and the page says why', async ({
@@ -262,8 +270,8 @@ test.describe('deleting a draft', () => {
     });
     await page.goto(`/organiser/events/${EVENT_ID}`);
 
-    answerNext(page, true);
-    await page.getByRole('button', { name: 'Delete draft' }).click();
+    await page.getByRole('button', { name: 'Delete draft', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'Yes, delete draft' }).click();
 
     await expect(management(page).getByRole('alert')).toContainText('has reservation history');
     await expect(page).toHaveURL(new RegExp(`/organiser/events/${EVENT_ID}$`));
@@ -294,23 +302,34 @@ test.describe('an event moving through its life', () => {
     await expect(page.getByText('1 zone · 4 seats, 2 sold')).toBeVisible();
     await expect(page.getByText('1 of 2 checked in')).toBeVisible();
 
-    answerNext(page, false);
-    await page.getByRole('button', { name: 'Cancel event' }).click();
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await expect(confirmation(page).getByRole('heading')).toHaveText('Cancel this event?');
+    await confirmation(page).getByRole('button', { name: 'No, keep event' }).click();
+    await expect(confirmation(page)).toBeHidden();
     expect(api.requests('POST', `event/events/${EVENT_ID}/cancel`)).toHaveLength(0);
 
-    answerNext(page, true);
-    await page.getByRole('button', { name: 'Cancel event' }).click();
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'Yes, cancel event' }).click();
     await expect(page.getByRole('button', { name: 'Re-publish event' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Cancel event' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Cancel event', exact: true })).toHaveCount(0);
 
-    answerNext(page, true);
     await page.getByRole('button', { name: 'Re-publish event' }).click();
-    await expect(page.getByRole('button', { name: 'Cancel event' })).toBeVisible();
-    expect(dialogs).toEqual([
-      'Are you sure you want to cancel this event?',
-      'Are you sure you want to cancel this event?',
+    await expect(confirmation(page).getByRole('heading')).toHaveText('Re-publish this event?');
+    await expect(confirmation(page)).toContainText(
       'Are you sure you want to enable this event and put it back on sale?',
-    ]);
+    );
+    // Going ahead is the positive choice here, so Yes is green and No is red.
+    await expect(confirmation(page).getByRole('button', { name: 'Yes, re-publish' })).toHaveCSS(
+      'background-color',
+      'rgb(21, 128, 61)',
+    );
+    await expect(confirmation(page).getByRole('button', { name: 'No' })).toHaveCSS(
+      'background-color',
+      'rgb(198, 40, 40)',
+    );
+    await confirmation(page).getByRole('button', { name: 'Yes, re-publish' }).click();
+    await expect(page.getByRole('button', { name: 'Cancel event', exact: true })).toBeVisible();
+    expect(dialogs).toEqual([]);
   });
 
   test('a failed cancellation is reported and the event stays as it was', async ({ page, api }) => {
@@ -318,13 +337,48 @@ test.describe('an event moving through its life', () => {
     api.on('POST', `event/events/${EVENT_ID}/cancel`, { status: 500, json: { error: 'boom' } });
     await page.goto(`/organiser/events/${EVENT_ID}`);
 
-    answerNext(page, true);
-    await page.getByRole('button', { name: 'Cancel event' }).click();
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: 'Yes, cancel event' }).click();
 
     await expect(management(page).getByRole('alert')).toContainText(
       'Unable to cancel this event. Please try again.',
     );
     await expect(page.getByRole('button', { name: 'Cancel event' })).toBeVisible();
+  });
+
+  test('cancelling once customers have bought tickets warns about them first', async ({
+    page,
+    api,
+  }) => {
+    const state = stubEvent(api, { status: 'PUBLISHED' });
+    api
+      .on('GET', `event/events/${EVENT_ID}/cancellation-impact`, {
+        json: { eventId: EVENT_ID, customers: 2, ticketsSold: 3, requiresConfirmation: true },
+      })
+      .on('POST', `event/events/${EVENT_ID}/cancel`, () => {
+        state.event = { ...state.event, status: 'CANCELLED' };
+        return { status: 204 };
+      });
+    await page.goto(`/organiser/events/${EVENT_ID}`);
+
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    const dialog = confirmation(page);
+    await expect(dialog.getByRole('heading')).toHaveText('Customers have bought tickets');
+    await expect(dialog).toContainText(
+      '2 customers have already purchased 3 tickets for this event.',
+    );
+    await expect(dialog).toContainText('void their tickets and email them');
+    // The safe choice is focused, so pressing Escape or Enter never cancels by accident.
+    await expect(dialog.getByRole('button', { name: 'No, keep event' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    expect(api.requests('POST', `event/events/${EVENT_ID}/cancel`)).toHaveLength(0);
+
+    await page.getByRole('button', { name: 'Cancel event', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Yes, cancel event' }).click();
+    await expect(page.getByRole('button', { name: 'Re-publish event' })).toBeVisible();
+    const cancels = api.requests('POST', `event/events/${EVENT_ID}/cancel`);
+    expect(cancels.map((request) => request.postDataJSON())).toEqual([{ confirm: true }]);
   });
 
   test('completed: everything is read-only', async ({ page, api }) => {
@@ -373,34 +427,38 @@ test.describe('the team roster', () => {
       page.getByText('You own this event and can remove other organizers.'),
     ).toBeVisible();
 
-    answerNext(page, true);
     await row(page, helperMember.user_email)
       .getByRole('button', { name: 'Promote to organizer' })
       .click();
+    await expect(confirmation(page).getByRole('heading')).toHaveText('Promote team member?');
+    await expect(confirmation(page)).toContainText(
+      `Are you sure you want to promote ${helperMember.user_email} to Organizer?`,
+    );
+    await confirmation(page).getByRole('button', { name: 'Yes, promote' }).click();
     await expect(row(page, helperMember.user_email)).toContainText('Organizer · accepted');
     const [promote] = api.requests('PATCH', /team-members/);
     expect(promote.postDataJSON()).toEqual({ role: 'ORGANISER' });
     expect(decodeURIComponent(promote.url())).toContain(`/team-members/${HELPER_SUB}`);
 
-    answerNext(page, true);
     await row(page, helperMember.user_email)
       .getByRole('button', { name: 'Demote to helper' })
       .click();
+    await expect(confirmation(page).getByRole('heading')).toHaveText('Demote team member?');
+    await confirmation(page).getByRole('button', { name: 'Yes, demote' }).click();
     await expect(row(page, helperMember.user_email)).toContainText('Helper · accepted');
 
-    answerNext(page, false);
     await row(page, coOrganiser.user_email).getByRole('button', { name: 'Remove' }).click();
+    await expect(confirmation(page).getByRole('heading')).toHaveText('Remove team member?');
+    await expect(confirmation(page)).toContainText(
+      `Are you sure you want to remove ${coOrganiser.user_email} from this event's team?`,
+    );
+    await confirmation(page).getByRole('button', { name: 'No, keep member' }).click();
     await expect(row(page, coOrganiser.user_email)).toBeVisible();
-    answerNext(page, true);
     await row(page, coOrganiser.user_email).getByRole('button', { name: 'Remove' }).click();
+    await confirmation(page).getByRole('button', { name: 'Yes, remove' }).click();
     await expect(row(page, coOrganiser.user_email)).toHaveCount(0);
 
-    expect(dialogs).toEqual([
-      `Promote ${helperMember.user_email} to Organizer?`,
-      `Demote ${helperMember.user_email} to Helper?`,
-      `Remove ${coOrganiser.user_email} from this event?`,
-      `Remove ${coOrganiser.user_email} from this event?`,
-    ]);
+    expect(dialogs).toEqual([]);
   });
 
   test('an organiser who is not the owner can only remove helpers', async ({ page, api }) => {
@@ -426,10 +484,10 @@ test.describe('the team roster', () => {
     api.on('PATCH', /team-members/, { status: 403, json: { error: 'event_owner_required' } });
     await page.goto(`/organiser/events/${EVENT_ID}`);
 
-    answerNext(page, true);
     await row(page, helperMember.user_email)
       .getByRole('button', { name: 'Promote to organizer' })
       .click();
+    await confirmation(page).getByRole('button', { name: 'Yes, promote' }).click();
 
     await expect(management(page).getByRole('alert')).toContainText(
       "Only the event's owner can do that.",

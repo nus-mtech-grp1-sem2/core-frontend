@@ -44,7 +44,7 @@ export async function stubCognito(page: Page, options: StubOptions): Promise<Cog
     idp: [],
   };
 
-  await page.route(`https://${COGNITO_DOMAIN}/**`, async (route) => {
+  await page.route(`https://${COGNITO_DOMAIN}/**`, (route) => {
     const request = route.request();
     const url = new URL(request.url());
     switch (url.pathname) {
@@ -80,7 +80,7 @@ export async function stubCognito(page: Page, options: StubOptions): Promise<Cog
     }
   });
 
-  await page.route('https://cognito-idp.*.amazonaws.com/**', async (route) => {
+  await page.route('https://cognito-idp.*.amazonaws.com/**', (route) => {
     const request = route.request();
     const target = (request.headers()['x-amz-target'] ?? '').split('.').pop() ?? '';
     calls.idp.push({ target, body: request.postData() ?? '' });

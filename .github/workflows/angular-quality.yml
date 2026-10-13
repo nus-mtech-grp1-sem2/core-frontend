@@ -1,9 +1,8 @@
 name: OneStage Angular quality
 
-# Push to main only, and not a required check (decision recorded in #23).
+# Run the quality gate for every branch push.
 on:
   push:
-    branches: [main]
 
 permissions: {contents: read}
 

@@ -157,6 +157,38 @@ describe('Events', () => {
     expect(navigateSpy).toHaveBeenCalledWith(['/organiser/events', 99, 'inventory']);
   });
 
+  it('creates an event with the local start time that was picked sent as UTC', async () => {
+    const { fixture, httpMock, host } = await renderFor(user(['organiser']));
+
+    httpMock.expectOne('/api/event/events/manage').flush({ events: [] });
+    httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.trim() === 'New event')!
+      .click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    for (const [id, value] of [
+      ['event-title', 'Welcome Party NUS'],
+      ['event-venue', 'NUS ISS'],
+      ['event-start', '2099-10-12T23:13'],
+    ]) {
+      const input = host.querySelector<HTMLInputElement>(`#${id}`)!;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+    }
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    host.querySelector<HTMLFormElement>('.new-event-form')!.dispatchEvent(new Event('submit'));
+    await new Promise<void>((resolve) => setTimeout(resolve));
+
+    const create = httpMock.expectOne({ method: 'POST', url: '/api/event/events' });
+    expect(create.request.body.startsAt).toBe(new Date(2099, 9, 12, 23, 13).toISOString());
+    create.flush({ eventId: 9 });
+    await fixture.whenStable();
+  });
+
   it('hides completed events from an organiser until asked, and offers no actions on them', async () => {
     const { fixture, httpMock, host } = await renderFor(user(['organiser']));
     const completed = {

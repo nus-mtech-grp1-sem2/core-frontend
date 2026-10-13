@@ -47,3 +47,24 @@ export function toSingaporeInputValue(startsAt: string | Date): string {
   const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '00';
   return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 }
+
+/**
+ * The start time from the event service (UTC) as the browser-local
+ * 'YYYY-MM-DDTHH:mm' a datetime-local input shows. An unparseable date gives ''.
+ */
+export function toDateTimeLocal(startsAt: string): string {
+  const date = new Date(startsAt);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * A datetime-local value, which has no zone and is in browser-local time, as
+ * the UTC ISO time the event service stores. An unparseable value is sent as
+ * it is, for the service to refuse.
+ */
+export function fromDateTimeLocal(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}

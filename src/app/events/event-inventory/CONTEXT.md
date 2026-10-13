@@ -9,6 +9,7 @@ rectangle's area as a capacity number. Zones can't overlap; a zone with sold/hel
 ## Current state (as of this entry)
 
 ### Shipped this cycle
+
 - **Drag-to-draw / resize / move zones** via 8-way resize handles (`handleKindAt`) and
   interior-cell dragging (`isZoneMovable`). Handles only appear on axes that actually have two
   distinct sides (`hasRowSpan`/`hasColSpan`), so a 1-row or 1-col zone doesn't wrongly claim every
@@ -22,9 +23,11 @@ rectangle's area as a capacity number. Zones can't overlap; a zone with sold/hel
   against the actual cell grid instead of the whole card width.
 
 ### Deferred to a later cycle: "Tag seats" editing
+
 The seat-tagging **mode toggle** ("Draw zones" / "Tag seats", click-a-seat-to-cycle
 none → accessible → maintenance) has been **removed** from the UI and component
 (`mode` signal, `setMode`, `toggleTagAt`, `TAG_CYCLE`, `updatingSeatId` all deleted). Reasons:
+
 1. It depended on `[disabled]="updatingSeatId() === seat?.seatId"` +
    `.seat-cell:disabled { cursor: wait; }` — if a PATCH to `/events/:id/seats/:seatId` ever hung
    (plausible; this environment's DB is a shared remote MySQL instance, not a local container),
@@ -50,10 +53,10 @@ optimistic update with rollback instead of a blocking `disabled` state).
 Event id 40 (used for manual verification) has two corrupted `inventory_items` rows, discovered by
 a **read-only** query against the shared inventory DB:
 
-| id | name | grid_row | grid_col | grid_row_span | grid_col_span | real seats |
-|----|------|----------|----------|----------------|----------------|------------|
-| 30 | Balcony | `NULL` | `NULL` | 1 | 1 | 6 (A1–A3, B1–B3) |
-| 31 | Unassigned | `NULL` | `NULL` | 1 | 1 | 0 |
+| id  | name       | grid_row | grid_col | grid_row_span | grid_col_span | real seats       |
+| --- | ---------- | -------- | -------- | ------------- | ------------- | ---------------- |
+| 30  | Balcony    | `NULL`   | `NULL`   | 1             | 1             | 6 (A1–A3, B1–B3) |
+| 31  | Unassigned | `NULL`   | `NULL`   | 1             | 1             | 0                |
 
 This is legacy/external data — the current save path (`parseZones` in
 `services/inventory/src/index.ts`) strictly requires `typeof gridRow === 'number'`, so today's code
@@ -65,6 +68,7 @@ rectangle.
 
 Two ways to fix it — **neither has been done**, pending an explicit decision (per this repo's
 `CLAUDE.md`: no data migration without human approval):
+
 - **(a) UI redraw**: delete both `Balcony` and `Unassigned` from the inventory screen and redraw
   Balcony as a proper rectangle, then Save.
 - **(b) DB backfill**: set `Balcony` to `grid_row=0, grid_col=0, grid_row_span=2, grid_col_span=3`
@@ -83,6 +87,7 @@ Manual browser verification against the running local stack (`localhost:4200` + 
 using two freshly-created, uncorrupted events (avoiding event 40's known-bad rows above):
 
 **Organiser: event creation → inventory setup — both tiers pass end-to-end.**
+
 - **GA event** ("E2E GA Test", `TIER1_GA`): created via `Organiser → Events → New event`, drew a
   3×3 zone ("GA Floor", $50, 9 capacity) on the grid, "Save inventory" → `Inventory saved.`, code
   auto-assigned (`#GAFL`). Reloaded the page cold — zone persisted, confirming the round-trip
@@ -98,6 +103,7 @@ using two freshly-created, uncorrupted events (avoiding event 40's known-bad row
 Confirms the standing note (see `backend-repo` service audit) that `order` and `queue` are
 `/health`-only stub services with zero business routes. Observed directly, not just inferred from
 code:
+
 - **GA** (`/events/66`, no queue step for `TIER1_GA`): clicking "Buy tickets" fires
   `POST /api/order/orders` → **404**. The frontend has no specific handling for this and falls back
   to a generic error copy, so the user sees **"This event was not found."** — misleading (the event

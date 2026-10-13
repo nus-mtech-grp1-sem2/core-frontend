@@ -176,10 +176,6 @@ test.describe('coming back signed in', () => {
     page,
     api,
   }) => {
-    test.fail(
-      true,
-      'Known bug (core-frontend#60): coming back from Cognito with an error (for example the visitor pressed Cancel) leaves a blank page: the app never finishes starting',
-    );
     stubBrowsing(api);
     const cognito = await stubCognito(page, { user: customer });
     await page.goto('/login');
@@ -189,8 +185,9 @@ test.describe('coming back signed in', () => {
 
     await page.goto(`/?error=access_denied&error_description=Denied&state=${state}`);
 
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByText('Sign-in was cancelled.')).toBeVisible();
     await expect(signInLink(page)).toBeVisible();
-    await expect(page.getByText('E2E Summer Concert').first()).toBeVisible();
     expect(cognito.tokens).toHaveLength(0);
   });
 
@@ -198,10 +195,6 @@ test.describe('coming back signed in', () => {
     page,
     api,
   }) => {
-    test.fail(
-      true,
-      'Known bug (core-frontend#59): the guard records returnUrl but nothing reads it, so sign-in always lands on the home page',
-    );
     stubBrowsing(api);
     await stubCognito(page, { user: customer });
 
@@ -213,6 +206,20 @@ test.describe('coming back signed in', () => {
     await page.goto(`/?code=stub-code&state=${state}`);
 
     await expect(page).toHaveURL(/\/my-events$/);
+  });
+
+  test('an unsafe return URL is ignored after signing in', async ({ page, api }) => {
+    stubBrowsing(api);
+    await stubCognito(page, { user: customer });
+
+    await page.goto('/login?returnUrl=https%3A%2F%2Fevil.example');
+    await page.getByRole('button', { name: /Continue to sign in/ }).click();
+    await page.waitForURL(new RegExp(COGNITO_DOMAIN));
+    const state = new URL(page.url()).searchParams.get('state');
+    await page.goto(`/?code=stub-code&state=${state}`);
+
+    await expect(page).toHaveURL('http://localhost:4200/');
+    await expect(page.getByText('E2E Summer Concert').first()).toBeVisible();
   });
 });
 

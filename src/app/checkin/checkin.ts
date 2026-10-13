@@ -190,12 +190,15 @@ export class Checkin implements OnDestroy {
   }
 
   protected async checkInSearchResult(result: SearchResult): Promise<void> {
-    if (!canCheckIn(result.status) || this.checkingIn() || !window.confirm('Check in this ticket?')) return;
+    if (!canCheckIn(result.status) || this.checkingIn() || !window.confirm('Check in this ticket?'))
+      return;
     const outcome = await this.submit({ ticketId: result.ticket_id });
     // Either way the ticket is now used, so its row stops offering a check-in.
     if (outcome === 'VALID' || outcome === 'ALREADY_USED') {
       this.searchResults.update((results) =>
-        results.map((row) => (row.ticket_id === result.ticket_id ? { ...row, status: 'CHECKED_IN' } : row)),
+        results.map((row) =>
+          row.ticket_id === result.ticket_id ? { ...row, status: 'CHECKED_IN' } : row,
+        ),
       );
     }
   }
@@ -296,9 +299,7 @@ export class Checkin implements OnDestroy {
         bytes: image.size,
         trace,
       });
-      this.cameraError.set(
-        'No QR code could be read from that image. Details are in the browser console.',
-      );
+      this.cameraError.set(uploadErrorMessage(error));
     } finally {
       this.decodingImage.set(false);
     }
@@ -428,10 +429,16 @@ const QR_SWEEP_BUDGET_MS = 4000;
 /** Images at or below this edge are too small for decoders and get grid recovery. */
 const QR_SMALL_RECOVERY_EDGE = 400;
 
-/** Carries the per-stage notes explaining why an uploaded image produced no QR text. */
+type UploadFailureReason =
+  'qr_not_found' | 'qr_image_load_failed' | 'qr_image_empty' | 'qr_canvas_unavailable';
+
+/** Carries the failure category and per-stage notes for an uploaded QR image. */
 class QrDecodeError extends Error {
-  constructor(readonly trace: readonly string[]) {
-    super('qr_not_found');
+  constructor(
+    readonly trace: readonly string[],
+    readonly reason: UploadFailureReason = 'qr_not_found',
+  ) {
+    super(reason);
   }
 }
 
@@ -445,13 +452,19 @@ async function decodeUploadedQr(file: File, reader: BrowserQRCodeReader): Promis
   try {
     source = await loadQrSource(file);
   } catch (error) {
-    throw new QrDecodeError([`load image: ${describeError(error)}`]);
+    throw new QrDecodeError([`load image: ${describeError(error)}`], uploadFailureReason(error));
   }
   trace.push(`image ${source.width}x${source.height}`);
   try {
     const text = await readQrSource(source, reader, trace);
     if (!text) throw new QrDecodeError(trace);
     return text;
+  } catch (error) {
+    if (error instanceof QrDecodeError) throw error;
+    throw new QrDecodeError(
+      [...trace, `decode image: ${describeError(error)}`],
+      uploadFailureReason(error),
+    );
   } finally {
     if (typeof ImageBitmap !== 'undefined' && source.image instanceof ImageBitmap) {
       source.image.close();
@@ -770,7 +783,8 @@ export function checkinErrorMessage(error: unknown): string {
 }
 
 export function uploadErrorMessage(error: unknown): string {
-  const reason = error instanceof Error ? error.message : '';
+  const reason =
+    error instanceof QrDecodeError ? error.reason : error instanceof Error ? error.message : '';
   if (reason === 'qr_image_load_failed' || reason === 'qr_image_empty') {
     return 'That file could not be opened as an image. Save the ticket QR as a PNG or JPG and upload that.';
   }
@@ -778,6 +792,18 @@ export function uploadErrorMessage(error: unknown): string {
     return 'This browser blocked image decoding. Use the camera or enter the QR token manually.';
   }
   return 'No readable QR code was found. Upload the original image or a crop with a clear white border around the whole QR code.';
+}
+
+function uploadFailureReason(error: unknown): UploadFailureReason {
+  const reason = error instanceof Error ? error.message : '';
+  if (
+    reason === 'qr_image_load_failed' ||
+    reason === 'qr_image_empty' ||
+    reason === 'qr_canvas_unavailable'
+  ) {
+    return reason;
+  }
+  return 'qr_not_found';
 }
 
 function timestamp(): string {

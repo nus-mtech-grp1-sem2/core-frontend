@@ -2,27 +2,27 @@
   <div>
     <h3>{{ order().event_title }}</h3>
     @if (processing()) {
-    <p>Payment is processing. This reservation can no longer be cancelled.</p>
+      <p>Payment is processing. This reservation can no longer be cancelled.</p>
     } @else {
-    <p>
-      {{ order().ticket_count }} ticket(s) reserved · expires in
-      <strong>{{ timeRemaining() }}</strong>
-    </p>
+      <p>
+        {{ order().ticket_count }} ticket(s) reserved · expires in
+        <strong>{{ timeRemaining() }}</strong>
+      </p>
     }
   </div>
   @if (!processing()) {
-  <div class="reservation-actions">
-    <a class="btn btn-primary btn-sm" [routerLink]="['/checkout', order().order_id]">
-      Continue to payment
-    </a>
-    <button
-      type="button"
-      class="btn btn-ghost btn-sm reservation-cancel"
-      [disabled]="cancelling()"
-      (click)="cancelRequested.emit()"
-    >
-      {{ cancelling() ? 'Cancelling…' : 'Cancel reservation' }}
-    </button>
-  </div>
+    <div class="reservation-actions">
+      <a class="btn btn-primary btn-sm" [routerLink]="['/checkout', order().order_id]">
+        Continue to payment
+      </a>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm reservation-cancel"
+        [disabled]="cancelling()"
+        (click)="cancelRequested.emit()"
+      >
+        {{ cancelling() ? 'Cancelling…' : 'Cancel reservation' }}
+      </button>
+    </div>
   }
 </article>

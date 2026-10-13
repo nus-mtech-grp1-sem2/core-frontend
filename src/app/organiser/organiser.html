@@ -8,75 +8,82 @@
   </section>
 
   <section class="shell body">
-    @switch (status()) { @case ('loading') {
-    <p class="status-message" role="status">Loading your events…</p>
-    } @case ('error') {
-    <p class="status-message error" role="alert">
-      Couldn't load your events.
-      <button type="button" class="retry" (click)="load()">Try again</button>
-    </p>
-    } @case ('ready') {
-    <app-stats-summary [items]="summaryStats()" />
+    @switch (status()) {
+      @case ('loading') {
+        <p class="status-message" role="status">Loading your events…</p>
+      }
+      @case ('error') {
+        <p class="status-message error" role="alert">
+          Couldn't load your events.
+          <button type="button" class="retry" (click)="load()">Try again</button>
+        </p>
+      }
+      @case ('ready') {
+        <app-stats-summary [items]="summaryStats()" />
 
-    <div class="table-card">
-      <table>
-        <caption class="visually-hidden">
-          Events you manage
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Event</th>
-            <th scope="col">Venue</th>
-            <th scope="col">Date</th>
-            <th scope="col">Status</th>
-            <th scope="col"><span class="visually-hidden">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (event of events(); track event.id) {
-          <tr>
-            <th scope="row">{{ event.title }}</th>
-            <td>{{ event.venue }}</td>
-            <td>{{ event.date }}</td>
-            <td>
-              <span
-                class="pill status"
-                [class.on-sale]="event.status === 'On sale'"
-                [class.few-left]="event.status === 'Few left'"
-                [class.sold-out]="event.status === 'Sold out'"
-                [class.completed]="event.status === 'Completed'"
-                >{{ event.status }}</span
-              >
-            </td>
-            <td class="actions">
-              @if (event.status === 'Completed') {
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
-                disabled
-                title="Completed events can't be updated"
-              >
-                Update
-                <span class="visually-hidden">
-                  {{ event.title }} (completed event, can't be updated)</span
-                >
-              </button>
-              } @else {
-              <a class="btn btn-primary btn-sm" [routerLink]="['/organiser/events', event.id]">
-                Update
-                <span class="visually-hidden"> {{ event.title }}</span>
-              </a>
+        <div class="table-card">
+          <table>
+            <caption class="visually-hidden">
+              Events you manage
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Event</th>
+                <th scope="col">Venue</th>
+                <th scope="col">Date</th>
+                <th scope="col">Status</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (event of events(); track event.id) {
+                <tr>
+                  <th scope="row">{{ event.title }}</th>
+                  <td>{{ event.venue }}</td>
+                  <td>{{ event.date }}</td>
+                  <td>
+                    <span
+                      class="pill status"
+                      [class.on-sale]="event.status === 'On sale'"
+                      [class.few-left]="event.status === 'Few left'"
+                      [class.sold-out]="event.status === 'Sold out'"
+                      [class.completed]="event.status === 'Completed'"
+                      >{{ event.status }}</span
+                    >
+                  </td>
+                  <td class="actions">
+                    @if (event.status === 'Completed') {
+                      <button
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        disabled
+                        title="Completed events can't be updated"
+                      >
+                        Update
+                        <span class="visually-hidden">
+                          {{ event.title }} (completed event, can't be updated)</span
+                        >
+                      </button>
+                    } @else {
+                      <a
+                        class="btn btn-primary btn-sm"
+                        [routerLink]="['/organiser/events', event.id]"
+                      >
+                        Update
+                        <span class="visually-hidden"> {{ event.title }}</span>
+                      </a>
+                    }
+                  </td>
+                </tr>
               }
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
+            </tbody>
+          </table>
+        </div>
 
-    <p class="note">
-      <a routerLink="/organiser/events">Create a new event</a> from the events page.
-    </p>
-    } }
+        <p class="note">
+          <a routerLink="/organiser/events">Create a new event</a> from the events page.
+        </p>
+      }
+    }
   </section>
 </app-workspace-shell>

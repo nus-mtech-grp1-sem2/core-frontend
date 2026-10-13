@@ -16,26 +16,17 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom, map, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
+import { cancelEventWithConfirmation, DELETE_DRAFT_PROMPT } from './event-cancellation';
+import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, readFileAsDataUrl } from './event-image';
+import { ConfirmDialogService } from '../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../core/auth';
-import { isCompleted } from '../core/event-time';
+import { fromDateTimeLocal, isCompleted } from '../core/event-time';
 import { hasSubmittedPayment } from '../core/payment-processing';
 import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
 import { EventCard } from './components/event-card/event-card';
 import { EventStatus, EventTier, ManagedEvent } from './event.models';
 import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
-
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
 
 interface EventApiRecord {
   readonly event_id: number;
@@ -102,6 +93,7 @@ interface CustomerOrdersResponse {
 export class Events {
   private readonly auth = inject(AuthService);
   private readonly api = inject(ApiService);
+  private readonly confirmDialog = inject(ConfirmDialogService);
   private readonly queue = inject(QueueService);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly route = inject(ActivatedRoute);
@@ -148,7 +140,9 @@ export class Events {
   private selectedImageMimeType: string | null = null;
   protected readonly savedVenues = computed(() => {
     const venues = new Set<string>();
-    for (const event of this.allEvents()) { if (event.venue) venues.add(event.venue); }
+    for (const event of this.allEvents()) {
+      if (event.venue) venues.add(event.venue);
+    }
     return Array.from(venues).sort((a, b) => a.localeCompare(b));
   });
   protected readonly customerOrders = signal<readonly CustomerOrder[]>([]);
@@ -255,8 +249,16 @@ export class Events {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    if (!ALLOWED_IMAGE_TYPES.has(file.type)) { this.error.set('Please choose a JPEG, PNG or WebP image.'); input.value = ''; return; }
-    if (file.size > MAX_IMAGE_BYTES) { this.error.set('Image must be 5MB or smaller.'); input.value = ''; return; }
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      this.error.set('Please choose a JPEG, PNG or WebP image.');
+      input.value = '';
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      this.error.set('Image must be 5MB or smaller.');
+      input.value = '';
+      return;
+    }
     const dataUrl = await readFileAsDataUrl(file);
     this.selectedImageMimeType = file.type;
     this.selectedImageBase64 = dataUrl;
@@ -273,21 +275,29 @@ export class Events {
     try {
       const eventId = this.editingEventId();
       const isNewEvent = eventId === null;
-      const body = this.eventForm.getRawValue();
+      const body = {
+        ...this.eventForm.getRawValue(),
+        startsAt: fromDateTimeLocal(this.eventForm.controls.startsAt.value),
+      };
       let targetEventId = eventId;
-      if (isNewEvent) {
-        const created = await firstValueFrom(this.api.post<{ eventId: number }>('event', '/events', body));
+        if (isNewEvent) {
+        const created = await firstValueFrom(
+          this.api.post<{ eventId: number }>('event', '/events', body),
+        );
         targetEventId = created.eventId;
       } else {
         await firstValueFrom(this.api.put('event', `/events/${eventId}`, body));
       }
       if (targetEventId !== null && this.selectedImageBase64 && this.selectedImageMimeType) {
-        await firstValueFrom(this.api.put('event', `/events/${targetEventId}/image`, {
-          imageBase64: this.selectedImageBase64,
-          mimeType: this.selectedImageMimeType,
-        }));
+        await firstValueFrom(
+          this.api.put('event', `/events/${targetEventId}/image`, {
+            imageBase64: this.selectedImageBase64,
+            mimeType: this.selectedImageMimeType,
+          }),
+        );
       }
-      this.resetForm(); this.showEventForm.set(false);
+      this.resetForm();
+      this.showEventForm.set(false);
       if (isNewEvent && targetEventId !== null) {
         // A freshly created event has no seats yet, so send the organiser
         // straight to Configure inventory instead of back to the list.
@@ -295,19 +305,39 @@ export class Events {
       } else {
         await this.loadEvents(this.isAdmin());
       }
-    } catch (error) { this.error.set(describeEventError(error, 'save the event')); }
-    finally { this.submitting.set(false); }
+    } catch (error) {
+      this.error.set(describeEventError(error, 'save the event'));
+    } finally {
+      this.submitting.set(false);
+    }
   }
 
   protected async publishEvent(eventId: number): Promise<void> {
-    if (!window.confirm('Are you sure you want to publish this event?')) return;
+    const confirmed = await this.confirmDialog.ask({
+      title: 'Publish this event?',
+      message: ['Are you sure you want to publish this event?', 'It will go on sale to customers.'],
+      confirmLabel: 'Yes, publish',
+      cancelLabel: 'No',
+      tone: 'positive',
+    });
+    if (!confirmed) return;
     await this.performAction(`/events/${eventId}/publish`);
   }
   protected async cancelEvent(eventId: number): Promise<void> {
-    await this.performAction(`/events/${eventId}/cancel`);
+    try {
+      if (
+        !(await cancelEventWithConfirmation(this.api, eventId, (options) =>
+          this.confirmDialog.ask(options),
+        ))
+      )
+        return;
+      await this.loadEvents(this.isAdmin());
+    } catch (error) {
+      this.error.set(describeEventError(error, 'cancel the event'));
+    }
   }
   protected async deleteEvent(eventId: number): Promise<void> {
-    if (!window.confirm('Delete this draft event? This cannot be undone.')) return;
+    if (!(await this.confirmDialog.ask(DELETE_DRAFT_PROMPT))) return;
     try {
       await firstValueFrom(this.api.delete('event', `/events/${eventId}`));
       await this.loadEvents(this.isAdmin());
@@ -489,8 +519,10 @@ function describeEventError(error: unknown, action: string): string {
     if (error.status === 403) return 'You are not an organiser for this event.';
     const code = (error.error as { error?: string } | null)?.error;
     if (code === 'inventory_not_configured') return INVENTORY_NOT_CONFIGURED;
-    if (code === 'only_draft_events_can_be_deleted') return 'Only draft events can be deleted. Cancel a published event instead.';
-    if (code === 'event_has_reservation_history') return 'This event has reservation history, so it cannot be deleted. Cancel it instead.';
+    if (code === 'only_draft_events_can_be_deleted')
+      return 'Only draft events can be deleted. Cancel a published event instead.';
+    if (code === 'event_has_reservation_history')
+      return 'This event has reservation history, so it cannot be deleted. Cancel it instead.';
     if (error.status >= 500)
       return 'The Event service cannot reach its database right now. Refresh the AWS MySQL host and try again.';
   }

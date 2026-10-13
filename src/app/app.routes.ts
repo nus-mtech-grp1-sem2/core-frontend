@@ -82,7 +82,8 @@ export const routes: Routes = [
     title: 'Configure inventory — OneStage',
     canActivate: [authGuard],
     data: { workspace: 'organiser' },
-    loadComponent: () => import('./events/event-inventory/event-inventory').then((m) => m.EventInventory),
+    loadComponent: () =>
+      import('./events/event-inventory/event-inventory').then((m) => m.EventInventory),
   },
   {
     path: 'organiser/sales',

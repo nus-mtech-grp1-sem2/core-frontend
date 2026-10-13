@@ -3,7 +3,7 @@ import type { MockApi } from './support/api';
 import { managedEvent } from './support/data';
 import { EVENT_ID, OUTCOMES, stubDoorApi, uploadFile } from './support/door';
 import { expect, test } from './support/fixtures';
-import { qrPng } from './support/qr-images';
+import { BLANK_PNG, qrPng } from './support/qr-images';
 import { customer, helper, organiser, signInAs } from './support/session';
 
 // An axe pass (WCAG 2.x A and AA) over the pages and states that had none: what a person sees at
@@ -34,7 +34,20 @@ function stubPublicEvent(api: MockApi, overrides: Record<string, unknown> = {}) 
     .on('GET', 'event/venues', {
       json: { venues: [{ venue: 'Marina Bay Arena', upcoming: 1, sample_event_id: 7 }] },
     })
-    .on('GET', 'event/events/7', { json: { event: { ...SELLING, ...overrides } } });
+    .on('GET', 'event/events/7', { json: { event: { ...SELLING, ...overrides } } })
+    .on('GET', 'inventory/events/7/zones', {
+      json: {
+        zones: [
+          {
+            inventoryItemId: 1,
+            name: 'General admission',
+            priceCents: 2500,
+            color: '#2563EB',
+            remaining: 60,
+          },
+        ],
+      },
+    });
 }
 
 function stubSeated(api: MockApi) {
@@ -477,23 +490,78 @@ test.describe('keyboard use', () => {
   });
 
   test('the upload control shows where the keyboard focus is', async ({ page, api }) => {
-    test.fail(
-      true,
-      'Known bug (core-frontend#52): focus lands on the 1px invisible file input, and its visible label draws nothing',
-    );
     await signInAs(page, helper);
     stubDoorApi(api);
     await page.goto(`/checkin/${EVENT_ID}`);
     await expect(page.getByRole('status').filter({ hasText: '3 of 10 checked in' })).toBeVisible();
 
-    await page.getByLabel('Upload QR image').focus();
-
     const label = page.locator('label.upload');
-    const style = await label.evaluate((element) => {
-      const computed = getComputedStyle(element);
-      return { outline: computed.outlineStyle, shadow: computed.boxShadow };
+    const input = label.locator('input');
+    let uploadFocused = false;
+    for (let stop = 0; stop < 30 && !uploadFocused; stop += 1) {
+      await page.keyboard.press('Tab');
+      uploadFocused = await input.evaluate((element) => element === document.activeElement);
+    }
+    expect(uploadFocused).toBe(true);
+    await expect(input).toBeFocused();
+
+    const focusStyle = (element: import('@playwright/test').Locator) =>
+      element.evaluate((node) => {
+        const computed = getComputedStyle(node);
+        return {
+          outline: computed.outlineStyle,
+          width: computed.outlineWidth,
+          color: computed.outlineColor,
+          offset: computed.outlineOffset,
+        };
+      });
+    const uploadFocus = await focusStyle(label);
+    expect(uploadFocus).toEqual({
+      outline: 'solid',
+      width: '3px',
+      color: 'rgb(79, 70, 229)',
+      offset: '2px',
     });
-    expect(style.outline !== 'none' || style.shadow !== 'none').toBe(true);
+
+    const bounds = await label.boundingBox();
+    const viewport = page.viewportSize();
+    expect(bounds).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    expect(bounds!.x - 5).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y - 5).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width + 5).toBeLessThanOrEqual(viewport!.width);
+    expect(bounds!.y + bounds!.height + 5).toBeLessThanOrEqual(viewport!.height);
+    const ancestorsAllowOutline = await label.evaluate((element) => {
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        const { overflowX, overflowY } = getComputedStyle(parent);
+        if (
+          [overflowX, overflowY].some((overflow) =>
+            ['auto', 'clip', 'hidden', 'scroll'].includes(overflow),
+          )
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+    expect(ancestorsAllowOutline).toBe(true);
+
+    await page.keyboard.press('Tab');
+    const cameraButton = page.getByRole('button', { name: 'Open camera' });
+    await expect(cameraButton).toBeFocused();
+    expect(uploadFocus).toEqual(await focusStyle(cameraButton));
+    await expect(label).toHaveCSS('outline-style', 'none');
+
+    await page.keyboard.press('Shift+Tab');
+    await expect(input).toBeFocused();
+    await expect(label).toHaveCSS('outline-style', 'solid');
+    const fileChooserPromise = page.waitForEvent('filechooser');
+    await page.keyboard.press('Enter');
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({ name: 'blank.png', mimeType: 'image/png', buffer: BLANK_PNG });
+    await expect(page.getByRole('alert')).toContainText(
+      'No readable QR code was found. Upload the original image or a crop with a clear white border around the whole QR code.',
+    );
   });
 
   test('a chosen seat is announced as chosen, not only coloured', async ({ page, api }) => {

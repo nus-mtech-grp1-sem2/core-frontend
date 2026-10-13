@@ -21,20 +21,20 @@
 
     <nav class="columns" aria-label="Footer">
       @for (column of columns; track column.title) {
-      <div>
-        <h2>{{ column.title }}</h2>
-        <ul>
-          @for (item of column.items; track item.label) {
-          <li>
-            @if (item.path) {
-            <a [routerLink]="item.path">{{ item.label }}</a>
-            } @else {
-            <a href="#">{{ item.label }}</a>
+        <div>
+          <h2>{{ column.title }}</h2>
+          <ul>
+            @for (item of column.items; track item.label) {
+              <li>
+                @if (item.path) {
+                  <a [routerLink]="item.path">{{ item.label }}</a>
+                } @else {
+                  <a href="#">{{ item.label }}</a>
+                }
+              </li>
             }
-          </li>
-          }
-        </ul>
-      </div>
+          </ul>
+        </div>
       }
     </nav>
   </div>

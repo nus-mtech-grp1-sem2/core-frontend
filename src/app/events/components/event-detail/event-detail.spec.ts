@@ -8,6 +8,7 @@ import { vi } from 'vitest';
 import { ApiService } from '../../../core/api';
 import { AuthService } from '../../../core/auth';
 import { QueueService } from '../../../core/queue';
+import { ConfirmDialogService } from '../../../shared/components/confirm-dialog/confirm-dialog.service';
 import {
   buyerCapacity,
   defaultSeatGridColumns,
@@ -57,7 +58,13 @@ describe('EventDetail checkout navigation', () => {
         if (path === '/events/172/zones')
           return of({
             zones: [
-              { inventoryItemId: 5, name: 'General Admission', priceCents: 2000, color: '#000', remaining: 10 },
+              {
+                inventoryItemId: 5,
+                name: 'General Admission',
+                priceCents: 2000,
+                color: '#000',
+                remaining: 10,
+              },
             ],
           });
         if (path === '/events/172/seats')
@@ -218,7 +225,10 @@ describe('EventDetail seat map sizing', () => {
       providers: [
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
-        { provide: ApiService, useValue: { get, post: vi.fn(), url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: ApiService,
+          useValue: { get, post: vi.fn(), url: vi.fn(() => 'mock-image-url') },
+        },
         {
           provide: AuthService,
           useValue: {
@@ -279,7 +289,7 @@ describe('EventDetail seat map sizing', () => {
 });
 
 describe('EventDetail inventory summary', () => {
-  it('counts a GA zone\'s seats and sales from the zone itself, not the empty per-seat list', async () => {
+  it("counts a GA zone's seats and sales from the zone itself, not the empty per-seat list", async () => {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172')
         return of({
@@ -314,7 +324,10 @@ describe('EventDetail inventory summary', () => {
       providers: [
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'organiser' } } } },
-        { provide: ApiService, useValue: { get, post: vi.fn(), url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: ApiService,
+          useValue: { get, post: vi.fn(), url: vi.fn(() => 'mock-image-url') },
+        },
         {
           provide: AuthService,
           useValue: {
@@ -385,7 +398,6 @@ describe('EventDetail purchase errors', () => {
 
     expect(purchaseErrorMessage(error)).toContain('unavailable or sold out');
   });
-
 });
 
 describe('EventDetail event-team purchases', () => {
@@ -736,11 +748,8 @@ describe('EventDetail completed events for an organiser', () => {
   });
 
   it('says a team member is already gone instead of that the event was not found', async () => {
-    const { fixture, host, button, remove } = await renderOrganiser(
-      '2099-01-01 20:00:00',
-      'DRAFT',
-    );
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { fixture, host, button, remove } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
+    vi.spyOn(TestBed.inject(ConfirmDialogService), 'ask').mockResolvedValue(true);
     remove.mockReturnValueOnce(
       throwError(
         () => new HttpErrorResponse({ status: 404, error: { error: 'team_member_not_found' } }),
@@ -768,17 +777,31 @@ describe('EventDetail completed events for an organiser', () => {
     }
   });
 
-  it('pre-fills the edit form with the Singapore wall-clock start time, not the raw UTC digits', async () => {
-    // The event service returns starts_at as the correct UTC instant for 8pm
-    // Singapore time on 6 Oct 2099. The edit form's datetime-local input must
-    // show "20:00" (8pm SGT), not "12:00" (noon, the raw UTC digits).
-    const { host } = await renderOrganiser('2099-10-06T12:00:00.000Z', 'DRAFT');
+  it('shows the UTC start time in local time and saves an edited time back in UTC', async () => {
+    const startsAt = '2099-01-01T12:00:00.000Z';
+    const { fixture, host, button, put } = await renderOrganiser(startsAt, 'DRAFT');
+    const input = host.querySelector<HTMLInputElement>('#starts-at')!;
 
-    expect(host.querySelector<HTMLInputElement>('#starts-at')?.value).toBe('2099-10-06T20:00');
+    expect(new Date(input.value).toISOString()).toBe(startsAt);
+
+    input.value = '2099-01-02T19:30';
+    input.dispatchEvent(new Event('input'));
+    button('Save changes')!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(put).toHaveBeenCalledWith(
+      'event',
+      '/events/172',
+      expect.objectContaining({ startsAt: new Date(2099, 0, 2, 19, 30).toISOString() }),
+    );
   });
 
   it('keeps only available buyers editable after publishing', async () => {
-    const { fixture, host, button, put } = await renderOrganiser('2099-01-01 20:00:00', 'PUBLISHED');
+    const { fixture, host, button, put } = await renderOrganiser(
+      '2099-01-01 20:00:00',
+      'PUBLISHED',
+    );
 
     // Still on sale and upcoming — not the "completed" lock.
     expect(host.textContent).not.toContain('This event has completed');
@@ -887,7 +910,13 @@ describe('EventDetail completed events for a customer', () => {
         },
         {
           provide: ApiService,
-          useValue: { get, put: vi.fn(), post, delete: vi.fn(), url: vi.fn(() => 'mock-image-url') },
+          useValue: {
+            get,
+            put: vi.fn(),
+            post,
+            delete: vi.fn(),
+            url: vi.fn(() => 'mock-image-url'),
+          },
         },
       ],
     }).compileComponents();
@@ -1063,12 +1092,24 @@ describe('EventDetail GA ticket tiers', () => {
   // Reproduces the reported bug: a 20-seat "Blue" tier (sold out) and an
   // 8-seat "Red" tier (still available). Buying ticket 21+ must not just
   // 409 because the cheapest/first-created zone is full.
-  const blue = { inventoryItemId: 1, name: 'Blue', priceCents: 2000, color: '#2563EB', remaining: 0 };
+  const blue = {
+    inventoryItemId: 1,
+    name: 'Blue',
+    priceCents: 2000,
+    color: '#2563EB',
+    remaining: 0,
+  };
   const red = { inventoryItemId: 2, name: 'Red', priceCents: 5000, color: '#DC2626', remaining: 8 };
 
   it('shows no tier picker for a single-zone event, and buys that zone without asking', async () => {
     const { host, post } = await renderWithZones([
-      { inventoryItemId: 9, name: 'General Admission', priceCents: 2000, color: '#000', remaining: 28 },
+      {
+        inventoryItemId: 9,
+        name: 'General Admission',
+        priceCents: 2000,
+        color: '#000',
+        remaining: 28,
+      },
     ]);
 
     expect(host.querySelector('.zone-picker')).toBeNull();
@@ -1091,11 +1132,13 @@ describe('EventDetail GA ticket tiers', () => {
 
     const picker = host.querySelector('.zone-picker');
     expect(picker).not.toBeNull();
-    const redRadio = Array.from(host.querySelectorAll<HTMLInputElement>('.zone-option input'))
-      .find((input) => input.value === '2');
+    const redRadio = Array.from(host.querySelectorAll<HTMLInputElement>('.zone-option input')).find(
+      (input) => input.value === '2',
+    );
     expect(redRadio?.checked).toBe(true);
-    const blueRadio = Array.from(host.querySelectorAll<HTMLInputElement>('.zone-option input'))
-      .find((input) => input.value === '1');
+    const blueRadio = Array.from(
+      host.querySelectorAll<HTMLInputElement>('.zone-option input'),
+    ).find((input) => input.value === '1');
     expect(blueRadio?.disabled).toBe(true);
 
     const buy = Array.from(host.querySelectorAll('button')).find(

@@ -8,61 +8,66 @@
   </section>
 
   <section class="shell body">
-    @switch (status()) { @case ('loading') {
-    <p class="status-message" role="status">Loading sales…</p>
-    } @case ('error') {
-    <p class="status-message error" role="alert">
-      Couldn't load sales figures.
-      <button type="button" class="retry" (click)="load()">Try again</button>
-    </p>
-    } @case ('ready') {
-    <app-stats-summary [items]="summaryStats()" />
+    @switch (status()) {
+      @case ('loading') {
+        <p class="status-message" role="status">Loading sales…</p>
+      }
+      @case ('error') {
+        <p class="status-message error" role="alert">
+          Couldn't load sales figures.
+          <button type="button" class="retry" (click)="load()">Try again</button>
+        </p>
+      }
+      @case ('ready') {
+        <app-stats-summary [items]="summaryStats()" />
 
-    <div class="table-card">
-      <table>
-        <caption class="visually-hidden">
-          Sales by event
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Event</th>
-            <th scope="col">Venue</th>
-            <th scope="col">Tickets sold</th>
-            <th scope="col">Revenue</th>
-            <th scope="col">Event date</th>
-            <th scope="col">Event time</th>
-            <th scope="col">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (row of rows(); track row.eventId) {
-          <tr>
-            <th scope="row">{{ row.event }}</th>
-            <td>{{ row.venue }}</td>
-            <td>
-              {{ row.sold.toLocaleString('en-SG') }} / {{ row.capacity.toLocaleString('en-SG') }}
-            </td>
-            <td>{{ row.revenue | currency: 'SGD' : 'S$' : '1.0-0' }}</td>
-            <td>{{ row.date }}</td>
-            <td>{{ row.time }}</td>
-            <td>
-              <span
-                class="pill status"
-                [class.on-sale]="row.status === 'On sale'"
-                [class.few-left]="row.status === 'Few left'"
-                [class.sold-out]="row.status === 'Sold out'"
-                [class.completed]="row.status === 'Completed'"
-                [class.cancelled]="row.status === 'Cancelled'"
-                >{{ row.status }}</span
-              >
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
+        <div class="table-card">
+          <table>
+            <caption class="visually-hidden">
+              Sales by event
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Event</th>
+                <th scope="col">Venue</th>
+                <th scope="col">Tickets sold</th>
+                <th scope="col">Revenue</th>
+                <th scope="col">Event date</th>
+                <th scope="col">Event time</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of rows(); track row.eventId) {
+                <tr>
+                  <th scope="row">{{ row.event }}</th>
+                  <td>{{ row.venue }}</td>
+                  <td>
+                    {{ row.sold.toLocaleString('en-SG') }} /
+                    {{ row.capacity.toLocaleString('en-SG') }}
+                  </td>
+                  <td>{{ row.revenue | currency: 'SGD' : 'S$' : '1.0-0' }}</td>
+                  <td>{{ row.date }}</td>
+                  <td>{{ row.time }}</td>
+                  <td>
+                    <span
+                      class="pill status"
+                      [class.on-sale]="row.status === 'On sale'"
+                      [class.few-left]="row.status === 'Few left'"
+                      [class.sold-out]="row.status === 'Sold out'"
+                      [class.completed]="row.status === 'Completed'"
+                      [class.cancelled]="row.status === 'Cancelled'"
+                      >{{ row.status }}</span
+                    >
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
 
-    <p class="note">Revenue reflects paid orders only.</p>
-    } }
+        <p class="note">Revenue reflects paid orders only.</p>
+      }
+    }
   </section>
 </app-workspace-shell>

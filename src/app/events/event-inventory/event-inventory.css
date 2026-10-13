@@ -333,7 +333,10 @@
   color: var(--text-muted);
   font-weight: 700;
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
 }
 
 .grid-add-btn:hover,
@@ -379,7 +382,10 @@
   line-height: 1;
   padding: 0;
   cursor: crosshair;
-  transition: border-color 0.1s ease, background 0.1s ease, color 0.1s ease;
+  transition:
+    border-color 0.1s ease,
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .grid-cell:hover {
@@ -439,7 +445,10 @@
   line-height: 1;
   padding: 0;
   cursor: pointer;
-  transition: box-shadow 0.15s ease, transform 0.1s ease, border-color 0.1s ease;
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.1s ease,
+    border-color 0.1s ease;
   user-select: none;
 }
 
@@ -684,7 +693,9 @@
   text-align: center;
   color: var(--text);
   background: var(--bg);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .position-field input:focus {

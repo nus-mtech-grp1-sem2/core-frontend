@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 
 import { CognitoGateway } from '../core/cognito-gateway';
 import { Login } from './components/login/login';
@@ -32,7 +33,7 @@ describe('Login', () => {
     gateway = new FakeGateway();
     TestBed.configureTestingModule({
       imports: [Login],
-      providers: [{ provide: CognitoGateway, useValue: gateway }],
+      providers: [provideRouter([]), { provide: CognitoGateway, useValue: gateway }],
     });
     fixture = TestBed.createComponent(Login);
     await fixture.whenStable();

@@ -16,25 +16,16 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom, timer } from 'rxjs';
 
 import { ApiService } from '../../../core/api';
+import { cancelEventWithConfirmation, DELETE_DRAFT_PROMPT } from '../../event-cancellation';
+import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, readFileAsDataUrl } from '../../event-image';
+import { ConfirmDialogService } from '../../../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../../../core/auth';
-import { isCompleted, toSingaporeInputValue } from '../../../core/event-time';
+import { fromDateTimeLocal, isCompleted, toDateTimeLocal } from '../../../core/event-time';
 import { QueueService, QueueStatus } from '../../../core/queue';
 import { WorkspaceShell } from '../../../layout/components/workspace-shell/workspace-shell';
 
 const EVENT_COMPLETED_MESSAGE =
   'This event has already taken place, so tickets are no longer on sale.';
-
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
@@ -214,6 +205,7 @@ interface AdmissionResponse {
 })
 export class EventDetail {
   private readonly api = inject(ApiService);
+  private readonly confirmDialog = inject(ConfirmDialogService);
   private readonly auth = inject(AuthService);
   private readonly queue = inject(QueueService);
   private readonly destroyRef = inject(DestroyRef);
@@ -419,7 +411,10 @@ export class EventDetail {
         );
       } else {
         await firstValueFrom(
-          this.api.put('event', `/events/${event.event_id}`, this.form.getRawValue()),
+          this.api.put('event', `/events/${event.event_id}`, {
+            ...this.form.getRawValue(),
+            startsAt: fromDateTimeLocal(this.form.controls.startsAt.value),
+          }),
         );
       }
       if (!this.detailsLocked() && this.selectedImageBase64 && this.selectedImageMimeType) {
@@ -473,7 +468,7 @@ export class EventDetail {
       this.readOnly() ||
       event.status !== 'DRAFT' ||
       this.deleting() ||
-      !window.confirm('Delete this draft event? This cannot be undone.')
+      !(await this.confirmDialog.ask(DELETE_DRAFT_PROMPT))
     )
       return;
     this.deleting.set(true);
@@ -492,15 +487,30 @@ export class EventDetail {
     const event = this.event();
     if (!event || this.readOnly() || this.updatingStatus()) return;
     const enabling = status === 'PUBLISHED';
-    const action = enabling ? 'enable this event and put it back on sale' : 'cancel this event';
-    if (!window.confirm(`Are you sure you want to ${action}?`)) return;
+    if (
+      enabling &&
+      !(await this.confirmDialog.ask({
+        title: 'Re-publish this event?',
+        message: ['Are you sure you want to enable this event and put it back on sale?'],
+        confirmLabel: 'Yes, re-publish',
+        cancelLabel: 'No',
+        tone: 'positive',
+      }))
+    )
+      return;
 
     this.updatingStatus.set(true);
     this.error.set('');
     try {
-      await firstValueFrom(
-        this.api.post('event', `/events/${event.event_id}/${enabling ? 'publish' : 'cancel'}`, {}),
-      );
+      if (enabling) {
+        await firstValueFrom(this.api.post('event', `/events/${event.event_id}/publish`, {}));
+      } else if (
+        !(await cancelEventWithConfirmation(this.api, event.event_id, (options) =>
+          this.confirmDialog.ask(options),
+        ))
+      ) {
+        return;
+      }
       await this.load(event.event_id);
     } catch (error) {
       this.error.set(describeError(error, enabling ? 'enable this event' : 'cancel this event'));
@@ -514,7 +524,12 @@ export class EventDetail {
     if (
       !event ||
       this.readOnly() ||
-      !window.confirm(`Remove ${member.user_email} from this event?`)
+      !(await this.confirmDialog.ask({
+        title: 'Remove team member?',
+        message: [`Are you sure you want to remove ${member.user_email} from this event's team?`],
+        confirmLabel: 'Yes, remove',
+        cancelLabel: 'No, keep member',
+      }))
     )
       return;
     this.error.set('');
@@ -534,11 +549,18 @@ export class EventDetail {
   protected async changeRole(member: TeamMember, role: 'ORGANISER' | 'HELPER'): Promise<void> {
     const event = this.event();
     if (!event || this.readOnly() || role === member.role || this.changingRoleFor()) return;
-    const action = role === 'ORGANISER' ? 'promote' : 'demote';
+    const promoting = role === 'ORGANISER';
+    const action = promoting ? 'promote' : 'demote';
+    const verb = promoting ? 'Promote' : 'Demote';
+    const roleName = promoting ? 'Organizer' : 'Helper';
     if (
-      !window.confirm(
-        `${action === 'promote' ? 'Promote' : 'Demote'} ${member.user_email} to ${role === 'ORGANISER' ? 'Organizer' : 'Helper'}?`,
-      )
+      !(await this.confirmDialog.ask({
+        title: `${verb} team member?`,
+        message: [`Are you sure you want to ${action} ${member.user_email} to ${roleName}?`],
+        confirmLabel: `Yes, ${action}`,
+        cancelLabel: 'No',
+        tone: promoting ? 'positive' : 'destructive',
+      }))
     )
       return;
     this.changingRoleFor.set(member.user_sub);
@@ -627,11 +649,7 @@ export class EventDetail {
   }
 
   protected canBuy(): boolean {
-    return (
-      this.customerMode &&
-      this.event()?.status === 'PUBLISHED' &&
-      !this.completed()
-    );
+    return this.customerMode && this.event()?.status === 'PUBLISHED' && !this.completed();
   }
 
   protected seatAt(row: number, col: number): SeatOption | undefined {
@@ -802,7 +820,7 @@ export class EventDetail {
         title: result.event.title,
         description: result.event.description ?? '',
         venue: result.event.venue,
-        startsAt: toSingaporeInputValue(result.event.starts_at),
+        startsAt: toDateTimeLocal(result.event.starts_at),
         totalSeats: result.event.total_seats,
         availableBuyers: result.event.available_buyers,
         tier: result.event.tier,
@@ -1211,9 +1229,12 @@ function queueAdmissionRequired(error: unknown): boolean {
 }
 
 const EVENT_ERROR_MESSAGES: Readonly<Record<string, string>> = {
-  queue_admission_required: 'Your waiting-room admission has expired. Rejoin the queue to continue.',
-  event_not_editable: 'This event has already been published — its details can no longer be edited.',
-  only_draft_events_can_be_deleted: 'Only draft events can be deleted. Cancel a published event instead.',
+  queue_admission_required:
+    'Your waiting-room admission has expired. Rejoin the queue to continue.',
+  event_not_editable:
+    'This event has already been published — its details can no longer be edited.',
+  only_draft_events_can_be_deleted:
+    'Only draft events can be deleted. Cancel a published event instead.',
   event_has_reservation_history:
     'This event has reservation history, so it cannot be deleted. Cancel it instead.',
   inventory_not_configured:

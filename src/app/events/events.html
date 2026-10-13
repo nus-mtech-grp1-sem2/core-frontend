@@ -13,14 +13,14 @@
     <div class="toolbar">
       <p class="count" aria-live="polite">{{ visibleEvents().length }} events</p>
       @if (isAdmin()) {
-      <label class="include-cancelled"
-        ><input
-          type="checkbox"
-          [checked]="includeCancelled()"
-          (change)="includeCancelled.set($any($event.target).checked)"
-        />
-        Include cancelled</label
-      >
+        <label class="include-cancelled"
+          ><input
+            type="checkbox"
+            [checked]="includeCancelled()"
+            (change)="includeCancelled.set($any($event.target).checked)"
+          />
+          Include cancelled</label
+        >
       }
       <label class="include-completed"
         ><input
@@ -31,140 +31,150 @@
         Include completed events</label
       >
       @if (isAdmin()) {
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        [attr.aria-expanded]="showEventForm()"
-        (click)="toggleEventForm()"
-      >
-        {{ showEventForm() ? 'Cancel' : 'New event' }}
-      </button>
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          [attr.aria-expanded]="showEventForm()"
+          (click)="toggleEventForm()"
+        >
+          {{ showEventForm() ? 'Cancel' : 'New event' }}
+        </button>
       }
     </div>
     @if (error()) {
-    <p class="error" role="alert">{{ error() }}</p>
-    } @if (!isAdmin() && (unpaidOrders().length > 0 || processingOrders().length > 0)) {
-    <section class="active-reservations" aria-labelledby="active-reservations-heading">
-      <h2 id="active-reservations-heading">Active reservations</h2>
-      @for (order of unpaidOrders(); track order.order_id) {
-      <app-reservation-card
-        [order]="order"
-        [timeRemaining]="reservationTimeLabel(order)"
-        [cancelling]="isCancelling(order.order_id)"
-        (cancelRequested)="cancelReservation(order)"
-      />
-      } @for (order of processingOrders(); track order.order_id) {
-      <app-reservation-card [order]="order" [processing]="true" />
-      }
-    </section>
-    } @if (reservationError()) {
-    <p class="error" role="alert">{{ reservationError() }}</p>
-    } @if (invitations().length) {
-    <section class="invitations" aria-labelledby="invitation-heading">
-      <h2 id="invitation-heading">Event invitations</h2>
-      @for (invitation of invitations(); track invitation.membership_id) {
-      <div class="invitation">
-        <span
-          ><strong>{{ invitation.title }}</strong> at {{ invitation.venue }} as {{ invitation.role |
-          lowercase }}</span
-        >
-        <div class="actions">
-          <button
-            type="button"
-            class="btn btn-primary btn-sm"
-            (click)="decideInvitation(invitation, 'accept')"
-          >
-            Accept</button
-          ><button
-            type="button"
-            class="btn btn-ghost btn-sm"
-            (click)="decideInvitation(invitation, 'reject')"
-          >
-            Reject
-          </button>
-        </div>
-      </div>
-      }
-    </section>
-    } @if (isAdmin() && showEventForm()) {
-    <form class="new-event-form" [formGroup]="eventForm" (ngSubmit)="saveEvent()">
-      <div class="field field-wide">
-        <label for="event-image">Event photo</label>
-        <input
-          id="event-image"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          (change)="onImageSelected($event)"
-        />
-        @if (imagePreviewUrl()) {
-        <img class="image-preview" [src]="imagePreviewUrl()" alt="Selected event photo preview" />
+      <p class="error" role="alert">{{ error() }}</p>
+    }
+    @if (!isAdmin() && (unpaidOrders().length > 0 || processingOrders().length > 0)) {
+      <section class="active-reservations" aria-labelledby="active-reservations-heading">
+        <h2 id="active-reservations-heading">Active reservations</h2>
+        @for (order of unpaidOrders(); track order.order_id) {
+          <app-reservation-card
+            [order]="order"
+            [timeRemaining]="reservationTimeLabel(order)"
+            [cancelling]="isCancelling(order.order_id)"
+            (cancelRequested)="cancelReservation(order)"
+          />
         }
-      </div>
-      <div class="field">
-        <label for="event-title">Title</label
-        ><input id="event-title" type="text" formControlName="title" required />
-      </div>
-      <div class="field">
-        <label for="event-description">Description</label
-        ><input id="event-description" type="text" formControlName="description" />
-      </div>
-      <div class="field">
-        <label for="event-venue">Venue</label
-        ><input
-          id="event-venue"
-          type="text"
-          formControlName="venue"
-          list="venue-options"
-          placeholder="Type or pick a venue"
-          required
-        />
-        <datalist id="venue-options">
-          @for (venue of savedVenues(); track venue) {
-          <option [value]="venue"></option>
+        @for (order of processingOrders(); track order.order_id) {
+          <app-reservation-card [order]="order" [processing]="true" />
+        }
+      </section>
+    }
+    @if (reservationError()) {
+      <p class="error" role="alert">{{ reservationError() }}</p>
+    }
+    @if (invitations().length) {
+      <section class="invitations" aria-labelledby="invitation-heading">
+        <h2 id="invitation-heading">Event invitations</h2>
+        @for (invitation of invitations(); track invitation.membership_id) {
+          <div class="invitation">
+            <span
+              ><strong>{{ invitation.title }}</strong> at {{ invitation.venue }} as
+              {{ invitation.role | lowercase }}</span
+            >
+            <div class="actions">
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                (click)="decideInvitation(invitation, 'accept')"
+              >
+                Accept</button
+              ><button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                (click)="decideInvitation(invitation, 'reject')"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        }
+      </section>
+    }
+    @if (isAdmin() && showEventForm()) {
+      <form class="new-event-form" [formGroup]="eventForm" (ngSubmit)="saveEvent()">
+        <div class="field field-wide">
+          <label for="event-image">Event photo</label>
+          <input
+            id="event-image"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            (change)="onImageSelected($event)"
+          />
+          @if (imagePreviewUrl()) {
+            <img
+              class="image-preview"
+              [src]="imagePreviewUrl()"
+              alt="Preview of the selected event cover"
+            />
           }
-        </datalist>
-      </div>
-      <div class="field">
-        <label for="event-start">Starts at</label
-        ><input id="event-start" type="datetime-local" formControlName="startsAt" required />
-      </div>
-      <div class="field">
-        <label for="event-tier">Ticketing</label
-        ><select id="event-tier" formControlName="tier">
-          <option value="TIER1_GA">General admission</option>
-          <option value="TIER2_SEATED">Reserved seating</option>
-        </select>
-      </div>
-      <button
-        type="submit"
-        class="btn btn-primary btn-sm"
-        [disabled]="submitting() || eventForm.invalid"
-      >
-        {{ editingEventId() === null ? 'Create event' : 'Save changes' }}
-      </button>
-    </form>
-    } @if (loading()) {
-    <p class="empty">Loading events...</p>
+        </div>
+        <div class="field">
+          <label for="event-title">Title</label
+          ><input id="event-title" type="text" formControlName="title" required />
+        </div>
+        <div class="field">
+          <label for="event-description">Description</label
+          ><input id="event-description" type="text" formControlName="description" />
+        </div>
+        <div class="field">
+          <label for="event-venue">Venue</label
+          ><input
+            id="event-venue"
+            type="text"
+            formControlName="venue"
+            list="venue-options"
+            placeholder="Type or pick a venue"
+            required
+          />
+          <datalist id="venue-options">
+            @for (venue of savedVenues(); track venue) {
+              <option [value]="venue"></option>
+            }
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="event-start">Starts at</label
+          ><input id="event-start" type="datetime-local" formControlName="startsAt" required />
+        </div>
+        <div class="field">
+          <label for="event-tier">Ticketing</label
+          ><select id="event-tier" formControlName="tier">
+            <option value="TIER1_GA">General admission</option>
+            <option value="TIER2_SEATED">Reserved seating</option>
+          </select>
+        </div>
+        <button
+          type="submit"
+          class="btn btn-primary btn-sm"
+          [disabled]="submitting() || eventForm.invalid"
+        >
+          {{ editingEventId() === null ? 'Create event' : 'Save changes' }}
+        </button>
+      </form>
+    }
+    @if (loading()) {
+      <p class="empty">Loading events...</p>
     } @else {
-    <ul class="event-grid">
-      @for (event of visibleEvents(); track event.event_id) {
-      <li
-        app-event-card
-        [event]="event"
-        [isAdmin]="isAdmin()"
-        [completed]="isEventCompleted(event)"
-        [imageUrl]="eventImageUrl(event.event_id)"
-        [detailLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'"
-        (publish)="publishEvent($event)"
-        (delete)="deleteEvent($event)"
-        (cancelRequested)="cancelEvent($event)"
-      ></li>
-      } @empty {
-      <li class="empty">
-        {{ searchTerm() ? 'No events match your search.' : 'No events right now.' }}
-      </li>
-      }
-    </ul>
+      <ul class="event-grid">
+        @for (event of visibleEvents(); track event.event_id) {
+          <li
+            app-event-card
+            [event]="event"
+            [isAdmin]="isAdmin()"
+            [completed]="isEventCompleted(event)"
+            [imageUrl]="eventImageUrl(event.event_id)"
+            [detailLink]="canViewEventDetails() ? eventDetailLink(event.event_id) : '/login'"
+            (publish)="publishEvent($event)"
+            (delete)="deleteEvent($event)"
+            (cancelRequested)="cancelEvent($event)"
+          ></li>
+        } @empty {
+          <li class="empty">
+            {{ searchTerm() ? 'No events match your search.' : 'No events right now.' }}
+          </li>
+        }
+      </ul>
     }
   </section>
 </app-workspace-shell>

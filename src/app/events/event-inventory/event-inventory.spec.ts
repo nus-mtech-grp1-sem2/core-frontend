@@ -1031,3 +1031,4 @@ describe('EventInventory', () => {
     stageReq.flush(null, { status: 204, statusText: 'No Content' });
   });
 });
+
