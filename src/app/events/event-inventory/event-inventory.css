@@ -662,11 +662,11 @@
   color: #b42318;
 }
 
-.zone-price-input {
+.position-field .zone-price-input {
   width: 5rem;
 }
 
-.zone-quantity-input {
+.position-field .zone-quantity-input {
   width: 8rem;
 }
 
