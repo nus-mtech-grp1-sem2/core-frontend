@@ -20,7 +20,7 @@
           }}</a>
           <h1>{{ event.title }}</h1>
           <p class="where">{{ event.venue }}</p>
-          <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+          <p class="when">{{ event.starts_at | date: 'EEE d MMM y, h:mm a' : '+0800' }}</p>
           <p>{{ event.description }}</p>
           <div class="event-facts">
             <span
@@ -31,17 +31,13 @@
             >
             <span>{{ event.total_seats }} seats</span>
             <span>{{ priceLabel(event.price_cents) }} per ticket</span>
-            @if (event.tier === 'TIER2_SEATED') {
-              <span>
-                Up to {{ buyerCapacity(event.total_seats, event.available_buyers) }}
-                {{
-                  buyerCapacity(event.total_seats, event.available_buyers) === 1
-                    ? 'buyer'
-                    : 'buyers'
-                }}
-                at a time
-              </span>
-            }
+            <span>
+              Up to {{ buyerCapacity(event.total_seats, event.available_buyers) }}
+              {{
+                buyerCapacity(event.total_seats, event.available_buyers) === 1 ? 'buyer' : 'buyers'
+              }}
+              at a time
+            </span>
           </div>
         </div>
       </div>
@@ -59,7 +55,11 @@
         </div>
       </section>
     } @else if (canBuy()) {
-      <section class="shell body purchase" aria-label="Buy tickets">
+      <section
+        class="shell body purchase"
+        [class.purchase--wide]="showsSeatOrZoneMap()"
+        aria-label="Buy tickets"
+      >
         @if (ownership(); as owned) {
           <div class="owned" role="status">
             <p>
@@ -82,7 +82,7 @@
             <div class="queue-actions">
               <a class="btn btn-primary" routerLink="/my-events">View my tickets</a>
               @if (!showPurchaseFlow()) {
-                <button type="button" class="btn btn-ghost" (click)="buyingMore.set(true)">
+                <button type="button" class="btn btn-ghost" (click)="buyMore()">
                   Buy more tickets
                 </button>
               }
@@ -147,20 +147,67 @@
               }
             }
           } @else {
-            @if (event.tier === 'TIER2_SEATED') {
-              <div class="admission-window" role="status">
-                <p>
-                  <strong>It is your turn.</strong> Complete checkout within
-                  {{ admissionTimeLabel() }}.
-                </p>
-                <button
-                  type="button"
-                  class="btn btn-ghost"
-                  [disabled]="leavingQueue()"
-                  (click)="leaveQueue()"
-                >
-                  {{ leavingQueue() ? 'Releasing...' : 'Release my place' }}
-                </button>
+            <div class="admission-window" role="status">
+              <p>
+                <strong>It is your turn.</strong> Complete checkout within
+                {{ admissionTimeLabel() }}.
+              </p>
+              <button
+                type="button"
+                class="btn btn-ghost"
+                [disabled]="leavingQueue()"
+                (click)="leaveQueue()"
+              >
+                {{ leavingQueue() ? 'Releasing...' : 'Release my place' }}
+              </button>
+            </div>
+            @if (hasZoneMap()) {
+              <div class="zone-map">
+                <div class="map-stack">
+                  @if (stagePieces().length === 0) {
+                    <div class="stage-indicator" aria-hidden="true">Stage</div>
+                  }
+                  <div class="grid-container">
+                    @if (zoneMapStageData(); as sd) {
+                      <div class="stage-layer" aria-hidden="true">
+                        @for (cell of sd.cells; track $index) {
+                          <div
+                            class="stage-cell"
+                            [style.top]="cell.y"
+                            [style.left]="cell.x"
+                            [style.width]="cell.w"
+                            [style.height]="cell.h"
+                          ></div>
+                        }
+                        <span class="stage-label" [style.top]="sd.labelY" [style.left]="sd.labelX"
+                          >Stage</span
+                        >
+                      </div>
+                    }
+                    <div
+                      class="zone-grid"
+                      aria-hidden="true"
+                      [style.gap.rem]="zoneMapScale().gapRem"
+                      [style.grid-template-rows]="
+                        'repeat(' + zoneGridRows() + ', ' + zoneMapScale().cellRem + 'rem)'
+                      "
+                      [style.grid-template-columns]="
+                        'repeat(' + zoneGridCols() + ', ' + zoneMapScale().cellRem + 'rem)'
+                      "
+                    >
+                      @for (zone of zoneOptions(); track zone.inventoryItemId) {
+                        <div
+                          class="zone-block"
+                          [style.grid-row]="zoneBlockRow(zone)"
+                          [style.grid-column]="zoneBlockColumn(zone)"
+                          [style.background]="zone.color"
+                        >
+                          {{ zone.name }}
+                        </div>
+                      }
+                    </div>
+                  </div>
+                </div>
               </div>
             }
             @if (event.tier === 'TIER1_GA' && hasZoneChoice()) {
@@ -200,41 +247,64 @@
             @if (event.tier === 'TIER2_SEATED') {
               @if (seats().length > 0) {
                 <div class="seat-map">
-                  <div
-                    class="seat-grid"
-                    role="group"
-                    aria-label="Choose your seats"
-                    [style.grid-template-rows]="'repeat(' + gridRows().length + ', 1.75rem)'"
-                    [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'"
-                  >
-                    @for (row of gridRows(); track row; let rowIndex = $index) {
-                      @for (col of gridCols(); track col; let colIndex = $index) {
-                        @let seat = seatAt(row, col);
-                        @if (seat) {
-                          <button
-                            type="button"
-                            class="seat"
-                            [class.selected]="isSeatSelected(seat)"
-                            [style.grid-row]="rowIndex + 1"
-                            [style.grid-column]="colIndex + 1"
-                            [style.background]="seatBackground(seat)"
-                            [disabled]="seat.status !== 'AVAILABLE'"
-                            [attr.aria-pressed]="isSeatSelected(seat)"
-                            [attr.aria-label]="seatName(seat)"
-                            [title]="seatName(seat)"
-                            (click)="toggleSeat(seat)"
-                          >
-                            {{ seat.seatLabel }}
-                          </button>
-                        } @else {
-                          <span
-                            class="seat-gap"
-                            [style.grid-row]="rowIndex + 1"
-                            [style.grid-column]="colIndex + 1"
-                          ></span>
-                        }
-                      }
+                  <div class="map-stack">
+                    @if (stagePieces().length === 0) {
+                      <div class="stage-indicator" aria-hidden="true">Stage</div>
                     }
+                    <div class="grid-container">
+                      @if (seatMapStageData(); as sd) {
+                        <div class="stage-layer" aria-hidden="true">
+                          @for (cell of sd.cells; track $index) {
+                            <div
+                              class="stage-cell"
+                              [style.top]="cell.y"
+                              [style.left]="cell.x"
+                              [style.width]="cell.w"
+                              [style.height]="cell.h"
+                            ></div>
+                          }
+                          <span class="stage-label" [style.top]="sd.labelY" [style.left]="sd.labelX"
+                            >Stage</span
+                          >
+                        </div>
+                      }
+                      <div
+                        class="seat-grid"
+                        role="group"
+                        aria-label="Choose your seats"
+                        [style.grid-template-rows]="'repeat(' + gridRows().length + ', 1.75rem)'"
+                        [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'"
+                      >
+                        @for (row of gridRows(); track row; let rowIndex = $index) {
+                          @for (col of gridCols(); track col; let colIndex = $index) {
+                            @let seat = seatAt(row, col);
+                            @if (seat) {
+                              <button
+                                type="button"
+                                class="seat"
+                                [class.selected]="isSeatSelected(seat)"
+                                [style.grid-row]="rowIndex + 1"
+                                [style.grid-column]="colIndex + 1"
+                                [style.background]="seatBackground(seat)"
+                                [disabled]="seat.status !== 'AVAILABLE'"
+                                [attr.aria-pressed]="isSeatSelected(seat)"
+                                [attr.aria-label]="seatName(seat)"
+                                [title]="seatName(seat)"
+                                (click)="toggleSeat(seat)"
+                              >
+                                {{ seat.seatLabel }}
+                              </button>
+                            } @else {
+                              <span
+                                class="seat-gap"
+                                [style.grid-row]="rowIndex + 1"
+                                [style.grid-column]="colIndex + 1"
+                              ></span>
+                            }
+                          }
+                        }
+                      </div>
+                    </div>
                   </div>
                 </div>
               } @else {
@@ -260,7 +330,7 @@
           </p>
         } @else if (detailsLocked()) {
           <p class="owner-note" role="status">
-            This event has already been published — its details can no longer be edited. Use
+            This event has already been published. Available buyers can still be adjusted; use
             Configure inventory to add or remove seats and change prices, or manage its team below.
           </p>
         }
@@ -326,7 +396,7 @@
               <img
                 class="image-preview"
                 [src]="imagePreviewUrl()"
-                alt="Preview of the selected event cover"
+                alt="Selected event photo preview"
               />
             }
           </div>
@@ -334,9 +404,15 @@
             <button
               type="submit"
               class="btn btn-primary"
-              [disabled]="saving() || readOnly() || detailsLocked()"
+              [disabled]="saving() || !canEditAvailableBuyers()"
             >
-              {{ saving() ? 'Saving...' : 'Save changes' }}
+              {{
+                saving()
+                  ? 'Saving...'
+                  : canEditAvailableBuyers() && detailsLocked()
+                    ? 'Save available buyers'
+                    : 'Save changes'
+              }}
             </button>
             @if (event.status === 'DRAFT') {
               <button
@@ -463,65 +539,57 @@
           }
         </section>
 
-        @if (event.tier === 'TIER2_SEATED') {
-          <section class="team" aria-labelledby="queue-heading">
-            <h2 id="queue-heading">Waiting room</h2>
-            @if (queueManagement(); as queue) {
-              <p class="note" role="status">
-                {{
-                  queue.status === 'OPEN'
-                    ? 'Open'
-                    : queue.status === 'CLOSED'
-                      ? 'Closed'
-                      : 'Drained'
-                }}
-                · {{ queue.waitingCount }} waiting · up to {{ queue.admissionBatchSize }} active
-                buyers
-              </p>
-            } @else {
-              <p class="note">Open the waiting room before customers can join.</p>
-            }
-            @if (queueActionMessage()) {
-              <p class="success" role="status">{{ queueActionMessage() }}</p>
-            }
-            @if (queueActionError()) {
-              <p class="error" role="alert">{{ queueActionError() }}</p>
-            }
-            <div class="form-actions">
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
-                [disabled]="queueActionBusy() || readOnly() || queueManagement()?.status === 'OPEN'"
-                (click)="openQueue()"
-              >
-                {{
-                  queueManagement()?.status === 'OPEN' ? 'Waiting room open' : 'Open waiting room'
-                }}
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-sm"
-                [disabled]="
-                  queueActionBusy() ||
-                  readOnly() ||
-                  queueManagement()?.status !== 'OPEN' ||
-                  !queueManagement()?.waitingCount
-                "
-                (click)="admitNext()"
-              >
-                @if (queueActionBusy()) {
-                  Working...
-                } @else if (queueManagement()?.status !== 'OPEN') {
-                  Open waiting room first
-                } @else if (!queueManagement()?.waitingCount) {
-                  No customers waiting
-                } @else {
-                  Admit next customer
-                }
-              </button>
-            </div>
-          </section>
-        }
+        <section class="team" aria-labelledby="queue-heading">
+          <h2 id="queue-heading">Waiting room</h2>
+          @if (queueManagement(); as queue) {
+            <p class="note" role="status">
+              {{
+                queue.status === 'OPEN' ? 'Open' : queue.status === 'CLOSED' ? 'Closed' : 'Drained'
+              }}
+              · {{ queue.waitingCount }} waiting · up to {{ queue.admissionBatchSize }} active
+              buyers
+            </p>
+          } @else {
+            <p class="note">Open the waiting room before customers can join.</p>
+          }
+          @if (queueActionMessage()) {
+            <p class="success" role="status">{{ queueActionMessage() }}</p>
+          }
+          @if (queueActionError()) {
+            <p class="error" role="alert">{{ queueActionError() }}</p>
+          }
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              [disabled]="queueActionBusy() || readOnly() || queueManagement()?.status === 'OPEN'"
+              (click)="openQueue()"
+            >
+              {{ queueManagement()?.status === 'OPEN' ? 'Waiting room open' : 'Open waiting room' }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              [disabled]="
+                queueActionBusy() ||
+                readOnly() ||
+                queueManagement()?.status !== 'OPEN' ||
+                !queueManagement()?.waitingCount
+              "
+              (click)="admitNext()"
+            >
+              @if (queueActionBusy()) {
+                Working...
+              } @else if (queueManagement()?.status !== 'OPEN') {
+                Open waiting room first
+              } @else if (!queueManagement()?.waitingCount) {
+                No customers waiting
+              } @else {
+                Admit next customer
+              }
+            </button>
+          </div>
+        </section>
       </section>
     }
   } @else {

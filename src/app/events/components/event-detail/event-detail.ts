@@ -103,10 +103,33 @@ interface ZoneOption {
   readonly priceCents: number;
   readonly color: string;
   readonly remaining: number;
+  // Grid position, mirroring SeatOption: lets a GA buyer see the same
+  // layout the organiser painted — just as a read-only block per zone
+  // instead of a clickable seat per cell. Absent on older/unconfigured
+  // events, in which case the zone map stays hidden.
+  readonly gridRow?: number;
+  readonly gridCol?: number;
+  readonly gridRowSpan?: number;
+  readonly gridColSpan?: number;
+}
+
+interface StagePieceDto {
+  readonly gridRow: number;
+  readonly gridCol: number;
+  readonly gridRowSpan: number;
+  readonly gridColSpan: number;
+}
+
+interface MapCellScale {
+  readonly cellRem: number;
+  readonly gapRem: number;
 }
 
 interface ZonesResponse {
+  readonly gridRows?: number;
+  readonly gridCols?: number;
   readonly zones: readonly ZoneOption[];
+  readonly stagePieces?: readonly StagePieceDto[];
 }
 
 interface ZoneSummary {
@@ -203,8 +226,20 @@ export class EventDetail {
   protected readonly error = signal('');
   protected readonly seats = signal<readonly SeatOption[]>([]);
   protected readonly displaySeats = computed(() => seatsWithFallbackLayout(this.seats()));
-  protected readonly gridRows = computed(() => occupiedGridAxis(this.displaySeats(), 'gridRow'));
-  protected readonly gridCols = computed(() => occupiedGridAxis(this.displaySeats(), 'gridCol'));
+  protected readonly gridRows = computed(() => {
+    const seatRows = occupiedGridAxis(this.displaySeats(), 'gridRow');
+    const stageRows = this.stagePieces().flatMap((p) =>
+      Array.from({ length: p.gridRowSpan }, (_, i) => p.gridRow + i),
+    );
+    return [...new Set([...seatRows, ...stageRows])].sort((a, b) => a - b);
+  });
+  protected readonly gridCols = computed(() => {
+    const seatCols = occupiedGridAxis(this.displaySeats(), 'gridCol');
+    const stageCols = this.stagePieces().flatMap((p) =>
+      Array.from({ length: p.gridColSpan }, (_, i) => p.gridCol + i),
+    );
+    return [...new Set([...seatCols, ...stageCols])].sort((a, b) => a - b);
+  });
   protected readonly seatsByKey = computed(() => {
     const map = new Map<string, SeatOption>();
     for (const seat of this.displaySeats()) map.set(seatKey(seat.gridRow, seat.gridCol), seat);
@@ -216,11 +251,27 @@ export class EventDetail {
   protected readonly selectedZoneId = signal<number | null>(null);
   /** A single-zone GA event needs no picker — the order service already
    * defaults to that zone. Only show a choice once there's actually a
-   * choice to make, cheapest-tier-first like an airline fare table. */
+   * choice to make, priciest-tier-first so the premium options stand out. */
   protected readonly sortedZoneOptions = computed(() =>
-    [...this.zoneOptions()].sort((a, b) => a.priceCents - b.priceCents),
+    [...this.zoneOptions()].sort((a, b) => b.priceCents - a.priceCents),
   );
   protected readonly hasZoneChoice = computed(() => this.zoneOptions().length > 1);
+  // Overall grid dimensions for the read-only GA zone map (0 when the API
+  // sends none, e.g. an older/unconfigured event) — the map stays hidden
+  // until both are known, same gating as the seated seat-map's `seats()`.
+  protected readonly zoneGridRows = signal(0);
+  protected readonly zoneGridCols = signal(0);
+  protected readonly stagePieces = signal<readonly StagePieceDto[]>([]);
+  protected readonly hasZoneMap = computed(
+    () => this.zoneGridRows() > 0 && this.zoneGridCols() > 0 && this.zoneOptions().length > 0,
+  );
+  /** A seat or zone map needs a wider purchase card so it isn't squeezed
+   * into horizontal scrolling — a plain quantity-only purchase stays compact. */
+  protected readonly showsSeatOrZoneMap = computed(() => {
+    const event = this.event();
+    if (!event) return false;
+    return event.tier === 'TIER2_SEATED' ? this.seats().length > 0 : this.hasZoneMap();
+  });
   protected readonly purchasing = signal(false);
   protected readonly purchaseError = signal('');
   protected readonly queueAccess = signal<QueueAccess>('checking');
@@ -249,8 +300,8 @@ export class EventDetail {
     if (seconds === null) return '';
     return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   });
-  protected readonly needsQueue = () =>
-    this.event()?.tier === 'TIER2_SEATED' && this.queueAccess() !== 'admitted';
+  /** Both general admission and reserved seating sell through the waiting room. */
+  protected readonly needsQueue = () => !!this.event() && this.queueAccess() !== 'admitted';
   /**
    * Organiser access is per-event, owned by the backend's event_team_memberships
    * table — not a global Cognito group. This reflects whether loading this
@@ -286,6 +337,16 @@ export class EventDetail {
   protected readonly detailsLocked = computed(() => {
     const event = this.event();
     return !!event && event.status !== 'DRAFT';
+  });
+  /** Published events may still tune waiting-room concurrency; cancelled or completed events may not. */
+  protected readonly canEditAvailableBuyers = computed(() => {
+    const event = this.event();
+    return (
+      this.organiserMode &&
+      !this.readOnly() &&
+      !!event &&
+      ['DRAFT', 'PUBLISHED'].includes(event.status)
+    );
   });
   protected readonly form = this.fb.group({
     title: this.fb.control('', Validators.required),
@@ -340,20 +401,28 @@ export class EventDetail {
 
   protected async save(): Promise<void> {
     const event = this.event();
-    if (!event || this.readOnly() || this.detailsLocked() || this.form.invalid || this.saving()) {
+    if (!event || !this.canEditAvailableBuyers() || this.form.invalid || this.saving()) {
       this.form.markAllAsTouched();
       return;
     }
     this.saving.set(true);
     this.error.set('');
     try {
-      await firstValueFrom(
-        this.api.put('event', `/events/${event.event_id}`, {
-          ...this.form.getRawValue(),
-          startsAt: fromDateTimeLocal(this.form.controls.startsAt.value),
-        }),
-      );
-      if (this.selectedImageBase64 && this.selectedImageMimeType) {
+      if (this.detailsLocked()) {
+        await firstValueFrom(
+          this.api.put('event', `/events/${event.event_id}/available-buyers`, {
+            availableBuyers: this.form.controls.availableBuyers.value,
+          }),
+        );
+      } else {
+        await firstValueFrom(
+          this.api.put('event', `/events/${event.event_id}`, {
+            ...this.form.getRawValue(),
+            startsAt: fromDateTimeLocal(this.form.controls.startsAt.value),
+          }),
+        );
+      }
+      if (!this.detailsLocked() && this.selectedImageBase64 && this.selectedImageMimeType) {
         await firstValueFrom(
           this.api.put('event', `/events/${event.event_id}/image`, {
             imageBase64: this.selectedImageBase64,
@@ -611,6 +680,18 @@ export class EventDetail {
     return this.isSeatSelected(seat) ? 'var(--brand-600)' : seat.color;
   }
 
+  /** CSS grid-row/grid-column shorthand for a GA zone's block, placing it
+   * at the organiser's painted position and span — same coordinate scheme
+   * as the seated seat-map, just one block per zone instead of one button
+   * per seat. */
+  protected zoneBlockRow(zone: ZoneOption): string {
+    return `${(zone.gridRow ?? 0) + 1} / span ${zone.gridRowSpan ?? 1}`;
+  }
+
+  protected zoneBlockColumn(zone: ZoneOption): string {
+    return `${(zone.gridCol ?? 0) + 1} / span ${zone.gridColSpan ?? 1}`;
+  }
+
   protected toggleSeat(seat: SeatOption): void {
     if (seat.status !== 'AVAILABLE') return;
     this.selectedSeatIds.update((ids) => {
@@ -623,6 +704,15 @@ export class EventDetail {
   protected selectZone(zone: ZoneOption): void {
     if (zone.remaining <= 0) return;
     this.selectedZoneId.set(zone.inventoryItemId);
+  }
+
+  /** Buying more goes straight into the waiting room, unless the customer is already admitted. */
+  protected buyMore(): void {
+    if (this.needsQueue()) {
+      this.goToQueue();
+      return;
+    }
+    this.buyingMore.set(true);
   }
 
   protected goToQueue(): void {
@@ -676,10 +766,7 @@ export class EventDetail {
           eventId: event.event_id,
           quantity: this.quantity(),
           seatIds: event.tier === 'TIER2_SEATED' ? this.selectedSeatIds() : undefined,
-          admissionToken:
-            event.tier === 'TIER2_SEATED'
-              ? this.queue.admissionTokenFor(event.event_id)
-              : undefined,
+          admissionToken: this.queue.admissionTokenFor(event.event_id),
           inventoryItemId:
             event.tier === 'TIER1_GA' ? (this.selectedZoneId() ?? undefined) : undefined,
           customerEmail: this.auth.user()?.email ?? '',
@@ -743,8 +830,11 @@ export class EventDetail {
         availableBuyers: result.event.available_buyers,
         tier: result.event.tier,
       });
-      if (this.readOnly() || this.detailsLocked()) {
+      if (!this.canEditAvailableBuyers()) {
         this.form.disable();
+      } else if (this.detailsLocked()) {
+        this.form.disable();
+        this.form.controls.availableBuyers.enable();
       } else {
         this.form.enable();
         // Seats come from the zones in Configure inventory, whatever the status.
@@ -761,9 +851,7 @@ export class EventDetail {
         await this.loadCheckinStats(eventId);
       }
       if (this.wantsSeatMap(result.event)) await this.loadSeats(eventId);
-      if (this.organiserMode && result.event.tier === 'TIER2_SEATED') {
-        await this.loadQueueManagement(eventId);
-      }
+      if (this.organiserMode) await this.loadQueueManagement(eventId);
       await this.loadCustomerPurchaseState(result.event);
     } catch (error) {
       this.event.set(null);
@@ -783,8 +871,8 @@ export class EventDetail {
   private async loadCustomerPurchaseState(event: EventDetailData): Promise<void> {
     if (!this.customerMode) return;
     if (this.auth.isAuthenticated()) await this.loadOwnership(event.event_id);
-    if (event.tier === 'TIER1_GA' && !this.completed()) await this.loadZones(event.event_id);
-    if (event.tier !== 'TIER2_SEATED' || this.completed()) return;
+    if (!this.completed()) await this.loadZones(event.event_id);
+    if (this.completed()) return;
     if (this.auth.isAuthenticated()) await this.loadQueueAccess(event.event_id);
     else this.queueAccess.set('not-joined');
   }
@@ -848,14 +936,108 @@ export class EventDetail {
         this.api.get<ZonesResponse>('inventory', `/events/${eventId}/zones`),
       );
       this.zoneOptions.set(result.zones);
+      this.zoneGridRows.set(result.gridRows ?? 0);
+      this.zoneGridCols.set(result.gridCols ?? 0);
+      this.stagePieces.set(result.stagePieces ?? []);
       const cheapestAvailable = [...result.zones]
         .sort((a, b) => a.priceCents - b.priceCents)
         .find((zone) => zone.remaining > 0);
       this.selectedZoneId.set(cheapestAvailable?.inventoryItemId ?? null);
     } catch {
       this.zoneOptions.set([]);
+      this.zoneGridRows.set(0);
+      this.zoneGridCols.set(0);
       this.selectedZoneId.set(null);
+      this.stagePieces.set([]);
     }
+  }
+
+  private static readonly CELL_REM = 1.75;
+  private static readonly GAP_REM = 0.375;
+  private static readonly ZONE_MAP_MAX_WIDTH_REM = 56;
+  private static readonly ZONE_MAP_MAX_HEIGHT_REM = 32;
+
+  /** Keep ordinary GA layouts at seat-map scale, while fitting very large
+   * logical grids into a useful customer-facing overview. */
+  protected readonly zoneMapScale = computed<MapCellScale>(() => {
+    const rows = this.zoneGridRows();
+    const cols = this.zoneGridCols();
+    if (rows <= 0 || cols <= 0) {
+      return { cellRem: EventDetail.CELL_REM, gapRem: EventDetail.GAP_REM };
+    }
+    const naturalWidth = cols * EventDetail.CELL_REM + Math.max(0, cols - 1) * EventDetail.GAP_REM;
+    const naturalHeight = rows * EventDetail.CELL_REM + Math.max(0, rows - 1) * EventDetail.GAP_REM;
+    const scale = Math.min(
+      1,
+      EventDetail.ZONE_MAP_MAX_WIDTH_REM / naturalWidth,
+      EventDetail.ZONE_MAP_MAX_HEIGHT_REM / naturalHeight,
+    );
+    return {
+      cellRem: EventDetail.CELL_REM * scale,
+      gapRem: EventDetail.GAP_REM * scale,
+    };
+  });
+
+  protected readonly seatMapStageData = computed(() =>
+    this.computeStageMapData(
+      this.stagePieces(),
+      (r) => this.gridRows().indexOf(r),
+      (c) => this.gridCols().indexOf(c),
+    ),
+  );
+
+  protected readonly zoneMapStageData = computed(() => {
+    const scale = this.zoneMapScale();
+    return this.computeStageMapData(
+      this.stagePieces(),
+      (r) => r,
+      (c) => c,
+      scale.cellRem,
+      scale.gapRem,
+    );
+  });
+
+  private computeStageMapData(
+    pieces: readonly StagePieceDto[],
+    visualRowOf: (r: number) => number,
+    visualColOf: (c: number) => number,
+    cellRem = EventDetail.CELL_REM,
+    gapRem = EventDetail.GAP_REM,
+  ): {
+    cells: readonly { x: string; y: string; w: string; h: string }[];
+    labelX: string;
+    labelY: string;
+  } | null {
+    if (pieces.length === 0) return null;
+    const STEP = cellRem + gapRem;
+    const occupied = new Set<string>();
+    for (const p of pieces) {
+      const vr0 = visualRowOf(p.gridRow);
+      const vc0 = visualColOf(p.gridCol);
+      for (let dr = 0; dr < p.gridRowSpan; dr++) {
+        for (let dc = 0; dc < p.gridColSpan; dc++) {
+          if (vr0 + dr >= 0 && vc0 + dc >= 0) occupied.add(`${vr0 + dr},${vc0 + dc}`);
+        }
+      }
+    }
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    const cells: { x: string; y: string; w: string; h: string }[] = [];
+    for (const key of occupied) {
+      const [r, c] = key.split(',').map(Number);
+      const x = c * STEP;
+      const y = r * STEP;
+      const w = cellRem + (occupied.has(`${r},${c + 1}`) ? gapRem : 0);
+      const h = cellRem + (occupied.has(`${r + 1},${c}`) ? gapRem : 0);
+      cells.push({ x: `${x}rem`, y: `${y}rem`, w: `${w}rem`, h: `${h}rem` });
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x + w);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y + h);
+    }
+    return { cells, labelX: `${(minX + maxX) / 2}rem`, labelY: `${(minY + maxY) / 2}rem` };
   }
 
   private async loadSeats(eventId: number): Promise<void> {

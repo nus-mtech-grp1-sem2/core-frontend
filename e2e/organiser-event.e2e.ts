@@ -75,6 +75,11 @@ function stubEvent(
       },
     })
     .on('GET', `ticket/events/${EVENT_ID}/checkin-stats`, { json: { checkedIn: 1, issued: 2 } })
+    // No waiting room set up yet: every event sells through one once the organiser opens it.
+    .on('GET', `queue/events/${EVENT_ID}/queue`, {
+      status: 404,
+      json: { error: 'queue_not_configured' },
+    })
     .on('GET', `event/events/${EVENT_ID}/cancellation-impact`, {
       json: { eventId: EVENT_ID, customers: 0, ticketsSold: 0, requiresConfirmation: false },
     })

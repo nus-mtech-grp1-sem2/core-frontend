@@ -9,7 +9,7 @@
   /><span class="pill category">{{ tierLabel() }}</span></a
 >
 <div class="body">
-  <p class="when">{{ event().starts_at | date: 'EEE d MMM y, h:mm a' }}</p>
+  <p class="when">{{ event().starts_at | date: 'EEE d MMM y, h:mm a' : '+0800' }}</p>
   <h3>
     <a [routerLink]="detailLink()">{{ event().title }}</a>
   </h3>

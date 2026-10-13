@@ -1,8 +1,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
+import { vi } from 'vitest';
 
 import { AuthService } from '../core/auth';
 import { AuthenticatedUser, CognitoGateway } from '../core/cognito-gateway';
@@ -121,8 +122,44 @@ describe('Events', () => {
     httpMock.verify();
   });
 
+  it('goes straight to Configure inventory after creating a new event', async () => {
+    const { fixture, httpMock, host } = await renderFor(user(['organiser']));
+
+    httpMock.expectOne('/api/event/events/manage').flush({ events: [] });
+    httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    const toggle = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'New event',
+    )!;
+    toggle.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    host.querySelector<HTMLInputElement>('#event-title')!.value = 'Neon Skyline Tour';
+    host.querySelector<HTMLInputElement>('#event-title')!.dispatchEvent(new Event('input'));
+    host.querySelector<HTMLInputElement>('#event-venue')!.value = 'Marina Bay Arena';
+    host.querySelector<HTMLInputElement>('#event-venue')!.dispatchEvent(new Event('input'));
+    host.querySelector<HTMLInputElement>('#event-start')!.value = '2099-09-12T20:00';
+    host.querySelector<HTMLInputElement>('#event-start')!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    const navigateSpy = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    host.querySelector<HTMLFormElement>('.new-event-form')!.dispatchEvent(new Event('submit'));
+    const create = httpMock.expectOne('/api/event/events');
+    expect(create.request.method).toBe('POST');
+    create.flush({ eventId: 99 });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/organiser/events', 99, 'inventory']);
+  });
+
   it('creates an event with the local start time that was picked sent as UTC', async () => {
     const { fixture, httpMock, host } = await renderFor(user(['organiser']));
+
     httpMock.expectOne('/api/event/events/manage').flush({ events: [] });
     httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
     await new Promise<void>((resolve) => setTimeout(resolve));
@@ -142,12 +179,14 @@ describe('Events', () => {
       input.value = value;
       input.dispatchEvent(new Event('input'));
     }
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     host.querySelector<HTMLFormElement>('.new-event-form')!.dispatchEvent(new Event('submit'));
     await new Promise<void>((resolve) => setTimeout(resolve));
 
     const create = httpMock.expectOne({ method: 'POST', url: '/api/event/events' });
     expect(create.request.body.startsAt).toBe(new Date(2099, 9, 12, 23, 13).toISOString());
     create.flush({ eventId: 9 });
+    await fixture.whenStable();
   });
 
   it('hides completed events from an organiser until asked, and offers no actions on them', async () => {

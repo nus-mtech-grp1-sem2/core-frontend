@@ -99,17 +99,42 @@ function dragRectangle(
   window.dispatchEvent(new MouseEvent('mouseup'));
 }
 
-/** Simulates a plain click with zero mouse movement: mousedown then mouseup
- * on window, with no `mouseenter` in between at all — a real single click
- * never re-fires `mouseenter` on the cell the pointer is already sitting on,
- * unlike `dragRectangle`'s same-cell case which explicitly dispatches one. */
-function clickCellNoDrag(host: HTMLElement, row: number, col: number): void {
-  const button = host.querySelector<HTMLButtonElement>(
-    `[data-grid-row="${row}"][data-grid-col="${col}"]`,
-  );
-  if (!button) throw new Error(`no grid cell at (${row},${col})`);
-  button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-  window.dispatchEvent(new MouseEvent('mouseup'));
+/** General admission is edited directly on the overview instead of the seat
+ * grid, so give jsdom a real-sized map and dispatch the same pointer gesture. */
+function dragGaOverview(
+  host: HTMLElement,
+  from: readonly [row: number, col: number],
+  to: readonly [row: number, col: number],
+  gridRows = 6,
+  gridCols = 8,
+): void {
+  const map = host.querySelector<HTMLElement>('.overview-map');
+  if (!map) throw new Error('no GA overview map');
+  const cellSize = Math.min(48, 560 / Math.max(gridRows, gridCols));
+  const width = gridCols * cellSize;
+  const height = gridRows * cellSize;
+  map.getBoundingClientRect = () =>
+    ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: width,
+      bottom: height,
+      width,
+      height,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  const eventAt = (type: string, [row, col]: readonly [number, number]) =>
+    new MouseEvent(type, {
+      bubbles: true,
+      button: 0,
+      clientX: (col + 0.5) * cellSize,
+      clientY: (row + 0.5) * cellSize,
+    });
+  map.dispatchEvent(eventAt('pointerdown', from));
+  if (from[0] !== to[0] || from[1] !== to[1]) map.dispatchEvent(eventAt('pointermove', to));
+  map.dispatchEvent(eventAt('pointerup', to));
 }
 
 function setInputValue(host: HTMLElement, selector: string, value: string): void {
@@ -120,6 +145,94 @@ function setInputValue(host: HTMLElement, selector: string, value: string): void
 }
 
 describe('EventInventory', () => {
+  it('uses square overview corners for GA only', async () => {
+    const ga = await renderFor(GA_EVENT);
+    expect(ga.host.querySelector('.overview-map')?.classList.contains('ga-overview')).toBe(true);
+    ga.fixture.destroy();
+
+    const seated = await renderFor(SEATED_EVENT);
+    expect(seated.host.querySelector('.overview-map')?.classList.contains('ga-overview')).toBe(
+      false,
+    );
+  });
+
+  it('lets GA organisers select the entire map without dragging', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT);
+    const selectEntireMap = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Select entire map',
+    );
+
+    expect(selectEntireMap).toBeDefined();
+    selectEntireMap?.click();
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.zone-card')).toHaveLength(1);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Row span for zone 1"]')?.value).toBe(
+      '6',
+    );
+    expect(
+      host.querySelector<HTMLInputElement>('[aria-label="Column span for zone 1"]')?.value,
+    ).toBe('8');
+  });
+
+  it('removes all removable GA sections at once', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT);
+    const buttonNamed = (name: string) =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === name,
+      );
+
+    buttonNamed('Select entire map')?.click();
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.zone-card')).toHaveLength(1);
+
+    buttonNamed('Remove all')?.click();
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.zone-card')).toHaveLength(0);
+  });
+
+  it('allows a fast full-map GA drag to start and finish outside the map', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT);
+    const map = host.querySelector<HTMLElement>('.overview-map');
+    const hitArea = host.querySelector<HTMLElement>('.overview-hit-area');
+    if (!map || !hitArea) throw new Error('no GA overview map');
+    const width = 384;
+    const height = 288;
+    map.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: width,
+        bottom: height,
+        width,
+        height,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    hitArea.dispatchEvent(
+      new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: -12, clientY: -12 }),
+    );
+    hitArea.dispatchEvent(
+      new MouseEvent('pointerup', {
+        bubbles: true,
+        button: 0,
+        clientX: width + 12,
+        clientY: height + 12,
+      }),
+    );
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.zone-card')).toHaveLength(1);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Row span for zone 1"]')?.value).toBe(
+      '6',
+    );
+    expect(
+      host.querySelector<HTMLInputElement>('[aria-label="Column span for zone 1"]')?.value,
+    ).toBe('8');
+  });
+
   it('labels every cell of a freshly drawn zone with its seat coordinate, even before saving', async () => {
     const { fixture, host } = await renderFor(SEATED_EVENT);
 
@@ -178,7 +291,7 @@ describe('EventInventory', () => {
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
 
     setInputValue(host, '.zone-name-input', 'Front Stalls');
-    setInputValue(host, '.zone-price input', '75');
+    setInputValue(host, '.zone-price-input', '75');
     fixture.detectChanges();
 
     const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
@@ -204,10 +317,28 @@ describe('EventInventory', () => {
 
     putReq.flush(null, { status: 204, statusText: 'No Content' });
     await settle(fixture);
+    httpMock
+      .expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/stage`)
+      .flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
 
     // A successful save navigates away (see the dedicated navigation test
     // below) rather than reloading this same page's data.
     httpMock.verify();
+  });
+
+  it('limits reserved seating to 400 seats across all zones', async () => {
+    const { fixture, host } = await renderFor(SEATED_EVENT, {
+      gridRows: 20,
+      gridCols: 20,
+      zones: [],
+      seats: [],
+    });
+
+    dragRectangle(host, 0, 0, 19, 19);
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.zone-card').length).toBe(1);
+    expect(host.querySelector('.seat-toolbar')?.textContent).toContain('Reserved seats: 400 / 400');
   });
 
   it('navigates back to the organiser events list after a successful save, instead of staying on the page', async () => {
@@ -217,7 +348,7 @@ describe('EventInventory', () => {
     dragRectangle(host, 0, 0, 1, 2);
     fixture.detectChanges();
     setInputValue(host, '.zone-name-input', 'Front Stalls');
-    setInputValue(host, '.zone-price input', '75');
+    setInputValue(host, '.zone-price-input', '75');
     fixture.detectChanges();
 
     const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
@@ -229,6 +360,10 @@ describe('EventInventory', () => {
     const putReq = httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`);
     putReq.flush(null, { status: 204, statusText: 'No Content' });
     await settle(fixture);
+    httpMock
+      .expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/stage`)
+      .flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
 
     // No reload of this same page's data — the organiser is taken straight
     // back to their events list instead.
@@ -239,10 +374,10 @@ describe('EventInventory', () => {
   it('shows an actionable message when shrinking capacity below the available buyers count', async () => {
     const { fixture, httpMock, host } = await renderFor(GA_EVENT);
 
-    dragRectangle(host, 0, 0, 0, 4); // 1 row x 5 cols
+    dragGaOverview(host, [0, 0], [0, 4]); // 1 row x 5 cols
     fixture.detectChanges();
     setInputValue(host, '.zone-name-input', 'General Admission');
-    setInputValue(host, '.zone-price input', '25');
+    setInputValue(host, '.zone-price-input', '25');
     fixture.detectChanges();
 
     const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
@@ -272,14 +407,15 @@ describe('EventInventory', () => {
     );
     expect(toggle).toBeUndefined();
 
-    dragRectangle(host, 0, 0, 1, 2); // 2 rows x 3 cols = capacity 6
+    dragGaOverview(host, [0, 0], [1, 2]); // 2 rows x 3 cols = default quantity 6
     fixture.detectChanges();
 
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
-    expect(host.querySelector('.zone-seat-total')?.textContent?.trim()).toBe('6 capacity');
+    // GA zones show a quantity input (defaulting to the rectangle area) instead of a static label.
+    expect(host.querySelector<HTMLInputElement>('.zone-quantity-input')?.value).toBe('6');
 
     setInputValue(host, '.zone-name-input', 'General Admission');
-    setInputValue(host, '.zone-price input', '25');
+    setInputValue(host, '.zone-price-input', '25');
     fixture.detectChanges();
 
     const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
@@ -289,7 +425,7 @@ describe('EventInventory', () => {
     fixture.detectChanges();
 
     const putReq = httpMock.expectOne(`/api/inventory/events/${GA_EVENT.event_id}/inventory`);
-    const body = putReq.request.body as { zones: unknown[]; seats?: unknown };
+    const body = putReq.request.body as { zones: { quantity: number }[]; seats?: unknown };
     expect(body.zones[0]).toEqual(
       expect.objectContaining({
         name: 'General Admission',
@@ -297,14 +433,117 @@ describe('EventInventory', () => {
         gridCol: 0,
         gridRowSpan: 2,
         gridColSpan: 3,
+        quantity: 6,
       }),
     );
     expect(body.seats).toBeUndefined();
 
     putReq.flush(null, { status: 204, statusText: 'No Content' });
     await settle(fixture);
+    httpMock
+      .expectOne(`/api/inventory/events/${GA_EVENT.event_id}/stage`)
+      .flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
 
     httpMock.verify();
+  });
+
+  it('splits a large GA overview drag into independently editable sections', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT, {
+      gridRows: 65,
+      gridCols: 65,
+      zones: [],
+      seats: [],
+    });
+
+    dragGaOverview(host, [0, 0], [64, 64], 65, 65);
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.zone-card').length).toBe(9);
+    expect(
+      Array.from(
+        host.querySelectorAll<HTMLInputElement>('.zone-name-input'),
+        (input) => input.value,
+      ),
+    ).toEqual([
+      'Section A1',
+      'Section A2',
+      'Section A3',
+      'Section B1',
+      'Section B2',
+      'Section B3',
+      'Section C1',
+      'Section C2',
+      'Section C3',
+    ]);
+    expect(
+      Array.from(
+        host.querySelectorAll<HTMLInputElement>('.zone-row-span-input'),
+        (input) => input.value,
+      ),
+    ).toEqual(['30', '30', '30', '30', '30', '30', '5', '5', '5']);
+    expect(
+      Array.from(
+        host.querySelectorAll<HTMLInputElement>('.zone-col-span-input'),
+        (input) => input.value,
+      ),
+    ).toEqual(['30', '30', '5', '30', '30', '5', '30', '30', '5']);
+
+    setInputValue(host, '[aria-label="Row span for zone 1"]', '20');
+    fixture.detectChanges();
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Row span for zone 1"]')?.value).toBe(
+      '20',
+    );
+  });
+
+  it('uses larger balanced sections when a high-capacity GA area would exceed the section limit', async () => {
+    const { fixture, host } = await renderFor(GA_EVENT, {
+      gridRows: 1000,
+      gridCols: 1000,
+      zones: [],
+      seats: [],
+    });
+
+    dragGaOverview(host, [0, 0], [999, 999], 1000, 1000);
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.zone-card').length).toBe(49);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Row span for zone 1"]')?.value).toBe(
+      '142',
+    );
+    expect(
+      host.querySelector<HTMLInputElement>('[aria-label="Column span for zone 49"]')?.value,
+    ).toBe('143');
+    const names = host.querySelectorAll<HTMLInputElement>('.zone-name-input');
+    expect(names[0]?.value).toBe('Section A1');
+    expect(names[48]?.value).toBe('Section G7');
+  });
+
+  it('GA zone shows a quantity input; the explicit value (not the area) is sent in the PUT body', async () => {
+    const { fixture, httpMock, host } = await renderFor(GA_EVENT);
+
+    dragGaOverview(host, [0, 0], [1, 2]); // 2 rows x 3 cols; area = 6
+    fixture.detectChanges();
+
+    const qtyInput = host.querySelector<HTMLInputElement>('.zone-quantity-input');
+    expect(qtyInput).not.toBeNull();
+
+    // Override the quantity to something that doesn't match the area.
+    setInputValue(host, '.zone-name-input', 'General Admission');
+    setInputValue(host, '.zone-price-input', '25');
+    setInputValue(host, '.zone-quantity-input', '500');
+    fixture.detectChanges();
+
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.trim().startsWith('Save'),
+    );
+    saveButton?.click();
+    fixture.detectChanges();
+
+    const putReq = httpMock.expectOne(`/api/inventory/events/${GA_EVENT.event_id}/inventory`);
+    const body = putReq.request.body as { zones: { quantity: number }[] };
+    expect(body.zones[0].quantity).toBe(500);
+    putReq.flush(null, { status: 204, statusText: 'No Content' });
   });
 
   it('adds a zone at the first empty cell via a button, with no drag gesture needed', async () => {
@@ -721,7 +960,7 @@ describe('EventInventory', () => {
   it('typing a column count directly resizes the grid to that many columns', async () => {
     const { fixture, host } = await renderFor(SEATED_EVENT); // default 6 rows x 8 cols
 
-    setInputValue(host, '.grid-col-count-input', '12');
+    setInputValue(host, '[aria-label="Number of columns"]', '12');
     fixture.detectChanges();
 
     expect(host.querySelectorAll('[data-grid-row="0"]').length).toBe(12);
@@ -749,7 +988,7 @@ describe('EventInventory', () => {
       seats: [],
     });
 
-    setInputValue(host, '.grid-col-count-input', '3');
+    setInputValue(host, '[aria-label="Number of columns"]', '3');
     fixture.detectChanges();
 
     expect(host.querySelectorAll('[data-grid-row="0"]').length).toBe(8);
@@ -798,7 +1037,7 @@ describe('EventInventory', () => {
   it('a plain click with no drag on an empty cell does not create a stray zone', async () => {
     const { fixture, host } = await renderFor(GA_EVENT);
 
-    clickCellNoDrag(host, 0, 0);
+    dragGaOverview(host, [0, 0], [0, 0]);
     fixture.detectChanges();
 
     // No zone should appear from a click alone — only an actual drag draws one.
@@ -809,7 +1048,7 @@ describe('EventInventory', () => {
     const { fixture, host } = await renderFor(PUBLISHED_EVENT);
 
     expect(host.querySelector('.lock-note')?.textContent).toContain('on sale');
-    dragRectangle(host, 0, 0, 1, 2);
+    dragGaOverview(host, [0, 0], [1, 2]);
     fixture.detectChanges();
     expect(host.querySelectorAll('.zone-card').length).toBe(1);
   });
@@ -820,7 +1059,7 @@ describe('EventInventory', () => {
     expect(host.querySelector('.lock-note')?.textContent).toContain('already started');
 
     // Dragging over the empty grid must not create a zone once locked.
-    dragRectangle(host, 0, 0, 1, 2);
+    dragGaOverview(host, [0, 0], [1, 2]);
     fixture.detectChanges();
     expect(host.querySelectorAll('.zone-card').length).toBe(0);
 
@@ -835,6 +1074,31 @@ describe('EventInventory', () => {
     // No PUT is ever issued for a locked event.
     httpMock.expectNone(`/api/inventory/events/${STARTED_EVENT.event_id}/inventory`);
     httpMock.verify();
+  });
+
+  it('clamps reserved-seating rows and columns at 20', async () => {
+    const { fixture, host } = await renderFor(SEATED_EVENT); // default 6 rows x 8 cols
+
+    setInputValue(host, '[aria-label="Number of rows"]', '21');
+    fixture.detectChanges();
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Number of rows"]')?.value).toBe('20');
+    setInputValue(host, '[aria-label="Number of rows"]', '200');
+    fixture.detectChanges();
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Number of rows"]')?.value).toBe('20');
+
+    setInputValue(host, '[aria-label="Number of columns"]', '100');
+    fixture.detectChanges();
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Number of columns"]')?.value).toBe(
+      '20',
+    );
+    setInputValue(host, '[aria-label="Number of columns"]', '999');
+    fixture.detectChanges();
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Number of columns"]')?.value).toBe(
+      '20',
+    );
+    expect(host.querySelectorAll('[data-grid-row="0"]').length).toBe(20);
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Add row"]')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Add column"]')?.disabled).toBe(true);
   });
 
   it('no longer offers a "Tag seats" mode for a seated event — deferred to a later cycle', async () => {
@@ -879,5 +1143,98 @@ describe('EventInventory', () => {
     fixture.detectChanges();
 
     httpMock.expectNone(`/api/inventory/events/${SEATED_EVENT.event_id}/seats/${seat.seatId}`);
+  });
+
+  it('shows "Draw zone" and "Draw stage" tool buttons on the canvas toolbar', async () => {
+    const { host } = await renderFor(SEATED_EVENT);
+
+    const drawZoneBtn = host.querySelector<HTMLButtonElement>('[data-tool="draw-zone"]');
+    const drawStageBtn = host.querySelector<HTMLButtonElement>('[data-tool="draw-stage"]');
+    expect(drawZoneBtn).not.toBeNull();
+    expect(drawStageBtn).not.toBeNull();
+  });
+
+  it('dragging in "draw stage" mode creates a stage piece, not a zone card', async () => {
+    const { fixture, host } = await renderFor(SEATED_EVENT);
+
+    // Switch to stage mode.
+    host.querySelector<HTMLButtonElement>('[data-tool="draw-stage"]')?.click();
+    fixture.detectChanges();
+
+    dragRectangle(host, 0, 0, 0, 2); // 1 row x 3 cols
+    fixture.detectChanges();
+
+    // No zone card should appear.
+    expect(host.querySelectorAll('.zone-card').length).toBe(0);
+    // A stage piece cell is rendered with a distinct class.
+    expect(host.querySelector('.stage-piece-cell')).not.toBeNull();
+  });
+
+  it('save sends a separate PUT /stage request with the drawn stage pieces', async () => {
+    const { fixture, httpMock, host } = await renderFor(SEATED_EVENT);
+
+    // Draw a zone first.
+    dragRectangle(host, 1, 0, 1, 2);
+    fixture.detectChanges();
+    setInputValue(host, '.zone-name-input', 'Stalls');
+    setInputValue(host, '.zone-price-input', '50');
+    fixture.detectChanges();
+
+    // Switch to stage mode and draw a stage piece.
+    host.querySelector<HTMLButtonElement>('[data-tool="draw-stage"]')?.click();
+    fixture.detectChanges();
+    dragRectangle(host, 0, 0, 0, 2);
+    fixture.detectChanges();
+
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.trim().startsWith('Save'),
+    );
+    saveButton?.click();
+    fixture.detectChanges();
+
+    // Expect both the inventory PUT and the stage PUT.
+    httpMock
+      .expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`)
+      .flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+    const stageReq = httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/stage`);
+    expect(stageReq.request.method).toBe('PUT');
+    const body = stageReq.request.body as { pieces: { gridRow: number; gridRowSpan: number }[] };
+    expect(body.pieces.length).toBe(1);
+    expect(body.pieces[0].gridRow).toBe(0);
+    expect(body.pieces[0].gridRowSpan).toBe(1);
+    stageReq.flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+  });
+
+  it('existing stage pieces loaded from the API are shown on the canvas and re-sent on save', async () => {
+    const inventory = {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [],
+      seats: [],
+      stagePieces: [{ gridRow: 0, gridCol: 0, gridRowSpan: 1, gridColSpan: 3 }],
+    };
+    const { fixture, httpMock, host } = await renderFor(SEATED_EVENT, inventory);
+
+    // Stage piece cells should be visible on the canvas.
+    expect(host.querySelector('.stage-piece-cell')).not.toBeNull();
+
+    // Trigger save — stage pieces should be re-sent unchanged.
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.trim().startsWith('Save'),
+    );
+    saveButton?.click();
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`)
+      .flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+    const stageReq = httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/stage`);
+    const body = stageReq.request.body as { pieces: { gridRow: number }[] };
+    expect(body.pieces.length).toBe(1);
+    expect(body.pieces[0].gridRow).toBe(0);
+    stageReq.flush(null, { status: 204, statusText: 'No Content' });
   });
 });

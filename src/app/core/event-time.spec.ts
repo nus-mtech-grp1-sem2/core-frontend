@@ -1,4 +1,11 @@
-import { fromDateTimeLocal, isCompleted, toDateTimeLocal } from './event-time';
+import {
+  formatEventDate,
+  formatEventTime,
+  fromDateTimeLocal,
+  isCompleted,
+  toDateTimeLocal,
+  toSingaporeInputValue,
+} from './event-time';
 
 describe('isCompleted', () => {
   const now = Date.parse('2026-09-20T12:00:00Z');
@@ -16,6 +23,32 @@ describe('isCompleted', () => {
   it('is false when the date cannot be parsed', () => {
     expect(isCompleted('', now)).toBe(false);
     expect(isCompleted('not a date', now)).toBe(false);
+  });
+});
+
+// 8pm Singapore time on 6 Oct 2026, expressed as its correct UTC instant.
+const EIGHT_PM_SGT = '2026-10-06T12:00:00.000Z';
+
+describe('formatEventDate', () => {
+  it("always shows the Singapore calendar date, regardless of the viewer's own timezone", () => {
+    expect(formatEventDate(EIGHT_PM_SGT)).toBe('6 Oct 2026');
+  });
+});
+
+describe('formatEventTime', () => {
+  it("always shows the Singapore wall-clock time, regardless of the viewer's own timezone", () => {
+    expect(formatEventTime(EIGHT_PM_SGT)).toBe('8:00 pm');
+  });
+});
+
+describe('toSingaporeInputValue', () => {
+  it('renders a <input type="datetime-local"> value in Singapore wall-clock time, regardless of the viewer\'s own timezone', () => {
+    expect(toSingaporeInputValue(EIGHT_PM_SGT)).toBe('2026-10-06T20:00');
+  });
+
+  it('pads single-digit months, days, hours and minutes', () => {
+    // 12:05am Singapore time on 2 Jan 2026.
+    expect(toSingaporeInputValue('2026-01-01T16:05:00.000Z')).toBe('2026-01-02T00:05');
   });
 });
 

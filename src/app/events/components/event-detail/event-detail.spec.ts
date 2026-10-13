@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
@@ -16,6 +16,20 @@ import {
   purchaseErrorMessage,
   seatsWithFallbackLayout,
 } from './event-detail';
+
+/** Both tiers sell through the waiting room; this customer has already been admitted. */
+const admittedQueue = () => ({
+  provide: QueueService,
+  useValue: {
+    status: vi.fn().mockResolvedValue({
+      status: 'ADMITTED',
+      admissionToken: 'test-admission',
+      tokenExpiresAt: '2099-01-01T20:00:00Z',
+    }),
+    admissionTokenFor: () => 'test-admission',
+    clear: vi.fn(),
+  },
+});
 
 describe('EventDetail checkout navigation', () => {
   it.each(['TIER1_GA', 'TIER2_SEATED'] as const)(
@@ -137,7 +151,7 @@ describe('EventDetail checkout navigation', () => {
         eventId: 172,
         quantity: 1,
         seatIds: tier === 'TIER2_SEATED' ? [8] : undefined,
-        admissionToken: tier === 'TIER2_SEATED' ? 'test-admission' : undefined,
+        admissionToken: 'test-admission',
         inventoryItemId: tier === 'TIER1_GA' ? 5 : undefined,
         customerEmail: 'test@example.com',
         customerName: 'Test',
@@ -262,6 +276,15 @@ describe('EventDetail seat map sizing', () => {
     // The grid must sit inside a container that can scroll instead of
     // visually spilling out of the purchase panel's rounded border.
     expect(seatGrid?.closest('.seat-map')).not.toBeNull();
+    // A seat map needs room to lay out without scrolling inside its own card.
+    expect(host.querySelector('.purchase')?.classList.contains('purchase--wide')).toBe(true);
+    // The buyer has no other way to tell which way the venue faces, so the
+    // map always shows a stage marker above the seats, not below.
+    const seatMap = seatGrid?.closest('.seat-map');
+    const stage = seatMap?.querySelector('.stage-indicator');
+    expect(stage?.textContent?.trim()).toBe('Stage');
+    const position = stage!.compareDocumentPosition(seatGrid!);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -312,10 +335,7 @@ describe('EventDetail inventory summary', () => {
             user: signal({ sub: 'owner', email: 'owner@example.com', name: 'Owner', groups: [] }),
           },
         },
-        {
-          provide: QueueService,
-          useValue: { status: vi.fn(), admissionTokenFor: () => null, clear: vi.fn() },
-        },
+        admittedQueue(),
       ],
     }).compileComponents();
     const fixture = TestBed.createComponent(EventDetail);
@@ -409,6 +429,7 @@ describe('EventDetail event-team purchases', () => {
       imports: [EventDetail],
       providers: [
         provideRouter([]),
+        admittedQueue(),
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { data: { workspace: 'customer' } } },
@@ -776,8 +797,11 @@ describe('EventDetail completed events for an organiser', () => {
     );
   });
 
-  it("locks the event's own details once published, but leaves team management and lifecycle actions available", async () => {
-    const { host, button, put } = await renderOrganiser('2099-01-01 20:00:00', 'PUBLISHED');
+  it('keeps only available buyers editable after publishing', async () => {
+    const { fixture, host, button, put } = await renderOrganiser(
+      '2099-01-01 20:00:00',
+      'PUBLISHED',
+    );
 
     // Still on sale and upcoming — not the "completed" lock.
     expect(host.textContent).not.toContain('This event has completed');
@@ -786,9 +810,9 @@ describe('EventDetail completed events for an organiser', () => {
 
     expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(true);
     expect(host.querySelector<HTMLInputElement>('#venue')?.disabled).toBe(true);
-    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.disabled).toBe(false);
     expect(host.querySelector<HTMLInputElement>('#seats')?.disabled).toBe(true);
-    expect(button('Save changes')?.disabled).toBe(true);
+    expect(button('Save available buyers')?.disabled).toBe(false);
 
     // Team management and the event's own lifecycle actions are unaffected —
     // only its own details (title/venue/etc.) and inventory are locked.
@@ -797,8 +821,15 @@ describe('EventDetail completed events for an organiser', () => {
     expect(button('Invite')?.disabled).toBe(false);
     expect(button('Remove')?.disabled).toBe(false);
 
-    button('Save changes')?.click();
-    expect(put).not.toHaveBeenCalled();
+    const availableBuyers = host.querySelector<HTMLInputElement>('#available-buyers')!;
+    availableBuyers.value = '4';
+    availableBuyers.dispatchEvent(new Event('input'));
+    button('Save available buyers')?.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    expect(put).toHaveBeenCalledWith('event', '/events/172/available-buyers', {
+      availableBuyers: 4,
+    });
   });
 
   it('shows total seats read-only even on a draft, since the zones in Configure inventory set it', async () => {
@@ -817,6 +848,7 @@ describe('EventDetail completed events for a customer', () => {
     startsAt: string;
     tier?: 'TIER1_GA' | 'TIER2_SEATED';
     ownedTickets?: number;
+    admitted?: boolean;
   }) {
     const requested: string[] = [];
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
@@ -850,6 +882,15 @@ describe('EventDetail completed events for a customer', () => {
         });
       }
       if (path === '/events/172/seats') return of({ seats: [] });
+      if (path === '/events/172/queue/me') {
+        return options.admitted
+          ? of({
+              status: 'ADMITTED',
+              admissionToken: 'test-admission',
+              tokenExpiresAt: '2099-01-01T20:00:00Z',
+            })
+          : throwError(() => new HttpErrorResponse({ status: 404 }));
+      }
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
     const post = vi.fn(() => of({}));
@@ -936,12 +977,52 @@ describe('EventDetail completed events for a customer', () => {
     expect(hasControl('View my tickets')).toBe(false);
   });
 
-  it('still lets customers buy while the event is upcoming', async () => {
-    const { host, hasControl } = await renderCustomer({ startsAt: '2099-01-01 20:00:00' });
+  it('sends a general-admission customer through the waiting room before they can buy', async () => {
+    const { hasControl } = await renderCustomer({ startsAt: '2099-01-01 20:00:00' });
+
+    expect(hasControl('Join waiting room')).toBe(true);
+    expect(hasControl('Buy tickets')).toBe(false);
+  });
+
+  it('still lets customers buy while the event is upcoming, once admitted', async () => {
+    const { host, hasControl } = await renderCustomer({
+      startsAt: '2099-01-01 20:00:00',
+      admitted: true,
+    });
 
     expect(hasControl('Buy tickets')).toBe(true);
     expect(host.textContent).not.toContain('This event has already taken place');
     expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('On sale');
+  });
+
+  it('sends a ticket holder who wants more straight into the waiting room', async () => {
+    const { host } = await renderCustomer({ startsAt: '2099-01-01 20:00:00', ownedTickets: 2 });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    const buyMore = Array.from(host.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Buy more tickets',
+    );
+    buyMore!.click();
+
+    expect(navigate).toHaveBeenCalledWith(['/events', '172', 'queue']);
+  });
+
+  it('lets an already-admitted ticket holder buy more without queueing again', async () => {
+    const { host, hasControl } = await renderCustomer({
+      startsAt: '2099-01-01 20:00:00',
+      ownedTickets: 2,
+      admitted: true,
+    });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    Array.from(host.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Buy more tickets')
+      ?.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(hasControl('Buy tickets')).toBe(true);
   });
 
   it('explains the server refusing an order for a completed event', () => {
@@ -959,7 +1040,12 @@ describe('EventDetail GA ticket tiers', () => {
       priceCents: number;
       color: string;
       remaining: number;
+      gridRow?: number;
+      gridCol?: number;
+      gridRowSpan?: number;
+      gridColSpan?: number;
     }[],
+    gridDims?: { gridRows: number; gridCols: number },
   ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172')
@@ -981,7 +1067,7 @@ describe('EventDetail GA ticket tiers', () => {
       if (path === '/helper/shifts') return of({ events: [] });
       if (path === '/customers/me/orders') return of({ orders: [] });
       if (path === '/customers/me/tickets') return of({ tickets: [] });
-      if (path === '/events/172/zones') return of({ zones });
+      if (path === '/events/172/zones') return of({ ...gridDims, zones });
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
     const post = vi.fn(() => of({ order: { order_id: 42 } }));
@@ -999,10 +1085,7 @@ describe('EventDetail GA ticket tiers', () => {
             user: signal({ sub: 'customer', email: 'test@example.com', name: 'Test', groups: [] }),
           },
         },
-        {
-          provide: QueueService,
-          useValue: { status: vi.fn(), admissionTokenFor: () => null, clear: vi.fn() },
-        },
+        admittedQueue(),
       ],
     }).compileComponents();
     const fixture = TestBed.createComponent(EventDetail);
@@ -1099,5 +1182,245 @@ describe('EventDetail GA ticket tiers', () => {
       '/orders',
       expect.objectContaining({ inventoryItemId: 2 }),
     );
+  });
+
+  it('lists ticket types from most to least expensive', async () => {
+    const roomyBlue = { ...blue, remaining: 5 };
+    const { host } = await renderWithZones([roomyBlue, red]);
+
+    const names = Array.from(host.querySelectorAll<HTMLElement>('.zone-option .zone-name')).map(
+      (el) => el.textContent?.trim(),
+    );
+    expect(names).toEqual(['Red', 'Blue']);
+  });
+
+  // The reported gap: a GA buyer saw only a flat list of zone names/prices,
+  // with no sense of where each zone actually sits — unlike TIER2_SEATED,
+  // which shows the organiser's painted layout. The fix reuses that same
+  // grid, just with each zone rendered as one read-only coloured block
+  // (no seat to pick) instead of individually clickable seats.
+  it("shows the organiser's zone layout as a read-only grid, like reserved seating but without pickable seats", async () => {
+    const floor = {
+      inventoryItemId: 1,
+      name: 'Floor',
+      priceCents: 2000,
+      color: '#2563EB',
+      remaining: 10,
+      gridRow: 0,
+      gridCol: 0,
+      gridRowSpan: 2,
+      gridColSpan: 3,
+    };
+    const balcony = {
+      inventoryItemId: 2,
+      name: 'Balcony',
+      priceCents: 5000,
+      color: '#DC2626',
+      remaining: 5,
+      gridRow: 2,
+      gridCol: 0,
+      gridRowSpan: 1,
+      gridColSpan: 4,
+    };
+    const { host } = await renderWithZones([floor, balcony], { gridRows: 6, gridCols: 8 });
+
+    const zoneMap = host.querySelector('.zone-map');
+    expect(zoneMap).not.toBeNull();
+
+    const blocks = Array.from(host.querySelectorAll<HTMLElement>('.zone-block'));
+    expect(blocks.length).toBe(2);
+
+    const floorBlock = blocks.find((block) => block.textContent?.includes('Floor'));
+    expect(floorBlock?.style.gridRow).toBe('1 / span 2');
+    expect(floorBlock?.style.gridColumn).toBe('1 / span 3');
+    expect(floorBlock?.style.backgroundColor).toBe('rgb(37, 99, 235)'); // #2563EB
+
+    const balconyBlock = blocks.find((block) => block.textContent?.includes('Balcony'));
+    expect(balconyBlock?.style.gridRow).toBe('3 / span 1');
+    expect(balconyBlock?.style.gridColumn).toBe('1 / span 4');
+
+    // Display only: no button, no click-to-select — the radio list above
+    // remains the only way to choose a tier.
+    expect(floorBlock?.tagName).toBe('DIV');
+
+    // The buyer has no other way to tell which way the venue faces, so the
+    // map always shows a stage marker above the blocks, not below.
+    const zoneGrid = host.querySelector('.zone-grid');
+    const stage = zoneMap?.querySelector('.stage-indicator');
+    expect(stage?.textContent?.trim()).toBe('Stage');
+    const position = stage!.compareDocumentPosition(zoneGrid!);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows no zone map when the API has no grid layout for this event', async () => {
+    const { host } = await renderWithZones([
+      {
+        inventoryItemId: 9,
+        name: 'General Admission',
+        priceCents: 2000,
+        color: '#000',
+        remaining: 28,
+      },
+    ]);
+
+    expect(host.querySelector('.zone-map')).toBeNull();
+    // No map to show means no need for the wider card either.
+    expect(host.querySelector('.purchase')?.classList.contains('purchase--wide')).toBe(false);
+  });
+
+  it('widens the purchase card so the zone map does not need to scroll', async () => {
+    const floor = {
+      inventoryItemId: 1,
+      name: 'Floor',
+      priceCents: 2000,
+      color: '#2563EB',
+      remaining: 10,
+      gridRow: 0,
+      gridCol: 0,
+      gridRowSpan: 2,
+      gridColSpan: 3,
+    };
+    const { host } = await renderWithZones([floor], { gridRows: 2, gridCols: 3 });
+
+    expect(host.querySelector('.purchase')?.classList.contains('purchase--wide')).toBe(true);
+  });
+
+  it('scales a high-capacity GA layout into a bounded customer map', async () => {
+    const section = {
+      inventoryItemId: 1,
+      name: 'Section A1',
+      priceCents: 2000,
+      color: '#2563EB',
+      remaining: 20_449,
+      gridRow: 0,
+      gridCol: 0,
+      gridRowSpan: 143,
+      gridColSpan: 143,
+    };
+    const { host } = await renderWithZones([section], { gridRows: 1000, gridCols: 1000 });
+
+    const grid = host.querySelector<HTMLElement>('.zone-grid');
+    expect(grid).not.toBeNull();
+    expect(grid?.style.gridTemplateRows).toContain('repeat(1000');
+    expect(grid?.style.gridTemplateColumns).toContain('repeat(1000');
+
+    const cellRem = Number(
+      /repeat\(1000, ([\d.]+)rem\)/.exec(grid?.style.gridTemplateRows ?? '')?.[1],
+    );
+    const gapRem = Number(grid?.style.gap.replace('rem', ''));
+    const renderedHeightRem = 1000 * cellRem + 999 * gapRem;
+    expect(cellRem).toBeLessThan(0.05);
+    expect(renderedHeightRem).toBeLessThanOrEqual(32.001);
+  });
+});
+
+describe('EventDetail stage pieces', () => {
+  async function renderWithStage(
+    stagePieces?: readonly {
+      gridRow: number;
+      gridCol: number;
+      gridRowSpan: number;
+      gridColSpan: number;
+    }[],
+  ) {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172')
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner',
+            title: 'Test event',
+            description: '',
+            venue: 'Test Hall',
+            starts_at: '2099-01-01 20:00:00',
+            total_seats: 10,
+            available_buyers: 2,
+            tier: 'TIER1_GA',
+            status: 'PUBLISHED',
+            price_cents: 2000,
+          },
+        });
+      if (path === '/helper/shifts') return of({ events: [] });
+      if (path === '/customers/me/orders') return of({ orders: [] });
+      if (path === '/customers/me/tickets') return of({ tickets: [] });
+      if (path === '/events/172/zones')
+        return of({
+          gridRows: 5,
+          gridCols: 4,
+          zones: [
+            {
+              inventoryItemId: 1,
+              name: 'Floor',
+              priceCents: 2000,
+              color: '#2563EB',
+              remaining: 10,
+              gridRow: 0,
+              gridCol: 0,
+              gridRowSpan: 4,
+              gridColSpan: 4,
+            },
+          ],
+          ...(stagePieces !== undefined ? { stagePieces } : {}),
+        });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
+        {
+          provide: ApiService,
+          useValue: {
+            get,
+            post: vi.fn(() => of({ order: { order_id: 42 } })),
+            url: vi.fn(() => 'mock-image-url'),
+          },
+        },
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => true,
+            user: signal({ sub: 'customer', email: 'test@example.com', name: 'Test', groups: [] }),
+          },
+        },
+        admittedQueue(),
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('shows merged stage geometry on the zone map when the API returns stage pieces', async () => {
+    const host = await renderWithStage([
+      { gridRow: 4, gridCol: 0, gridRowSpan: 1, gridColSpan: 4 },
+    ]);
+    const zoneMap = host.querySelector('.zone-map');
+
+    const stageCells = zoneMap?.querySelectorAll<HTMLElement>('.stage-cell');
+    expect(stageCells?.length).toBe(4);
+    expect(stageCells?.[0]?.style.top).toBe('8.5rem');
+    expect(stageCells?.[0]?.style.left).toBe('0rem');
+    expect(stageCells?.[0]?.style.width).toBe('2.125rem');
+    expect(stageCells?.[3]?.style.left).toBe('6.375rem');
+    expect(stageCells?.[3]?.style.width).toBe('1.75rem');
+    expect(zoneMap?.querySelector('.stage-label')?.textContent?.trim()).toBe('Stage');
+
+    // Static fallback bar should be replaced
+    expect(zoneMap?.querySelector('.stage-indicator')).toBeNull();
+  });
+
+  it('falls back to the static stage bar when no stage pieces are configured', async () => {
+    const host = await renderWithStage([]);
+    const zoneMap = host.querySelector('.zone-map');
+
+    expect(zoneMap?.querySelector('.stage-indicator')).not.toBeNull();
+    expect(zoneMap?.querySelectorAll('.stage-cell').length).toBe(0);
   });
 });

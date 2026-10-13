@@ -184,7 +184,7 @@
               @if (event(); as event) {
                 <h3>{{ event.title }}</h3>
                 <p>{{ event.venue }}</p>
-                <p>{{ event.starts_at | date: 'medium' }}</p>
+                <p>{{ event.starts_at | date: 'medium' : '+0800' }}</p>
                 <span class="ticket-type">{{
                   event.tier === 'TIER2_SEATED' ? 'Reserved seating' : 'General admission'
                 }}</span>
