@@ -282,6 +282,7 @@ export class EventInventory {
   protected readonly drawMode = signal<'zone' | 'stage'>('zone');
 
   protected readonly maxZones = MAX_ZONES;
+  protected readonly maxStagePieces = MAX_STAGE_PIECES;
   protected readonly minGridDim = MIN_GRID_DIM;
   protected readonly maxGridDim = MAX_GRID_DIM;
 
@@ -395,6 +396,8 @@ export class EventInventory {
    * zone's top-left corner, so the zone tracks the pointer naturally instead
    * of snapping its corner to the cursor. */
   protected readonly moveState = signal<{ index: number; original: GridRect; grabRow: number; grabCol: number } | null>(null);
+  private readonly stageResizeState = signal<{ index: number; kind: HandleKind; original: GridRect } | null>(null);
+  private readonly stageMoveState = signal<{ index: number; original: GridRect; grabRow: number; grabCol: number } | null>(null);
   /** True once the pointer has actually crossed into another tracked cell
    * during the current gesture. A real single click never fires a second
    * `mouseenter` on the cell it's already sitting on, so this stays `false`
@@ -411,6 +414,10 @@ export class EventInventory {
     if (resize) return computeResizeRect(resize.kind, resize.original, current);
     const move = this.moveState();
     if (move) return this.computeMoveRect(move, current);
+    const stageResize = this.stageResizeState();
+    if (stageResize) return computeResizeRect(stageResize.kind, stageResize.original, current);
+    const stageMove = this.stageMoveState();
+    if (stageMove) return this.computeMoveRect(stageMove, current);
     const start = this.dragStart();
     if (!start) return null;
     return boundingBox(start, current);
@@ -419,8 +426,9 @@ export class EventInventory {
   protected readonly dragBlocked = computed(() => {
     const rect = this.dragRect();
     if (rect === null) return false;
-    const excludeIndex = this.resizeState()?.index ?? this.moveState()?.index;
-    return this.rectOverlapsExistingZone(rect, excludeIndex);
+    const excludeZoneIndex = this.resizeState()?.index ?? this.moveState()?.index;
+    const excludeStageIndex = this.stageResizeState()?.index ?? this.stageMoveState()?.index;
+    return this.rectOverlapsExistingZone(rect, excludeZoneIndex, excludeStageIndex);
   });
 
   constructor() {
@@ -466,12 +474,81 @@ export class EventInventory {
     this.saved.set(false);
   }
 
-  private rectOverlapsExistingZone(rect: GridRect, excludeIndex?: number): boolean {
+  protected stageHandleKind(row: number, col: number, piece: StagePieceDto): HandleKind | null {
+    return handleKindAt(row, col, piece);
+  }
+
+  protected isStageMovable(row: number, col: number, piece: StagePieceDto): boolean {
+    return handleKindAt(row, col, piece) === null;
+  }
+
+  protected addStagePieceManual(): void {
+    if (this.locked()) return;
+    if (this.stagePieces().length >= MAX_STAGE_PIECES) {
+      this.error.set(`You can only have up to ${MAX_STAGE_PIECES} stage pieces.`);
+      return;
+    }
+    const cell = this.firstAvailableCell();
+    if (!cell) {
+      this.error.set('There is no empty space left on the map — add more rows/columns first.');
+      return;
+    }
+    this.error.set('');
+    this.stagePieces.update((prev) => [...prev, { gridRow: cell.row, gridCol: cell.col, gridRowSpan: 1, gridColSpan: 1 }]);
+    this.saved.set(false);
+  }
+
+  protected removeStagePieceAt(index: number): void {
+    if (this.locked()) return;
+    this.stagePieces.update((pieces) => pieces.filter((_, i) => i !== index));
+    this.saved.set(false);
+  }
+
+  protected onStagePieceRectInput(
+    index: number,
+    field: 'gridRow' | 'gridCol' | 'gridRowSpan' | 'gridColSpan',
+    event: Event,
+  ): void {
+    const input = event.target as HTMLInputElement;
+    if (this.locked()) return;
+    const piece = this.stagePieces()[index];
+    if (!piece) return;
+    const raw = input.valueAsNumber;
+    if (!Number.isFinite(raw)) {
+      input.value = String(piece[field]);
+      return;
+    }
+    const minValue = field === 'gridRowSpan' || field === 'gridColSpan' ? 1 : 0;
+    const proposed = { ...piece, [field]: Math.max(minValue, Math.round(raw)) };
+    const gridRow = Math.min(proposed.gridRow, this.gridRowCount() - 1);
+    const gridCol = Math.min(proposed.gridCol, this.gridColCount() - 1);
+    const next: StagePieceDto = {
+      gridRow,
+      gridCol,
+      gridRowSpan: Math.min(proposed.gridRowSpan, this.gridRowCount() - gridRow),
+      gridColSpan: Math.min(proposed.gridColSpan, this.gridColCount() - gridCol),
+    };
+    if (this.rectOverlapsExistingZone(next, undefined, index)) {
+      this.error.set("Stage pieces can't overlap zones or other stage pieces.");
+      input.value = String(piece[field]);
+      return;
+    }
+    this.error.set('');
+    this.stagePieces.update((prev) => prev.map((p, i) => i === index ? next : p));
+    this.saved.set(false);
+  }
+
+  private rectOverlapsExistingZone(rect: GridRect, excludeZoneIndex?: number, excludeStageIndex?: number): boolean {
     for (let r = rect.gridRow; r < rect.gridRow + rect.gridRowSpan; r += 1) {
       for (let c = rect.gridCol; c < rect.gridCol + rect.gridColSpan; c += 1) {
         const owner = this.zoneAt(r, c);
-        if (owner && owner.index !== excludeIndex) return true;
-        if (this.stageAt(r, c)) return true;
+        if (owner && owner.index !== excludeZoneIndex) return true;
+        if (excludeStageIndex !== undefined) {
+          const pi = this.stagePieces().findIndex((p) => rectContains(p, r, c));
+          if (pi !== -1 && pi !== excludeStageIndex) return true;
+        } else {
+          if (this.stageAt(r, c)) return true;
+        }
       }
     }
     return false;
@@ -547,12 +624,24 @@ export class EventInventory {
       this.dragCurrent.set({ row, col });
       return;
     }
+    const stageIndex = this.stagePieces().findIndex((p) => rectContains(p, row, col));
+    if (stageIndex !== -1) {
+      const piece = this.stagePieces()[stageIndex]!;
+      const kind = handleKindAt(row, col, piece);
+      if (kind) {
+        this.stageResizeState.set({ index: stageIndex, kind, original: piece });
+      } else {
+        this.stageMoveState.set({ index: stageIndex, original: piece, grabRow: row - piece.gridRow, grabCol: col - piece.gridCol });
+      }
+      this.dragCurrent.set({ row, col });
+      return;
+    }
     this.dragStart.set({ row, col });
     this.dragCurrent.set({ row, col });
   }
 
   protected onCellPointerEnter(row: number, col: number): void {
-    if (this.dragStart() === null && this.resizeState() === null && this.moveState() === null) return;
+    if (this.dragStart() === null && this.resizeState() === null && this.moveState() === null && this.stageResizeState() === null && this.stageMoveState() === null) return;
     this.dragMoved.set(true);
     this.dragCurrent.set({ row, col });
   }
@@ -561,13 +650,29 @@ export class EventInventory {
     const rect = this.dragRect();
     const resize = this.resizeState();
     const move = this.moveState();
+    const stageResize = this.stageResizeState();
+    const stageMove = this.stageMoveState();
     const moved = this.dragMoved();
     this.dragStart.set(null);
     this.dragCurrent.set(null);
     this.resizeState.set(null);
     this.moveState.set(null);
+    this.stageResizeState.set(null);
+    this.stageMoveState.set(null);
     this.dragMoved.set(false);
     if (!rect) return;
+
+    if (stageResize || stageMove) {
+      const index = (stageResize ?? stageMove)!.index;
+      if (this.rectOverlapsExistingZone(rect, undefined, index)) {
+        this.error.set("Stage pieces can't overlap zones or other stage pieces — pick an empty area.");
+        return;
+      }
+      this.error.set('');
+      this.stagePieces.update((prev) => prev.map((p, i) => i === index ? { gridRow: rect.gridRow, gridCol: rect.gridCol, gridRowSpan: rect.gridRowSpan, gridColSpan: rect.gridColSpan } : p));
+      this.saved.set(false);
+      return;
+    }
 
     if (resize || move) {
       const index = (resize ?? move)!.index;
