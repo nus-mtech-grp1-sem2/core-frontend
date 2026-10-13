@@ -51,10 +51,18 @@ interface SeatDto {
   readonly tag: SeatTag;
 }
 
+interface StagePieceDto {
+  readonly gridRow: number;
+  readonly gridCol: number;
+  readonly gridRowSpan: number;
+  readonly gridColSpan: number;
+}
+
 interface InventoryResponse {
   readonly gridRows: number;
   readonly gridCols: number;
   readonly zones: readonly ZoneDto[];
+  readonly stagePieces?: readonly StagePieceDto[];
   readonly seats: readonly SeatDto[];
 }
 
@@ -66,6 +74,7 @@ const DEFAULT_GRID_COLS = 8;
 const MIN_GRID_DIM = 1;
 const MAX_GRID_DIM = 100;
 const MAX_ZONES = 50;
+const MAX_STAGE_PIECES = 5;
 
 const DEFAULT_ZONE_COLORS = ['#2563EB', '#DC2626', '#059669', '#D97706', '#7C3AED', '#DB2777', '#0891B2', '#65A30D'];
 
@@ -266,6 +275,8 @@ export class EventInventory {
   protected readonly zones = this.fb.array<ZoneGroup>([]);
   protected readonly seats = signal<readonly SeatCell[]>([]);
   protected readonly committedZoneIds = signal<ReadonlySet<number>>(new Set());
+  protected readonly stagePieces = signal<readonly StagePieceDto[]>([]);
+  protected readonly drawMode = signal<'zone' | 'stage'>('zone');
 
   protected readonly maxZones = MAX_ZONES;
   protected readonly minGridDim = MIN_GRID_DIM;
@@ -363,14 +374,23 @@ export class EventInventory {
     return undefined;
   }
 
+  protected stageAt(row: number, col: number): boolean {
+    return this.stagePieces().some((p) => rectContains(p, row, col));
+  }
+
   private rectOverlapsExistingZone(rect: GridRect, excludeIndex?: number): boolean {
     for (let r = rect.gridRow; r < rect.gridRow + rect.gridRowSpan; r += 1) {
       for (let c = rect.gridCol; c < rect.gridCol + rect.gridColSpan; c += 1) {
         const owner = this.zoneAt(r, c);
         if (owner && owner.index !== excludeIndex) return true;
+        if (this.stageAt(r, c)) return true;
       }
     }
     return false;
+  }
+
+  protected setDrawMode(mode: 'zone' | 'stage'): void {
+    this.drawMode.set(mode);
   }
 
   private rectOf(group: ZoneGroup): GridRect {
@@ -484,6 +504,21 @@ export class EventInventory {
     // resolves to a 1x1 "rect" at the clicked cell — that's an accidental
     // click, not an intentional draw, so it must not create a zone.
     if (!moved) return;
+
+    if (this.drawMode() === 'stage') {
+      if (this.rectOverlapsExistingZone(rect)) {
+        this.error.set("Stage pieces can't overlap zones or other stage pieces — pick an empty area.");
+        return;
+      }
+      if (this.stagePieces().length >= MAX_STAGE_PIECES) {
+        this.error.set(`You can only have up to ${MAX_STAGE_PIECES} stage pieces.`);
+        return;
+      }
+      this.error.set('');
+      this.stagePieces.update((prev) => [...prev, { gridRow: rect.gridRow, gridCol: rect.gridCol, gridRowSpan: rect.gridRowSpan, gridColSpan: rect.gridColSpan }]);
+      this.saved.set(false);
+      return;
+    }
 
     if (this.rectOverlapsExistingZone(rect)) {
       this.error.set("Zones can't overlap — pick an empty area.");
@@ -722,6 +757,14 @@ export class EventInventory {
         gridCols: this.gridColCount(),
       };
       await firstValueFrom(this.api.put('inventory', `/events/${event.event_id}/inventory`, body));
+      await firstValueFrom(this.api.put('inventory', `/events/${event.event_id}/stage`, {
+        pieces: this.stagePieces().map((p) => ({
+          gridRow: p.gridRow,
+          gridCol: p.gridCol,
+          gridRowSpan: p.gridRowSpan,
+          gridColSpan: p.gridColSpan,
+        })),
+      }));
       this.saved.set(true);
       // Saving is the end of this workflow, not a mid-edit checkpoint — send
       // the organiser back to their events list rather than reloading and
@@ -771,6 +814,7 @@ export class EventInventory {
           tag: seat.tag,
         })),
       );
+      this.stagePieces.set(inventoryResult.stagePieces ?? []);
     } catch (error) {
       this.event.set(null);
       this.error.set(describeSaveError(error));

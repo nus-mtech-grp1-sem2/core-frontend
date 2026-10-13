@@ -36,7 +36,11 @@
 
     <div class="builder">
       <div class="grid-map">
-        <p class="grid-map-title">Drag across empty cells to draw a new zone. Use the + bars to grow the map.</p>
+        <div class="draw-tool-bar" role="toolbar" aria-label="Drawing tool">
+          <button type="button" data-tool="draw-zone" [class.active]="drawMode() === 'zone'" (click)="setDrawMode('zone')">Draw zone</button>
+          <button type="button" data-tool="draw-stage" [class.active]="drawMode() === 'stage'" (click)="setDrawMode('stage')">Draw stage</button>
+        </div>
+        <p class="grid-map-title">Drag across empty cells to draw a new zone or stage piece. Use the + bars to grow the map.</p>
         <div class="grid-map-canvas">
           <div class="stage-bar">Stage</div>
           <div class="col-index-row" [style.grid-template-columns]="'repeat(' + gridCols().length + ', 1.75rem)'" aria-hidden="true">
@@ -57,7 +61,16 @@
             @for (row of gridRows(); track row) {
               @for (col of gridCols(); track col) {
                 @let owner = zoneAt(row, col);
-                @if (owner) {
+                @if (stageAt(row, col)) {
+                  <div
+                    class="stage-piece-cell"
+                    [style.grid-row]="row + 1"
+                    [style.grid-column]="col + 1"
+                    [attr.data-grid-row]="row"
+                    [attr.data-grid-col]="col"
+                    aria-label="Stage area"
+                  ></div>
+                } @else if (owner) {
                   @if (isSeatedTier()) {
                     @let seat = seatAt(row, col);
                     <button

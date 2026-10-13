@@ -161,6 +161,8 @@ describe('EventInventory', () => {
 
     putReq.flush(null, { status: 204, statusText: 'No Content' });
     await settle(fixture);
+    httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/stage`).flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
 
     // A successful save navigates away (see the dedicated navigation test
     // below) rather than reloading this same page's data.
@@ -185,6 +187,8 @@ describe('EventInventory', () => {
 
     const putReq = httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`);
     putReq.flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+    httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/stage`).flush(null, { status: 204, statusText: 'No Content' });
     await settle(fixture);
 
     // No reload of this same page's data — the organiser is taken straight
@@ -254,6 +258,8 @@ describe('EventInventory', () => {
     expect(body.seats).toBeUndefined();
 
     putReq.flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+    httpMock.expectOne(`/api/inventory/events/${GA_EVENT.event_id}/stage`).flush(null, { status: 204, statusText: 'No Content' });
     await settle(fixture);
 
     httpMock.verify();
@@ -792,5 +798,94 @@ describe('EventInventory', () => {
     fixture.detectChanges();
 
     httpMock.expectNone(`/api/inventory/events/${SEATED_EVENT.event_id}/seats/${seat.seatId}`);
+  });
+
+  it('shows "Draw zone" and "Draw stage" tool buttons on the canvas toolbar', async () => {
+    const { host } = await renderFor(SEATED_EVENT);
+
+    const drawZoneBtn = host.querySelector<HTMLButtonElement>('[data-tool="draw-zone"]');
+    const drawStageBtn = host.querySelector<HTMLButtonElement>('[data-tool="draw-stage"]');
+    expect(drawZoneBtn).not.toBeNull();
+    expect(drawStageBtn).not.toBeNull();
+  });
+
+  it('dragging in "draw stage" mode creates a stage piece, not a zone card', async () => {
+    const { fixture, host } = await renderFor(SEATED_EVENT);
+
+    // Switch to stage mode.
+    host.querySelector<HTMLButtonElement>('[data-tool="draw-stage"]')?.click();
+    fixture.detectChanges();
+
+    dragRectangle(host, 0, 0, 0, 2); // 1 row x 3 cols
+    fixture.detectChanges();
+
+    // No zone card should appear.
+    expect(host.querySelectorAll('.zone-card').length).toBe(0);
+    // A stage piece cell is rendered with a distinct class.
+    expect(host.querySelector('.stage-piece-cell')).not.toBeNull();
+  });
+
+  it('save sends a separate PUT /stage request with the drawn stage pieces', async () => {
+    const { fixture, httpMock, host } = await renderFor(SEATED_EVENT);
+
+    // Draw a zone first.
+    dragRectangle(host, 1, 0, 1, 2);
+    fixture.detectChanges();
+    setInputValue(host, '.zone-name-input', 'Stalls');
+    setInputValue(host, '.zone-price input', '50');
+    fixture.detectChanges();
+
+    // Switch to stage mode and draw a stage piece.
+    host.querySelector<HTMLButtonElement>('[data-tool="draw-stage"]')?.click();
+    fixture.detectChanges();
+    dragRectangle(host, 0, 0, 0, 2);
+    fixture.detectChanges();
+
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.trim().startsWith('Save'),
+    );
+    saveButton?.click();
+    fixture.detectChanges();
+
+    // Expect both the inventory PUT and the stage PUT.
+    httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`).flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+    const stageReq = httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/stage`);
+    expect(stageReq.request.method).toBe('PUT');
+    const body = stageReq.request.body as { pieces: { gridRow: number; gridRowSpan: number }[] };
+    expect(body.pieces.length).toBe(1);
+    expect(body.pieces[0].gridRow).toBe(0);
+    expect(body.pieces[0].gridRowSpan).toBe(1);
+    stageReq.flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+  });
+
+  it('existing stage pieces loaded from the API are shown on the canvas and re-sent on save', async () => {
+    const inventory = {
+      gridRows: 6,
+      gridCols: 8,
+      zones: [],
+      seats: [],
+      stagePieces: [{ gridRow: 0, gridCol: 0, gridRowSpan: 1, gridColSpan: 3 }],
+    };
+    const { fixture, httpMock, host } = await renderFor(SEATED_EVENT, inventory);
+
+    // Stage piece cells should be visible on the canvas.
+    expect(host.querySelector('.stage-piece-cell')).not.toBeNull();
+
+    // Trigger save — stage pieces should be re-sent unchanged.
+    const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.trim().startsWith('Save'),
+    );
+    saveButton?.click();
+    fixture.detectChanges();
+
+    httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/inventory`).flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+    const stageReq = httpMock.expectOne(`/api/inventory/events/${SEATED_EVENT.event_id}/stage`);
+    const body = stageReq.request.body as { pieces: { gridRow: number }[] };
+    expect(body.pieces.length).toBe(1);
+    expect(body.pieces[0].gridRow).toBe(0);
+    stageReq.flush(null, { status: 204, statusText: 'No Content' });
   });
 });
