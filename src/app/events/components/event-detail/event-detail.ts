@@ -541,16 +541,10 @@ export class EventDetail {
       }
       await this.load(event.event_id);
     } catch (error) {
-      this.error.set(
-        describeError(
-          error,
-          publishingDraft
-            ? 'publish this event'
-            : enabling
-              ? 'enable this event'
-              : 'cancel this event',
-        ),
-      );
+      let action = 'cancel this event';
+      if (publishingDraft) action = 'publish this event';
+      else if (enabling) action = 'enable this event';
+      this.error.set(describeError(error, action));
     } finally {
       this.updatingStatus.set(false);
     }
