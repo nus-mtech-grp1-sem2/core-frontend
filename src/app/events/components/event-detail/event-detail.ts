@@ -16,7 +16,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom, timer } from 'rxjs';
 
 import { ApiService } from '../../../core/api';
-import { cancelEventWithConfirmation, DELETE_DRAFT_PROMPT } from '../../event-cancellation';
+import {
+  cancelEventWithConfirmation,
+  DELETE_DRAFT_PROMPT,
+  PUBLISH_EVENT_PROMPT,
+} from '../../event-cancellation';
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, readFileAsDataUrl } from '../../event-image';
 import { ConfirmDialogService } from '../../../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../../../core/auth';
@@ -26,6 +30,10 @@ import { WorkspaceShell } from '../../../layout/components/workspace-shell/works
 
 const EVENT_COMPLETED_MESSAGE =
   'This event has already taken place, so tickets are no longer on sale.';
+
+/** The order service refuses anything larger as `invalid_order` (backend-repo `parseCreateOrder`). */
+export const MAX_TICKETS_PER_ORDER = 50;
+const TICKET_QUANTITY_MESSAGE = `You can buy 1 to ${MAX_TICKETS_PER_ORDER} tickets in one order.`;
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
@@ -246,6 +254,10 @@ export class EventDetail {
     return map;
   });
   protected readonly quantity = signal(1);
+  protected readonly maxTicketsPerOrder = MAX_TICKETS_PER_ORDER;
+  protected readonly maxQuantity = computed(() =>
+    Math.min(MAX_TICKETS_PER_ORDER, this.event()?.total_seats ?? MAX_TICKETS_PER_ORDER),
+  );
   protected readonly selectedSeatIds = signal<readonly number[]>([]);
   protected readonly zoneOptions = signal<readonly ZoneOption[]>([]);
   protected readonly selectedZoneId = signal<number | null>(null);
@@ -492,15 +504,26 @@ export class EventDetail {
     const event = this.event();
     if (!event || this.readOnly() || this.updatingStatus()) return;
     const enabling = status === 'PUBLISHED';
+    const publishingDraft = enabling && event.status === 'DRAFT';
+    // Publishing locks the details, and the reload afterwards would silently
+    // throw away anything typed but not saved.
+    if (publishingDraft && (this.form.dirty || this.selectedImageBase64)) {
+      this.error.set('Save your changes before publishing this event.');
+      return;
+    }
     if (
       enabling &&
-      !(await this.confirmDialog.ask({
-        title: 'Re-publish this event?',
-        message: ['Are you sure you want to enable this event and put it back on sale?'],
-        confirmLabel: 'Yes, re-publish',
-        cancelLabel: 'No',
-        tone: 'positive',
-      }))
+      !(await this.confirmDialog.ask(
+        publishingDraft
+          ? PUBLISH_EVENT_PROMPT
+          : {
+              title: 'Re-publish this event?',
+              message: ['Are you sure you want to enable this event and put it back on sale?'],
+              confirmLabel: 'Yes, re-publish',
+              cancelLabel: 'No',
+              tone: 'positive',
+            },
+      ))
     )
       return;
 
@@ -518,7 +541,10 @@ export class EventDetail {
       }
       await this.load(event.event_id);
     } catch (error) {
-      this.error.set(describeError(error, enabling ? 'enable this event' : 'cancel this event'));
+      let action = 'cancel this event';
+      if (publishingDraft) action = 'publish this event';
+      else if (enabling) action = 'enable this event';
+      this.error.set(describeError(error, action));
     } finally {
       this.updatingStatus.set(false);
     }
@@ -750,6 +776,13 @@ export class EventDetail {
 
     if (!this.auth.isAuthenticated()) {
       void this.router.navigate(['/login'], { queryParams: { returnUrl: this.router.url } });
+      return;
+    }
+
+    // Checked before seats, so a seated buyer isn't asked to pick 60 seats first.
+    const quantity = this.quantity();
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_TICKETS_PER_ORDER) {
+      this.purchaseError.set(TICKET_QUANTITY_MESSAGE);
       return;
     }
 
@@ -1299,5 +1332,8 @@ export function purchaseErrorMessage(error: HttpErrorResponse): string | null {
   if (code === 'event_not_on_sale') return 'This event is no longer on sale.';
   if (code === 'event_completed') return EVENT_COMPLETED_MESSAGE;
   if (code === 'order_not_payable') return 'This order can no longer be paid.';
+  if (code === 'invalid_order') {
+    return `This order could not be placed. ${TICKET_QUANTITY_MESSAGE} Check your quantity and seat selection, then try again.`;
+  }
   return null;
 }

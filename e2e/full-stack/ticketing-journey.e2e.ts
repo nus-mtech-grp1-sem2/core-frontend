@@ -162,11 +162,12 @@ test.describe('door check-in', () => {
     await expect(results).toHaveCount(2);
 
     // One ticket was scanned above; check in the one that is still ISSUED.
-    page.once('dialog', async (dialog) => {
-      expect(dialog.message()).toBe('Check in this ticket?');
-      await dialog.accept();
-    });
     await results.filter({ hasText: 'ISSUED' }).getByRole('button', { name: 'Check in' }).click();
+    const confirmation = page.getByRole('dialog');
+    await expect(confirmation.getByRole('heading')).toHaveText('Check in this ticket?');
+    // Yes is the default answer, so Enter confirms.
+    await expect(confirmation.getByRole('button', { name: 'Yes, check in' })).toBeFocused();
+    await page.keyboard.press('Enter');
     await expect(page.getByRole('status').filter({ hasText: VALID })).toBeVisible();
     await expect(page.getByRole('status').filter({ hasText: '2 of 3 checked in' })).toBeVisible();
     await context.close();
@@ -197,8 +198,8 @@ test.describe('door check-in', () => {
 
     await search.fill(NAMED.name);
     await expect(results).toHaveCount(1);
-    page.once('dialog', (dialog) => void dialog.accept());
     await results.first().getByRole('button', { name: 'Check in' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Yes, check in' }).click();
     await expect(page.getByRole('status').filter({ hasText: VALID })).toBeVisible();
     await expect(page.getByRole('status').filter({ hasText: '3 of 3 checked in' })).toBeVisible();
     await context.close();

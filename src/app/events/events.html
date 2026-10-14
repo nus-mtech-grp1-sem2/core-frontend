@@ -11,7 +11,7 @@
   <section class="shell listing" aria-labelledby="listing-heading">
     <h2 class="visually-hidden" id="listing-heading">Event listings</h2>
     <div class="toolbar">
-      <p class="count" aria-live="polite">{{ visibleEvents().length }} events</p>
+      <p #eventCount class="count" aria-live="polite" tabindex="-1">{{ countLabel() }}</p>
       @if (isAdmin()) {
         <label class="include-cancelled"
           ><input
@@ -30,6 +30,16 @@
         />
         Include completed events</label
       >
+      @if (!isAdmin()) {
+        <div class="page-size">
+          <label for="page-size">Events per page</label>
+          <select id="page-size" (change)="setPageSize(+$any($event.target).value)">
+            @for (size of pageSizes; track size) {
+              <option [value]="size" [selected]="size === pageSize()">{{ size }}</option>
+            }
+          </select>
+        </div>
+      }
       @if (isAdmin()) {
         <button
           type="button"
@@ -157,7 +167,7 @@
       <p class="empty">Loading events...</p>
     } @else {
       <ul class="event-grid">
-        @for (event of visibleEvents(); track event.event_id) {
+        @for (event of pagedEvents(); track event.event_id) {
           <li
             app-event-card
             [event]="event"
@@ -175,6 +185,46 @@
           </li>
         }
       </ul>
+      @if (pageCount() > 1) {
+        <nav class="pager" aria-label="Event pages">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            [disabled]="currentPage() === 1"
+            (click)="goToPage(currentPage() - 1)"
+          >
+            Previous
+          </button>
+          <ul class="pages">
+            @for (number of pageNumbers(); track $index) {
+              <li>
+                @if (number === null) {
+                  <span class="gap" aria-hidden="true">…</span>
+                } @else {
+                  <button
+                    type="button"
+                    class="page"
+                    [class.current]="number === currentPage()"
+                    [attr.aria-current]="number === currentPage() ? 'page' : null"
+                    [attr.aria-label]="'Page ' + number"
+                    (click)="goToPage(number)"
+                  >
+                    {{ number }}
+                  </button>
+                }
+              </li>
+            }
+          </ul>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            [disabled]="currentPage() === pageCount()"
+            (click)="goToPage(currentPage() + 1)"
+          >
+            Next
+          </button>
+        </nav>
+      }
     }
   </section>
 </app-workspace-shell>

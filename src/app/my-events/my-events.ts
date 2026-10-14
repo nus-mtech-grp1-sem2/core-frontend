@@ -6,6 +6,7 @@ import {
   DestroyRef,
   computed,
   inject,
+  input,
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -144,14 +145,18 @@ export class MyEvents {
   protected readonly purchaseDates = computed(
     () => new Map(this.orders().map((order) => [Number(order.order_id), order.paid_at])),
   );
+  /** Orders for events from today on: only these can still be paid for or cancelled. */
+  private readonly currentOrders = computed(() =>
+    this.orders().filter((order) => startsTodayOrLater(order.starts_at, new Date())),
+  );
   protected readonly unpaidOrders = computed(() =>
-    this.orders().filter(
+    this.currentOrders().filter(
       (order) =>
         order.status === 'PENDING' && !hasSubmittedPayment(order.order_id, order.created_at),
     ),
   );
   protected readonly processingOrders = computed(() =>
-    this.orders().filter(
+    this.currentOrders().filter(
       (order) =>
         order.status === 'PENDING' && hasSubmittedPayment(order.order_id, order.created_at),
     ),
@@ -162,6 +167,38 @@ export class MyEvents {
       (order) => order.status === 'PAID' && !issuedOrderIds.has(order.order_id),
     );
   });
+  /** The header search, bound from the `q` query parameter. */
+  readonly q = input<string>();
+  protected readonly searchQuery = computed(() => this.q()?.trim() ?? '');
+  /**
+   * Events from earlier days are completed and hidden unless asked for. Today's
+   * stay listed even once started, so a latecomer can still show their ticket.
+   */
+  protected readonly includeCompleted = signal(false);
+  // The unfiltered lists above still drive polling and expiry; only what is
+  // shown narrows to the checkbox and the search.
+  protected readonly shownUnpaidOrders = computed(() => this.shown(this.unpaidOrders()));
+  protected readonly shownProcessingOrders = computed(() => this.shown(this.processingOrders()));
+  protected readonly shownPendingOrders = computed(() => this.shown(this.pendingOrders()));
+  protected readonly shownTickets = computed(() => this.shown(this.tickets()));
+  /** Whether anything is being left out only because its event is completed. */
+  protected readonly hidesCompleted = computed(
+    () =>
+      !this.includeCompleted() &&
+      [...this.tickets(), ...this.pendingOrders()].some(
+        (item) => !startsTodayOrLater(item.starts_at, new Date()),
+      ),
+  );
+  protected readonly noSearchMatches = computed(
+    () =>
+      !!this.searchQuery() &&
+      [
+        this.shownUnpaidOrders(),
+        this.shownProcessingOrders(),
+        this.shownPendingOrders(),
+        this.shownTickets(),
+      ].every((list) => list.length === 0),
+  );
   protected readonly waitingForTicket = computed(
     () =>
       this.pendingOrderId !== null &&
@@ -257,15 +294,9 @@ export class MyEvents {
           }
         }
       }
-      const today = new Date();
-      const visibleTickets = result.tickets.filter((ticket) =>
-        startsTodayOrLater(ticket.starts_at, today),
-      );
-      const visibleOrders = orderResult.orders.filter((order) =>
-        startsTodayOrLater(order.starts_at, today),
-      );
+      // Everything is kept; completed events are hidden from view, not dropped.
       const withQr = await Promise.all(
-        visibleTickets.map(async (ticket) => ({
+        result.tickets.map(async (ticket) => ({
           ...ticket,
           qrDataUrl: await toDataURL(ticket.qr_token, {
             width: 360,
@@ -275,13 +306,30 @@ export class MyEvents {
         })),
       );
       this.tickets.set(withQr);
-      this.orders.set(visibleOrders);
+      this.orders.set(orderResult.orders);
       this.status.set('ready');
     } catch {
       if (!silent || this.tickets().length === 0) this.status.set('error');
     } finally {
       this.requestRunning = false;
     }
+  }
+
+  /**
+   * The items to list: completed events only when included, then those whose
+   * event title or venue contains the search, ignoring case.
+   */
+  private shown<
+    T extends { readonly event_title: string; readonly venue?: string; readonly starts_at: string },
+  >(items: readonly T[]): readonly T[] {
+    const today = new Date();
+    const term = this.searchQuery().toLowerCase();
+    return items.filter(
+      (item) =>
+        (this.includeCompleted() || startsTodayOrLater(item.starts_at, today)) &&
+        (!term ||
+          [item.event_title, item.venue].some((field) => field?.toLowerCase().includes(term))),
+    );
   }
 
   protected statusLabel(status: TicketStatus): string {

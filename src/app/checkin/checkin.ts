@@ -15,6 +15,7 @@ import {
   catchError,
   debounceTime,
   distinctUntilChanged,
+  filter,
   firstValueFrom,
   map,
   of,
@@ -27,6 +28,10 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../core/auth';
 import { ApiService } from '../core/api';
 import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
+import {
+  ConfirmDialogService,
+  type ConfirmOptions,
+} from '../shared/components/confirm-dialog/confirm-dialog.service';
 import { ActivatedRoute } from '@angular/router';
 import { recoverSmallQr } from './qr-small-recovery';
 
@@ -94,6 +99,7 @@ export class Checkin implements OnDestroy {
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
+  private readonly confirmDialog = inject(ConfirmDialogService);
   private readonly qrReader = new BrowserQRCodeReader(qrDecodeHints, {
     delayBetweenScanAttempts: 200,
     delayBetweenScanSuccess: 1000,
@@ -146,6 +152,10 @@ export class Checkin implements OnDestroy {
     this.stopCamera();
     this.eventId.set(eventId);
     this.scannerSessionToken = '';
+    // A lookup belongs to one event, so another event starts with an empty search.
+    this.searchForm.reset();
+    this.searchResults.set([]);
+    this.searchStatus.set('');
     void this.startScannerSession(eventId);
     this.startStatsPolling();
   }
@@ -190,8 +200,8 @@ export class Checkin implements OnDestroy {
   }
 
   protected async checkInSearchResult(result: SearchResult): Promise<void> {
-    if (!canCheckIn(result.status) || this.checkingIn() || !window.confirm('Check in this ticket?'))
-      return;
+    if (!canCheckIn(result.status) || this.checkingIn()) return;
+    if (!(await this.confirmDialog.ask(checkInPrompt(result)))) return;
     const outcome = await this.submit({ ticketId: result.ticket_id });
     // Either way the ticket is now used, so its row stops offering a check-in.
     if (outcome === 'VALID' || outcome === 'ALREADY_USED') {
@@ -340,6 +350,8 @@ export class Checkin implements OnDestroy {
         catchError(() =>
           of({ tickets: [] as readonly SearchResult[], status: 'Search unavailable. Try again.' }),
         ),
+        // A reply that lands after the helper switched event is for the old event.
+        filter(() => this.eventId() === eventId),
       );
   }
 
@@ -819,6 +831,26 @@ function cameraErrorMessage(error: unknown): string {
     return 'No usable camera was found on this device.';
   }
   return 'The camera could not be started. Close other camera apps or enter the QR token manually.';
+}
+
+/**
+ * Asked before checking in a ticket found by manual lookup. Yes is the default so a
+ * helper at the door can confirm with Enter; the ticket holder is named so the
+ * helper can match them to the person in front of them.
+ */
+export function checkInPrompt(result: SearchResult): ConfirmOptions {
+  const holder =
+    result.customer_name && result.customer_email
+      ? `${result.customer_name} (${result.customer_email})`
+      : result.customer_name || result.customer_email;
+  return {
+    title: 'Check in this ticket?',
+    message: [holder, result.seat_id ? 'Reserved seat' : 'General admission'],
+    confirmLabel: 'Yes, check in',
+    cancelLabel: 'No',
+    tone: 'positive',
+    defaultChoice: 'confirm',
+  };
 }
 
 /** Only an issued ticket can still be checked in: a checked-in one is used, a void one is invalid. */

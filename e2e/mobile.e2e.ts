@@ -412,9 +412,11 @@ test.describe('using it with a finger', () => {
       .on('POST', 'ticket/tickets/validate', { json: { outcome: 'SUCCESS' } });
     await page.goto(`/checkin/${EVENT_ID}`);
     await page.getByLabel('Name, email or order ID').fill('casey');
-    page.once('dialog', (dialog) => void dialog.accept());
 
     await page.getByRole('button', { name: 'Check in' }).tap();
+    const confirmation = page.getByRole('dialog');
+    await expect(confirmation).toContainText('Casey Customer (casey@example.test)');
+    await confirmation.getByRole('button', { name: 'Yes, check in' }).tap();
 
     await expect(
       page.getByRole('status').filter({ hasText: 'Valid ticket. Check-in accepted.' }),

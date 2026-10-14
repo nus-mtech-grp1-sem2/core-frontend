@@ -25,9 +25,19 @@
         </p>
       }
       @case ('ready') {
-        @if (unpaidOrders().length > 0) {
+        <div class="toolbar">
+          <label class="include-completed"
+            ><input
+              type="checkbox"
+              [checked]="includeCompleted()"
+              (change)="includeCompleted.set($any($event.target).checked)"
+            />
+            Include completed events</label
+          >
+        </div>
+        @if (shownUnpaidOrders().length > 0) {
           <section class="pending-list" aria-label="Orders awaiting payment">
-            @for (order of unpaidOrders(); track order.order_id) {
+            @for (order of shownUnpaidOrders(); track order.order_id) {
               <article class="ticket-card pending-card">
                 <div class="details">
                   <h2>{{ order.event_title }}</h2>
@@ -61,9 +71,9 @@
         @if (reservationError()) {
           <p class="status-message error" role="alert">{{ reservationError() }}</p>
         }
-        @if (processingOrders().length > 0) {
+        @if (shownProcessingOrders().length > 0) {
           <section class="pending-list" aria-label="Orders processing payment">
-            @for (order of processingOrders(); track order.order_id) {
+            @for (order of shownProcessingOrders(); track order.order_id) {
               <article class="ticket-card pending-card">
                 <div class="ticket-placeholder" aria-hidden="true">â€¦</div>
                 <div class="details">
@@ -81,9 +91,9 @@
             }
           </section>
         }
-        @if (pendingOrders().length > 0) {
+        @if (shownPendingOrders().length > 0) {
           <section class="pending-list" aria-label="Paid orders awaiting tickets">
-            @for (order of pendingOrders(); track order.order_id) {
+            @for (order of shownPendingOrders(); track order.order_id) {
               <article class="ticket-card pending-card">
                 <div class="ticket-placeholder" aria-hidden="true">✓</div>
                 <div class="details">
@@ -120,7 +130,7 @@
           </section>
         }
         <ul class="ticket-list">
-          @for (ticket of tickets(); track ticket.ticket_id) {
+          @for (ticket of shownTickets(); track ticket.ticket_id) {
             <li>
               <article class="ticket-card">
                 <img
@@ -168,7 +178,24 @@
               </article>
             </li>
           } @empty {
-            @if (pendingOrders().length === 0 && processingOrders().length === 0) {
+            @if (noSearchMatches()) {
+              <li class="empty">
+                <h2>No matching tickets</h2>
+                <p>None of your tickets match “{{ searchQuery() }}”.</p>
+              </li>
+            } @else if (
+              hidesCompleted() &&
+              shownPendingOrders().length === 0 &&
+              shownProcessingOrders().length === 0
+            ) {
+              <li class="empty">
+                <h2>No upcoming tickets</h2>
+                <p>
+                  Tickets for completed events are hidden. Tick “Include completed events” to see
+                  them.
+                </p>
+              </li>
+            } @else if (shownPendingOrders().length === 0 && shownProcessingOrders().length === 0) {
               <li class="empty">
                 <h2>No tickets yet</h2>
                 <p>Tickets you buy will show up here with a scannable QR code.</p>

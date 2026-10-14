@@ -8,6 +8,7 @@ import { AuthService } from '../core/auth';
 
 import {
   Checkin,
+  checkInPrompt,
   currentAndFutureEvents,
   decodeQrPixels,
   canCheckIn,
@@ -42,6 +43,100 @@ describe('manual lookup check-in button', () => {
     expect(canCheckIn('ISSUED')).toBe(true);
     expect(canCheckIn('CHECKED_IN')).toBe(false);
     expect(canCheckIn('VOID')).toBe(false);
+  });
+
+  it('confirms in the app dialog, naming the holder, with Yes as the default answer', () => {
+    const ticket = {
+      ticket_id: 501,
+      customer_name: 'Casey Customer',
+      customer_email: 'casey@example.test',
+      seat_id: null,
+      status: 'ISSUED',
+    };
+
+    expect(checkInPrompt(ticket)).toEqual({
+      title: 'Check in this ticket?',
+      message: ['Casey Customer (casey@example.test)', 'General admission'],
+      confirmLabel: 'Yes, check in',
+      cancelLabel: 'No',
+      tone: 'positive',
+      defaultChoice: 'confirm',
+    });
+    expect(checkInPrompt({ ...ticket, customer_name: '', seat_id: 12 }).message).toEqual([
+      'casey@example.test',
+      'Reserved seat',
+    ]);
+  });
+});
+
+describe('switching the assigned event', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('clears the manual lookup and its results', async () => {
+    const api = {
+      get: vi.fn((_service: string, path: string) => {
+        if (path === '/helper/shifts') {
+          return of({
+            events: [
+              { event_id: 7, title: 'First event', starts_at: '2099-01-01T00:00:00Z' },
+              { event_id: 8, title: 'Second event', starts_at: '2099-01-02T00:00:00Z' },
+            ],
+          });
+        }
+        if (path.startsWith('/tickets/search')) {
+          return of({
+            tickets: [
+              {
+                ticket_id: 501,
+                customer_name: 'Casey Customer',
+                customer_email: 'casey@example.test',
+                seat_id: null,
+                status: 'ISSUED',
+              },
+            ],
+          });
+        }
+        return of({ checkedIn: 0, issued: 0 });
+      }),
+      post: vi.fn(() => of({ sessionToken: 'scanner-session' })),
+    };
+    await TestBed.configureTestingModule({
+      imports: [Checkin],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => '7' } } } },
+        { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: { user: () => ({ email: 'helper@example.com' }) } },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(Checkin);
+    const host = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const query = host.querySelector<HTMLInputElement>('#query')!;
+    const checkInButtons = () =>
+      Array.from(host.querySelectorAll('button')).filter(
+        (button) => button.textContent?.trim() === 'Check in',
+      );
+
+    query.value = 'casey';
+    query.dispatchEvent(new Event('input'));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    expect(checkInButtons()).toHaveLength(1);
+    expect(host.querySelector('.search-status')?.textContent?.trim()).toBe('1 result');
+
+    const select = host.querySelector<HTMLSelectElement>('#event')!;
+    select.value = '8';
+    select.dispatchEvent(new Event('change'));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+
+    expect(query.value).toBe('');
+    expect(checkInButtons()).toHaveLength(0);
+    expect(host.querySelector('.search-status')?.textContent?.trim()).toBe('');
+    fixture.destroy();
   });
 });
 
