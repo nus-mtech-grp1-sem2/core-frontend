@@ -20,7 +20,7 @@ export interface QueueSummary {
   readonly waitingCount: number;
 }
 
-/** Customer waiting-room state, isolated by event. */
+/** Customer queue state, isolated by event. */
 @Injectable({ providedIn: 'root' })
 export class QueueService {
   private readonly api = inject(ApiService);

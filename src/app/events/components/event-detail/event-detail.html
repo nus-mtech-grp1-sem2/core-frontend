@@ -96,17 +96,17 @@
           @if (needsQueue()) {
             @switch (queueAccess()) {
               @case ('checking') {
-                <p role="status">Checking your waiting-room status...</p>
+                <p role="status">Checking your queue status...</p>
               }
               @case ('waiting') {
                 <p>
-                  You are in the waiting room at position
+                  You are in the queue at position
                   <strong>{{ queuePosition() ?? '—' }}</strong
                   >.
                 </p>
                 <div class="queue-actions">
                   <button type="button" class="btn btn-primary" (click)="goToQueue()">
-                    Return to waiting room
+                    Return to queue
                   </button>
                   <button
                     type="button"
@@ -131,18 +131,24 @@
                 </p>
                 <a class="btn btn-primary" routerLink="/my-events">View pending payment</a>
               }
+              @case ('closed') {
+                <output class="queue-status"
+                  ><strong>The queue is available after publication.</strong></output
+                >
+              }
+              @case ('drained') {
+                <output class="queue-status">The queue has closed for this event.</output>
+              }
               @case ('unavailable') {
-                <p role="alert">
-                  The waiting room cannot be reached right now. Please try again shortly.
-                </p>
+                <p role="alert">The queue cannot be reached right now. Please try again shortly.</p>
                 <button type="button" class="btn btn-primary" (click)="goToQueue()">
-                  Try waiting room
+                  Try queue
                 </button>
               }
               @default {
-                <p>Tickets for this event are released through the waiting room.</p>
+                <p>Tickets for this event are released through the queue.</p>
                 <button type="button" class="btn btn-primary" (click)="goToQueue()">
-                  Join waiting room
+                  Join queue
                 </button>
               }
             }
@@ -329,8 +335,8 @@
         }
         @if (readOnly()) {
           <p class="owner-note" role="status">
-            This event has completed. You can view it, but its details, team and waiting room can no
-            longer be changed.
+            This event has completed. You can view it, but its details, team and queue can no longer
+            be changed.
           </p>
         } @else if (detailsLocked()) {
           <p class="owner-note" role="status">
@@ -376,16 +382,30 @@
               formControlName="availableBuyers"
               aria-describedby="available-buyers-help"
             /><small id="available-buyers-help"
-              >Concurrent buyers allowed from the waiting room. Leave blank to use 10% of total
+              >Concurrent buyers allowed from the queue. Leave blank to use 10% of total
               seats.</small
             >
           </div>
           <div class="field">
             <label for="tier">Ticketing</label
-            ><select id="tier" formControlName="tier">
+            ><select
+              id="tier"
+              formControlName="tier"
+              aria-describedby="tier-help"
+              (change)="onTierChange()"
+            >
               <option value="TIER1_GA">General admission</option>
               <option value="TIER2_SEATED">Reserved seating</option>
             </select>
+            <small id="tier-help">
+              Changing ticketing clears the current inventory when you save. You will configure the
+              new inventory next.
+            </small>
+            @if (inventoryResetPending()) {
+              <p class="note" role="status">
+                Saving will clear all current zones, seats and map settings.
+              </p>
+            }
           </div>
           <div class="field field-wide">
             <label for="event-image">Event photo</label
@@ -549,58 +569,6 @@
           @if (isOwner()) {
             <p class="owner-note">You own this event and can remove other organizers.</p>
           }
-        </section>
-
-        <section class="team" aria-labelledby="queue-heading">
-          <h2 id="queue-heading">Waiting room</h2>
-          @if (queueManagement(); as queue) {
-            <p class="note" role="status">
-              {{
-                queue.status === 'OPEN' ? 'Open' : queue.status === 'CLOSED' ? 'Closed' : 'Drained'
-              }}
-              · {{ queue.waitingCount }} waiting · up to {{ queue.admissionBatchSize }} active
-              buyers
-            </p>
-          } @else {
-            <p class="note">Open the waiting room before customers can join.</p>
-          }
-          @if (queueActionMessage()) {
-            <p class="success" role="status">{{ queueActionMessage() }}</p>
-          }
-          @if (queueActionError()) {
-            <p class="error" role="alert">{{ queueActionError() }}</p>
-          }
-          <div class="form-actions">
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              [disabled]="queueActionBusy() || readOnly() || queueManagement()?.status === 'OPEN'"
-              (click)="openQueue()"
-            >
-              {{ queueManagement()?.status === 'OPEN' ? 'Waiting room open' : 'Open waiting room' }}
-            </button>
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm"
-              [disabled]="
-                queueActionBusy() ||
-                readOnly() ||
-                queueManagement()?.status !== 'OPEN' ||
-                !queueManagement()?.waitingCount
-              "
-              (click)="admitNext()"
-            >
-              @if (queueActionBusy()) {
-                Working...
-              } @else if (queueManagement()?.status !== 'OPEN') {
-                Open waiting room first
-              } @else if (!queueManagement()?.waitingCount) {
-                No customers waiting
-              } @else {
-                Admit next customer
-              }
-            </button>
-          </div>
         </section>
       </section>
     }

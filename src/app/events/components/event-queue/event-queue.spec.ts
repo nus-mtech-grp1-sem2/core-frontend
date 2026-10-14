@@ -8,6 +8,23 @@ import { AuthService } from '../../../core/auth';
 import { QueueService, QueueStatus } from '../../../core/queue';
 import { EventQueue } from './event-queue';
 
+async function createQueueFixture(queue: object) {
+  TestBed.resetTestingModule();
+  await TestBed.configureTestingModule({
+    imports: [EventQueue],
+    providers: [
+      provideRouter([]),
+      { provide: QueueService, useValue: queue },
+      { provide: ApiService, useValue: { get: () => of({ event: { title: 'Test Event' } }) } },
+      { provide: AuthService, useValue: { isAuthenticated: () => true } },
+    ],
+  }).compileComponents();
+
+  const fixture = TestBed.createComponent(EventQueue);
+  fixture.detectChanges();
+  return fixture;
+}
+
 describe('EventQueue', () => {
   it('waits for the live queue position instead of flashing the original position', async () => {
     let resolveStatus!: (status: QueueStatus) => void;
@@ -28,18 +45,7 @@ describe('EventQueue', () => {
       leave: vi.fn(),
     };
 
-    await TestBed.configureTestingModule({
-      imports: [EventQueue],
-      providers: [
-        provideRouter([]),
-        { provide: QueueService, useValue: queue },
-        { provide: ApiService, useValue: { get: () => of({ event: { title: 'Test Event' } }) } },
-        { provide: AuthService, useValue: { isAuthenticated: () => true } },
-      ],
-    }).compileComponents();
-
-    const fixture = TestBed.createComponent(EventQueue);
-    fixture.detectChanges();
+    const fixture = await createQueueFixture(queue);
     expect(queue.join).not.toHaveBeenCalled();
 
     fixture.componentRef.setInput('id', '7');
@@ -63,6 +69,29 @@ describe('EventQueue', () => {
     fixture.destroy();
   });
 
+  it('joins directly when the published event does not have a queue session yet', async () => {
+    const queue = {
+      summary: vi
+        .fn()
+        .mockRejectedValue(
+          new HttpErrorResponse({ status: 404, error: { error: 'queue_not_configured' } }),
+        ),
+      join: vi.fn().mockResolvedValue({ queueEntryId: 71, status: 'WAITING', position: 1 }),
+      status: vi.fn().mockResolvedValue({ queueEntryId: 71, status: 'WAITING', position: 1 }),
+      leave: vi.fn(),
+    };
+
+    const fixture = await createQueueFixture(queue);
+    fixture.componentRef.setInput('id', '7');
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(queue.status).toHaveBeenCalledWith(7));
+    fixture.detectChanges();
+
+    expect(queue.join).toHaveBeenCalledWith(7);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Position');
+    fixture.destroy();
+  });
+
   describe('when the server refuses the join', () => {
     async function renderRefused(error: HttpErrorResponse) {
       const queue = {
@@ -79,18 +108,7 @@ describe('EventQueue', () => {
         leave: vi.fn(),
       };
 
-      TestBed.resetTestingModule();
-      await TestBed.configureTestingModule({
-        imports: [EventQueue],
-        providers: [
-          provideRouter([]),
-          { provide: QueueService, useValue: queue },
-          { provide: ApiService, useValue: { get: () => of({ event: { title: 'Test Event' } }) } },
-          { provide: AuthService, useValue: { isAuthenticated: () => true } },
-        ],
-      }).compileComponents();
-
-      const fixture = TestBed.createComponent(EventQueue);
+      const fixture = await createQueueFixture(queue);
       fixture.componentRef.setInput('id', '7');
       fixture.detectChanges();
       await vi.waitFor(() => expect(queue.join).toHaveBeenCalledWith(7));
@@ -104,7 +122,7 @@ describe('EventQueue', () => {
     it('says the event has already taken place, and never polls for a queue place', async () => {
       const { queue, text, fixture } = await renderRefused(refusal('event_completed'));
 
-      expect(text).toContain('The waiting room is unavailable');
+      expect(text).toContain('The queue is unavailable');
       expect(text).toContain(
         'This event has already taken place, so tickets are no longer on sale.',
       );
@@ -112,14 +130,10 @@ describe('EventQueue', () => {
       fixture.destroy();
     });
 
-    it('keeps the wording for an event that is not on sale, or has no waiting room', async () => {
+    it('explains when the event is not on sale', async () => {
       const notOnSale = await renderRefused(refusal('event_not_on_sale'));
       expect(notOnSale.text).toContain('Tickets for this event are not currently on sale.');
       notOnSale.fixture.destroy();
-
-      const unconfigured = await renderRefused(refusal('queue_not_configured'));
-      expect(unconfigured.text).toContain('The organiser has not configured a waiting room');
-      unconfigured.fixture.destroy();
     });
 
     it('asks the customer to check their connection for an unrecognised failure', async () => {
@@ -128,7 +142,7 @@ describe('EventQueue', () => {
       );
 
       expect(text).toContain('Check your connection and try again.');
-      expect(text).not.toContain('The waiting room is unavailable');
+      expect(text).not.toContain('The queue is unavailable');
       fixture.destroy();
     });
   });

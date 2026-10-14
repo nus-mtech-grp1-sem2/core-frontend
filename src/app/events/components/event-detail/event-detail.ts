@@ -28,17 +28,26 @@ import { fromDateTimeLocal, isCompleted, toDateTimeLocal } from '../../../core/e
 import { QueueService, QueueStatus } from '../../../core/queue';
 import { WorkspaceShell } from '../../../layout/components/workspace-shell/workspace-shell';
 
+/** Most tickets one order can buy; the order service refuses more. */
+export const MAX_TICKETS_PER_ORDER = 50;
+const TOO_MANY_TICKETS_MESSAGE = `You can buy at most ${MAX_TICKETS_PER_ORDER} tickets per order. For more, place another order.`;
+const TICKET_QUANTITY_MESSAGE = `You can buy 1 to ${MAX_TICKETS_PER_ORDER} tickets in one order.`;
+
 const EVENT_COMPLETED_MESSAGE =
   'This event has already taken place, so tickets are no longer on sale.';
-
-/** The order service refuses anything larger as `invalid_order` (backend-repo `parseCreateOrder`). */
-export const MAX_TICKETS_PER_ORDER = 50;
-const TICKET_QUANTITY_MESSAGE = `You can buy 1 to ${MAX_TICKETS_PER_ORDER} tickets in one order.`;
 
 type EventTier = 'TIER1_GA' | 'TIER2_SEATED';
 type EventStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
 type QueueAccess =
-  'checking' | 'not-joined' | 'waiting' | 'admitted' | 'expired' | 'checkout' | 'unavailable';
+  | 'checking'
+  | 'not-joined'
+  | 'waiting'
+  | 'admitted'
+  | 'expired'
+  | 'checkout'
+  | 'closed'
+  | 'drained'
+  | 'unavailable';
 
 interface EventDetailData {
   readonly event_id: number;
@@ -166,15 +175,6 @@ function seatKey(row: number, col: number): string {
   return `${row},${col}`;
 }
 
-interface QueueManagementResponse {
-  readonly queue: {
-    readonly eventId: number;
-    readonly admissionBatchSize: number;
-    readonly status: 'CLOSED' | 'OPEN' | 'DRAINED';
-    readonly waitingCount: number;
-  };
-}
-
 interface OwnedTicketsResponse {
   readonly tickets: readonly {
     readonly event_id: number;
@@ -196,12 +196,6 @@ interface Ownership {
   readonly tickets: number;
   readonly checkedIn: number;
   readonly pendingOrders: number;
-}
-
-interface AdmissionResponse {
-  readonly admitted: number;
-  readonly remaining: number | null;
-  readonly reason?: 'sold_out' | 'capacity_reached';
 }
 
 @Component({
@@ -291,10 +285,6 @@ export class EventDetail {
   protected readonly admissionExpiresAt = signal<number | null>(null);
   protected readonly admissionSecondsRemaining = signal<number | null>(null);
   protected readonly leavingQueue = signal(false);
-  protected readonly queueManagement = signal<QueueManagementResponse['queue'] | null>(null);
-  protected readonly queueActionBusy = signal(false);
-  protected readonly queueActionMessage = signal('');
-  protected readonly queueActionError = signal('');
   protected readonly ownership = signal<Ownership | null>(null);
   protected readonly buyingMore = signal(false);
   /**
@@ -312,7 +302,7 @@ export class EventDetail {
     if (seconds === null) return '';
     return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   });
-  /** Both general admission and reserved seating sell through the waiting room. */
+  /** Both general admission and reserved seating sell through the queue. */
   protected readonly needsQueue = () => !!this.event() && this.queueAccess() !== 'admitted';
   /**
    * Organiser access is per-event, owned by the backend's event_team_memberships
@@ -322,6 +312,7 @@ export class EventDetail {
    */
   protected readonly isOrganiser = signal(false);
   protected readonly inventorySummary = signal<InventorySummary | null>(null);
+  protected readonly inventoryResetPending = signal(false);
   protected readonly checkinStats = signal<CheckinStatsResponse | null>(null);
   protected readonly imagePreviewUrl = signal<string | null>(null);
   private selectedImageBase64: string | null = null;
@@ -343,14 +334,14 @@ export class EventDetail {
    * service rejects any edit to its own details (see PUT /events/:eventId's
    * `event_not_editable` guard) — mirror that here. Deliberately narrower
    * than `readOnly()`: it only locks this event's own detail form and
-   * inventory, not team management, the waiting room, or the status-change
+   * inventory, not team management, the queue, or the status-change
    * actions that are how an organiser gets a published event back to DRAFT-like
    * flexibility in the first place. */
   protected readonly detailsLocked = computed(() => {
     const event = this.event();
     return !!event && event.status !== 'DRAFT';
   });
-  /** Published events may still tune waiting-room concurrency; cancelled or completed events may not. */
+  /** Published events may still tune queue concurrency; cancelled or completed events may not. */
   protected readonly canEditAvailableBuyers = computed(() => {
     const event = this.event();
     return (
@@ -411,6 +402,17 @@ export class EventDetail {
     this.imagePreviewUrl.set(dataUrl);
   }
 
+  /** Inventory cannot be reused across ticketing modes. Reflect the pending
+   * reset in the form and restore the saved values if the organiser reverts. */
+  protected onTierChange(): void {
+    const event = this.event();
+    if (!event) return;
+    const changed = this.form.controls.tier.value !== event.tier;
+    this.inventoryResetPending.set(changed);
+    this.form.controls.totalSeats.setValue(changed ? 0 : event.total_seats);
+    this.form.controls.availableBuyers.setValue(changed ? null : event.available_buyers);
+  }
+
   protected async save(): Promise<void> {
     const event = this.event();
     if (!event || !this.canEditAvailableBuyers() || this.form.invalid || this.saving()) {
@@ -419,6 +421,7 @@ export class EventDetail {
     }
     this.saving.set(true);
     this.error.set('');
+    const tierChanged = this.form.controls.tier.value !== event.tier;
     try {
       if (this.detailsLocked()) {
         await firstValueFrom(
@@ -445,7 +448,11 @@ export class EventDetail {
         this.selectedImageMimeType = null;
         this.imagePreviewUrl.set(null);
       }
-      await this.load(event.event_id);
+      if (tierChanged) {
+        await this.router.navigate(['/organiser/events', event.event_id, 'inventory']);
+      } else {
+        await this.load(event.event_id);
+      }
     } catch (error) {
       this.error.set(describeError(error, 'save changes'));
     } finally {
@@ -628,57 +635,6 @@ export class EventDetail {
     if (target instanceof HTMLImageElement) target.src = 'images/hero-concert.jpg';
   }
 
-  protected async openQueue(): Promise<void> {
-    const event = this.event();
-    if (!event || this.readOnly() || this.queueActionBusy()) return;
-    this.queueActionBusy.set(true);
-    this.queueActionMessage.set('');
-    this.queueActionError.set('');
-    try {
-      await firstValueFrom(
-        this.api.put('queue', `/events/${event.event_id}/queue/config`, {
-          opensAt: new Date().toISOString(),
-          admissionBatchSize:
-            event.available_buyers ?? Math.max(1, Math.ceil(event.total_seats * 0.1)),
-          admissionIntervalSec: 60,
-        }),
-      );
-      await this.loadQueueManagement(event.event_id);
-      this.queueActionMessage.set('The waiting room is open. Customers can join now.');
-    } catch (error) {
-      this.queueActionError.set(describeError(error, 'open the waiting room'));
-    } finally {
-      this.queueActionBusy.set(false);
-    }
-  }
-
-  protected async admitNext(): Promise<void> {
-    const event = this.event();
-    if (!event || this.readOnly() || this.queueActionBusy()) return;
-    this.queueActionBusy.set(true);
-    this.queueActionMessage.set('');
-    this.queueActionError.set('');
-    try {
-      const result = await firstValueFrom(
-        this.api.post<AdmissionResponse>('queue', `/events/${event.event_id}/queue/admit-next`, {}),
-      );
-      await this.loadQueueManagement(event.event_id);
-      this.queueActionMessage.set(
-        result.admitted > 0
-          ? `${result.admitted} customer${result.admitted === 1 ? '' : 's'} admitted.`
-          : result.reason === 'capacity_reached'
-            ? 'No admission slot is available yet.'
-            : result.reason === 'sold_out'
-              ? 'No customers admitted because the event is sold out.'
-              : 'There are no waiting customers to admit.',
-      );
-    } catch (error) {
-      this.queueActionError.set(describeError(error, 'admit the next customer'));
-    } finally {
-      this.queueActionBusy.set(false);
-    }
-  }
-
   protected canBuy(): boolean {
     return this.customerMode && this.event()?.status === 'PUBLISHED' && !this.completed();
   }
@@ -732,7 +688,7 @@ export class EventDetail {
     this.selectedZoneId.set(zone.inventoryItemId);
   }
 
-  /** Buying more goes straight into the waiting room, unless the customer is already admitted. */
+  /** Buying more goes straight into the queue, unless the customer is already admitted. */
   protected buyMore(): void {
     if (this.needsQueue()) {
       this.goToQueue();
@@ -759,7 +715,7 @@ export class EventDetail {
       this.selectedSeatIds.set([]);
       this.queueAccess.set('not-joined');
     } catch {
-      this.purchaseError.set('Unable to leave the waiting room. Please try again.');
+      this.purchaseError.set('Unable to leave the queue. Please try again.');
     } finally {
       this.leavingQueue.set(false);
     }
@@ -781,7 +737,11 @@ export class EventDetail {
 
     // Checked before seats, so a seated buyer isn't asked to pick 60 seats first.
     const quantity = this.quantity();
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_TICKETS_PER_ORDER) {
+    if (quantity > MAX_TICKETS_PER_ORDER) {
+      this.purchaseError.set(TOO_MANY_TICKETS_MESSAGE);
+      return;
+    }
+    if (!Number.isInteger(quantity) || quantity < 1) {
       this.purchaseError.set(TICKET_QUANTITY_MESSAGE);
       return;
     }
@@ -854,6 +814,7 @@ export class EventDetail {
         this.api.get<EventDetailResponse>('event', `/events/${eventId}`),
       );
       this.event.set(result.event);
+      this.inventoryResetPending.set(false);
       this.form.reset({
         title: result.event.title,
         description: result.event.description ?? '',
@@ -884,7 +845,6 @@ export class EventDetail {
         await this.loadCheckinStats(eventId);
       }
       if (this.wantsSeatMap(result.event)) await this.loadSeats(eventId);
-      if (this.organiserMode) await this.loadQueueManagement(eventId);
       await this.loadCustomerPurchaseState(result.event);
     } catch (error) {
       this.event.set(null);
@@ -900,14 +860,18 @@ export class EventDetail {
     return this.organiserMode || this.canBuy();
   }
 
-  /** What a customer already holds, and their waiting-room place. A completed event needs no queue place. */
+  /** What a customer already holds, and their queue place. A completed event needs no queue place. */
   private async loadCustomerPurchaseState(event: EventDetailData): Promise<void> {
     if (!this.customerMode) return;
-    if (this.auth.isAuthenticated()) await this.loadOwnership(event.event_id);
-    if (!this.completed()) await this.loadZones(event.event_id);
-    if (this.completed()) return;
-    if (this.auth.isAuthenticated()) await this.loadQueueAccess(event.event_id);
-    else this.queueAccess.set('not-joined');
+    if (this.completed()) {
+      if (this.auth.isAuthenticated()) await this.loadOwnership(event.event_id);
+      return;
+    }
+    await Promise.all([
+      this.auth.isAuthenticated() ? this.loadOwnership(event.event_id) : Promise.resolve(),
+      this.loadZones(event.event_id),
+      this.loadQueueAccess(event.event_id),
+    ]);
   }
 
   private async loadMembers(eventId: number): Promise<void> {
@@ -1086,7 +1050,7 @@ export class EventDetail {
 
   /**
    * A customer who already bought (or checked in) should see their tickets, not
-   * a fresh waiting-room prompt. Paid orders still awaiting ticket issuance count
+   * a fresh queue prompt. Paid orders still awaiting ticket issuance count
    * too. Failures leave the normal purchase flow in place.
    */
   private async loadOwnership(eventId: number): Promise<void> {
@@ -1118,19 +1082,33 @@ export class EventDetail {
     });
   }
 
-  private async loadQueueManagement(eventId: number): Promise<void> {
-    try {
-      const result = await firstValueFrom(
-        this.api.get<QueueManagementResponse>('queue', `/events/${eventId}/queue`),
-      );
-      this.queueManagement.set(result.queue);
-    } catch {
-      this.queueManagement.set(null);
-    }
-  }
-
   private async loadQueueAccess(eventId: number): Promise<void> {
     this.queueAccess.set('checking');
+    try {
+      const summary = await this.queue.summary(eventId);
+      if (summary.status === 'CLOSED') {
+        this.queueAccess.set('closed');
+        return;
+      }
+      if (summary.status === 'DRAINED') {
+        this.queueAccess.set('drained');
+        return;
+      }
+    } catch (error) {
+      if (error instanceof HttpErrorResponse && error.status === 404) {
+        // Sessions are created lazily by the first join. A published event no
+        // longer needs a separate organiser action before the queue is usable.
+        this.queueAccess.set(this.event()?.status === 'PUBLISHED' ? 'not-joined' : 'closed');
+      } else {
+        this.queueAccess.set('unavailable');
+      }
+      return;
+    }
+
+    if (!this.auth.isAuthenticated()) {
+      this.queueAccess.set('not-joined');
+      return;
+    }
     try {
       this.applyQueueStatus(await this.queue.status(eventId));
     } catch (error) {
@@ -1276,8 +1254,7 @@ function queueAdmissionRequired(error: unknown): boolean {
 }
 
 const EVENT_ERROR_MESSAGES: Readonly<Record<string, string>> = {
-  queue_admission_required:
-    'Your waiting-room admission has expired. Rejoin the queue to continue.',
+  queue_admission_required: 'Your queue admission has expired. Rejoin the queue to continue.',
   event_not_editable:
     'This event has already been published — its details can no longer be edited.',
   only_draft_events_can_be_deleted:
@@ -1287,6 +1264,9 @@ const EVENT_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   inventory_not_configured:
     'Configure inventory before publishing: the event has no seats until you add at least one zone.',
   available_buyers_above_total_seats: 'Available buyers cannot be more than the total seats.',
+  reserved_seat_limit_exceeded: 'Reserved seating is limited to 400 mapped seats.',
+  tier_change_has_allocations:
+    'Ticketing mode cannot be changed after seats have been held or sold.',
   invited_user_not_found:
     'No OneStage account uses that email. Ask them to sign up first, then invite them again.',
   already_invited_or_member:
@@ -1300,22 +1280,24 @@ const EVENT_ERROR_MESSAGES: Readonly<Record<string, string>> = {
 };
 
 function describeError(error: unknown, action: string): string {
-  if (error instanceof HttpErrorResponse) {
-    if (action === 'complete your purchase') {
-      const purchaseMessage = purchaseErrorMessage(error);
-      if (purchaseMessage) return purchaseMessage;
-    }
-    const code = (error.error as { error?: string } | null)?.error;
-    if (code && Object.hasOwn(EVENT_ERROR_MESSAGES, code)) return EVENT_ERROR_MESSAGES[code];
-    if (error.status === 401) return 'Please sign in again before managing this event.';
-    if (error.status === 403) return 'You do not have permission to manage this event.';
-    if (error.status === 404) {
-      return action === 'complete your purchase'
-        ? 'Ticket purchasing is unavailable right now. Please try again later.'
-        : 'This event was not found.';
-    }
+  const fallback = `Unable to ${action}. Please try again.`;
+  if (!(error instanceof HttpErrorResponse)) return fallback;
+
+  const purchasing = action === 'complete your purchase';
+  if (purchasing) {
+    const purchaseMessage = purchaseErrorMessage(error);
+    if (purchaseMessage) return purchaseMessage;
   }
-  return `Unable to ${action}. Please try again.`;
+  const code = (error.error as { error?: string } | null)?.error;
+  if (code && Object.hasOwn(EVENT_ERROR_MESSAGES, code)) return EVENT_ERROR_MESSAGES[code];
+  if (error.status === 401) return 'Please sign in again before managing this event.';
+  if (error.status === 403) return 'You do not have permission to manage this event.';
+  if (error.status === 404) {
+    return purchasing
+      ? 'Ticket purchasing is unavailable right now. Please try again later.'
+      : 'This event was not found.';
+  }
+  return fallback;
 }
 
 export function purchaseErrorMessage(error: HttpErrorResponse): string | null {
@@ -1329,6 +1311,7 @@ export function purchaseErrorMessage(error: HttpErrorResponse): string | null {
   if (code === 'hold_has_no_inventory') {
     return 'Ticket inventory has not been configured for this event.';
   }
+  if (code === 'too_many_tickets') return TOO_MANY_TICKETS_MESSAGE;
   if (code === 'event_not_on_sale') return 'This event is no longer on sale.';
   if (code === 'event_completed') return EVENT_COMPLETED_MESSAGE;
   if (code === 'order_not_payable') return 'This order can no longer be paid.';

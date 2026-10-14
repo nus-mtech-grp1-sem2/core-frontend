@@ -519,7 +519,7 @@ describe('EventInventory', () => {
     expect(names[48]?.value).toBe('Section G7');
   });
 
-  it('GA zone shows a quantity input; the explicit value (not the area) is sent in the PUT body', async () => {
+  it('allows GA capacity above 400 and sends the explicit value instead of the map area', async () => {
     const { fixture, httpMock, host } = await renderFor(GA_EVENT);
 
     dragGaOverview(host, [0, 0], [1, 2]); // 2 rows x 3 cols; area = 6
@@ -531,8 +531,9 @@ describe('EventInventory', () => {
     // Override the quantity to something that doesn't match the area.
     setInputValue(host, '.zone-name-input', 'General Admission');
     setInputValue(host, '.zone-price-input', '25');
-    setInputValue(host, '.zone-quantity-input', '500');
+    setInputValue(host, '.zone-quantity-input', '60000');
     fixture.detectChanges();
+    expect(qtyInput?.max).toBe('');
 
     const saveButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
       b.textContent?.trim().startsWith('Save'),
@@ -542,7 +543,7 @@ describe('EventInventory', () => {
 
     const putReq = httpMock.expectOne(`/api/inventory/events/${GA_EVENT.event_id}/inventory`);
     const body = putReq.request.body as { zones: { quantity: number }[] };
-    expect(body.zones[0].quantity).toBe(500);
+    expect(body.zones[0].quantity).toBe(60_000);
     putReq.flush(null, { status: 204, statusText: 'No Content' });
   });
 
@@ -966,6 +967,55 @@ describe('EventInventory', () => {
     expect(host.querySelectorAll('[data-grid-row="0"]').length).toBe(12);
   });
 
+  it('lets a GA organiser replace seated-sized dimensions with larger multi-digit values', async () => {
+    const previousSeatedZone = {
+      inventoryItemId: 9,
+      name: 'Floor',
+      code: 'FLR',
+      priceCents: 4_000,
+      color: '#2563EB',
+      seatCount: 380,
+      soldCount: 0,
+      heldCount: 0,
+      gridRow: 0,
+      gridCol: 0,
+      gridRowSpan: 20,
+      gridColSpan: 19,
+    };
+    const { fixture, host } = await renderFor(GA_EVENT, {
+      gridRows: 20,
+      gridCols: 19,
+      zones: [previousSeatedZone],
+      seats: [],
+    });
+    const rows = host.querySelector<HTMLInputElement>('[aria-label="Number of rows"]')!;
+    const cols = host.querySelector<HTMLInputElement>('[aria-label="Number of columns"]')!;
+
+    // Replacing 20 with 30 transiently produces "3". It must not be clamped
+    // back to the existing zone's 20 rows before the second digit is entered.
+    rows.value = '3';
+    rows.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(rows.value).toBe('3');
+    rows.value = '30';
+    rows.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    host.querySelector<HTMLButtonElement>('[aria-label="Add row"]')?.click();
+    fixture.detectChanges();
+    expect(rows.value).toBe('31');
+
+    cols.value = '2';
+    cols.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(cols.value).toBe('2');
+    cols.value = '25';
+    cols.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    host.querySelector<HTMLButtonElement>('[aria-label="Add column"]')?.click();
+    fixture.detectChanges();
+    expect(cols.value).toBe('26');
+  });
+
   it("clamps a typed column count so it can't shrink below an existing zone's rightmost column", async () => {
     const existingZone = {
       inventoryItemId: 9,
@@ -1078,24 +1128,26 @@ describe('EventInventory', () => {
 
   it('clamps reserved-seating rows and columns at 20', async () => {
     const { fixture, host } = await renderFor(SEATED_EVENT); // default 6 rows x 8 cols
+    const rows = host.querySelector<HTMLInputElement>('[aria-label="Number of rows"]')!;
+    const cols = host.querySelector<HTMLInputElement>('[aria-label="Number of columns"]')!;
 
     setInputValue(host, '[aria-label="Number of rows"]', '21');
+    rows.dispatchEvent(new FocusEvent('blur'));
     fixture.detectChanges();
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Number of rows"]')?.value).toBe('20');
+    expect(rows.value).toBe('20');
     setInputValue(host, '[aria-label="Number of rows"]', '200');
+    rows.dispatchEvent(new FocusEvent('blur'));
     fixture.detectChanges();
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Number of rows"]')?.value).toBe('20');
+    expect(rows.value).toBe('20');
 
     setInputValue(host, '[aria-label="Number of columns"]', '100');
+    cols.dispatchEvent(new FocusEvent('blur'));
     fixture.detectChanges();
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Number of columns"]')?.value).toBe(
-      '20',
-    );
+    expect(cols.value).toBe('20');
     setInputValue(host, '[aria-label="Number of columns"]', '999');
+    cols.dispatchEvent(new FocusEvent('blur'));
     fixture.detectChanges();
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Number of columns"]')?.value).toBe(
-      '20',
-    );
+    expect(cols.value).toBe('20');
     expect(host.querySelectorAll('[data-grid-row="0"]').length).toBe(20);
     expect(host.querySelector<HTMLButtonElement>('[aria-label="Add row"]')?.disabled).toBe(true);
     expect(host.querySelector<HTMLButtonElement>('[aria-label="Add column"]')?.disabled).toBe(true);

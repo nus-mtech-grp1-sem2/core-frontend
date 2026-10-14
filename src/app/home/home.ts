@@ -284,7 +284,7 @@ export class Home {
     },
     {
       title: 'Fair queue',
-      detail: 'A single waiting room per on-sale, so bots do not get ahead of you.',
+      detail: 'A fair queue for every on-sale, so bots do not get ahead of you.',
     },
     {
       title: 'Instant delivery',

@@ -18,10 +18,11 @@ import {
   seatsWithFallbackLayout,
 } from './event-detail';
 
-/** Both tiers sell through the waiting room; this customer has already been admitted. */
+/** Both tiers sell through the queue; this customer has already been admitted. */
 const admittedQueue = () => ({
   provide: QueueService,
   useValue: {
+    summary: vi.fn().mockResolvedValue({ status: 'OPEN' }),
     status: vi.fn().mockResolvedValue({
       status: 'ADMITTED',
       admissionToken: 'test-admission',
@@ -112,6 +113,7 @@ describe('EventDetail checkout navigation', () => {
           {
             provide: QueueService,
             useValue: {
+              summary: vi.fn().mockResolvedValue({ status: 'OPEN' }),
               status: vi.fn().mockResolvedValue({
                 status: 'ADMITTED',
                 admissionToken: 'test-admission',
@@ -240,6 +242,7 @@ describe('EventDetail seat map sizing', () => {
         {
           provide: QueueService,
           useValue: {
+            summary: vi.fn().mockResolvedValue({ status: 'OPEN' }),
             status: vi.fn().mockResolvedValue({
               status: 'ADMITTED',
               admissionToken: 'test-admission',
@@ -417,8 +420,8 @@ describe('EventDetail purchase errors', () => {
             description: '',
             venue: 'Test Hall',
             starts_at: '2099-01-01 20:00:00',
-            total_seats: 200,
-            available_buyers: 20,
+            total_seats: 10,
+            available_buyers: 10,
             tier: 'TIER1_GA',
             status: 'PUBLISHED',
             price_cents: 2000,
@@ -435,7 +438,7 @@ describe('EventDetail purchase errors', () => {
               name: 'General Admission',
               priceCents: 2000,
               color: '#000',
-              remaining: 200,
+              remaining: 10,
             },
           ],
         });
@@ -466,7 +469,7 @@ describe('EventDetail purchase errors', () => {
     const host = fixture.nativeElement as HTMLElement;
 
     const quantity = host.querySelector<HTMLInputElement>('#quantity')!;
-    expect(quantity.max).toBe(String(MAX_TICKETS_PER_ORDER));
+    expect(quantity.max).toBe('10');
     expect(host.querySelector('#quantity-hint')?.textContent).toContain(
       `Up to ${MAX_TICKETS_PER_ORDER} tickets per order`,
     );
@@ -480,7 +483,7 @@ describe('EventDetail purchase errors', () => {
 
     expect(post).not.toHaveBeenCalled();
     expect(host.querySelector('.error[role="alert"]')?.textContent).toContain(
-      `You can buy 1 to ${MAX_TICKETS_PER_ORDER} tickets in one order.`,
+      `at most ${MAX_TICKETS_PER_ORDER} tickets per order`,
     );
   });
 });
@@ -560,47 +563,30 @@ describe('EventDetail event-team purchases', () => {
   });
 });
 
-describe('EventDetail waiting-room controls', () => {
-  it('opens the waiting room and manually admits a waiting customer', async () => {
-    let queueLoads = 0;
+describe('EventDetail queue controls', () => {
+  it('does not render or load organizer queue controls', async () => {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172') {
         return of({
           event: {
             event_id: 172,
             organiser_sub: 'owner-sub',
-            title: 'Test event',
+            title: 'Draft event',
             description: 'Description',
             venue: 'Test Hall',
             starts_at: '2099-09-20 20:00:00',
             total_seats: 10,
             available_buyers: 2,
             tier: 'TIER2_SEATED',
-            status: 'PUBLISHED',
+            status: 'DRAFT',
             price_cents: 2_000,
           },
         });
       }
       if (path === '/events/172/team-members') return of({ members: [] });
       if (path === '/events/172/seats') return of({ seats: [] });
-      if (path === '/events/172/queue') {
-        queueLoads += 1;
-        if (queueLoads === 1) {
-          return throwError(() => new HttpErrorResponse({ status: 404 }));
-        }
-        return of({
-          queue: {
-            eventId: 172,
-            admissionBatchSize: 2,
-            status: 'OPEN',
-            waitingCount: queueLoads === 2 ? 1 : 0,
-          },
-        });
-      }
       return throwError(() => new Error(`Unexpected GET ${path}`));
     });
-    const put = vi.fn(() => of({ queueSession: { status: 'OPEN' } }));
-    const post = vi.fn(() => of({ admitted: 1, remaining: 0 }));
 
     await TestBed.configureTestingModule({
       imports: [EventDetail],
@@ -624,7 +610,13 @@ describe('EventDetail waiting-room controls', () => {
         },
         {
           provide: ApiService,
-          useValue: { get, put, post, delete: vi.fn(), url: vi.fn(() => 'mock-image-url') },
+          useValue: {
+            get,
+            put: vi.fn(),
+            post: vi.fn(),
+            delete: vi.fn(),
+            url: vi.fn(() => 'mock-image-url'),
+          },
         },
       ],
     }).compileComponents();
@@ -635,33 +627,10 @@ describe('EventDetail waiting-room controls', () => {
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
 
-    const buttons = () =>
-      Array.from(
-        (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('button'),
-      );
-    buttons()
-      .find((button) => button.textContent?.trim() === 'Open waiting room')
-      ?.click();
-    await new Promise<void>((resolve) => setTimeout(resolve));
-    fixture.detectChanges();
-
-    expect(put).toHaveBeenCalledWith('queue', '/events/172/queue/config', {
-      opensAt: expect.any(String),
-      admissionBatchSize: 2,
-      admissionIntervalSec: 60,
-    });
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      'The waiting room is open',
-    );
-
-    buttons()
-      .find((button) => button.textContent?.trim() === 'Admit next customer')
-      ?.click();
-    await new Promise<void>((resolve) => setTimeout(resolve));
-    fixture.detectChanges();
-
-    expect(post).toHaveBeenCalledWith('queue', '/events/172/queue/admit-next', {});
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain('1 customer admitted.');
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('#queue-heading')).toBeNull();
+    expect(host.textContent).not.toContain('Queue starts after publishing');
+    expect(get).not.toHaveBeenCalledWith('queue', '/events/172/queue');
   });
 });
 
@@ -679,6 +648,7 @@ describe('EventDetail completed events for an organiser', () => {
         invite_status: 'ACCEPTED',
       },
     ],
+    capacity: { readonly totalSeats?: number; readonly availableBuyers?: number } = {},
   ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
       if (path === '/events/172') {
@@ -690,8 +660,8 @@ describe('EventDetail completed events for an organiser', () => {
             description: 'Description',
             venue: 'Test Hall',
             starts_at: startsAt,
-            total_seats: 10,
-            available_buyers: 2,
+            total_seats: capacity.totalSeats ?? 10,
+            available_buyers: capacity.availableBuyers ?? 2,
             tier,
             status,
             price_cents: 2_000,
@@ -977,6 +947,63 @@ describe('EventDetail completed events for an organiser', () => {
     expect(host.textContent).toContain('Set by the zones in Configure inventory');
     expect(button('Save changes')?.disabled).toBe(false);
   });
+
+  it('resets inventory capacity and opens configuration after switching ticketing mode', async () => {
+    const { fixture, host, button, put } = await renderOrganiser(
+      '2099-01-01 20:00:00',
+      'DRAFT',
+      'TIER1_GA',
+      undefined,
+      { totalSeats: 60_000, availableBuyers: 60_000 },
+    );
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const tier = host.querySelector<HTMLSelectElement>('#tier')!;
+    tier.value = 'TIER2_SEATED';
+    tier.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(host.querySelector<HTMLInputElement>('#seats')?.value).toBe('0');
+    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.value).toBe('');
+    expect(host.textContent).toContain(
+      'Saving will clear all current zones, seats and map settings.',
+    );
+
+    button('Save changes')?.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+
+    expect(put).toHaveBeenCalledWith(
+      'event',
+      '/events/172',
+      expect.objectContaining({
+        totalSeats: 0,
+        availableBuyers: null,
+        tier: 'TIER2_SEATED',
+      }),
+    );
+    expect(navigate).toHaveBeenCalledWith(['/organiser/events', 172, 'inventory']);
+  });
+
+  it('restores saved capacity when the ticketing change is reverted before saving', async () => {
+    const { fixture, host } = await renderOrganiser(
+      '2099-01-01 20:00:00',
+      'DRAFT',
+      'TIER1_GA',
+      undefined,
+      { totalSeats: 300, availableBuyers: 30 },
+    );
+    const tier = host.querySelector<HTMLSelectElement>('#tier')!;
+    tier.value = 'TIER2_SEATED';
+    tier.dispatchEvent(new Event('change'));
+    tier.value = 'TIER1_GA';
+    tier.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(host.querySelector<HTMLInputElement>('#seats')?.value).toBe('300');
+    expect(host.querySelector<HTMLInputElement>('#available-buyers')?.value).toBe('30');
+    expect(host.textContent).not.toContain(
+      'Saving will clear all current zones, seats and map settings.',
+    );
+  });
 });
 
 describe('EventDetail completed events for a customer', () => {
@@ -985,6 +1012,7 @@ describe('EventDetail completed events for a customer', () => {
     tier?: 'TIER1_GA' | 'TIER2_SEATED';
     ownedTickets?: number;
     admitted?: boolean;
+    queueStatus?: 'CLOSED' | 'OPEN' | 'DRAINED' | 'UNCONFIGURED';
   }) {
     const requested: string[] = [];
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
@@ -1018,6 +1046,27 @@ describe('EventDetail completed events for a customer', () => {
         });
       }
       if (path === '/events/172/seats') return of({ seats: [] });
+      if (path === '/events/172/queue') {
+        if (options.queueStatus === 'UNCONFIGURED') {
+          return throwError(
+            () =>
+              new HttpErrorResponse({
+                status: 404,
+                error: { error: 'queue_not_configured' },
+              }),
+          );
+        }
+        return of({
+          queue: {
+            eventId: 172,
+            opensAt: '2099-01-01T12:00:00Z',
+            admissionBatchSize: 2,
+            admissionIntervalSec: 60,
+            status: options.queueStatus ?? 'OPEN',
+            waitingCount: 0,
+          },
+        });
+      }
       if (path === '/events/172/queue/me') {
         return options.admitted
           ? of({
@@ -1083,19 +1132,19 @@ describe('EventDetail completed events for a customer', () => {
     expect(host.textContent).toContain('This event has already taken place');
     expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('Completed');
     expect(host.querySelector('.purchase[aria-label="Buy tickets"]')).toBeNull();
-    for (const label of ['Buy tickets', 'Join waiting room', 'Buy more tickets']) {
+    for (const label of ['Buy tickets', 'Join queue', 'Buy more tickets']) {
       expect(hasControl(label), label).toBe(false);
     }
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('does not offer the waiting room, or load its seat map or queue, for a completed reserved-seating event', async () => {
+  it('does not offer or load the queue or seat map for a completed reserved-seating event', async () => {
     const { requested, hasControl } = await renderCustomer({
       startsAt: PAST,
       tier: 'TIER2_SEATED',
     });
 
-    expect(hasControl('Join waiting room')).toBe(false);
+    expect(hasControl('Join queue')).toBe(false);
     expect(requested).not.toContain('/events/172/seats');
     expect(requested.some((path) => path.includes('/queue'))).toBe(false);
   });
@@ -1113,11 +1162,32 @@ describe('EventDetail completed events for a customer', () => {
     expect(hasControl('View my tickets')).toBe(false);
   });
 
-  it('sends a general-admission customer through the waiting room before they can buy', async () => {
+  it('sends a general-admission customer through the queue before they can buy', async () => {
     const { hasControl } = await renderCustomer({ startsAt: '2099-01-01 20:00:00' });
 
-    expect(hasControl('Join waiting room')).toBe(true);
+    expect(hasControl('Join queue')).toBe(true);
     expect(hasControl('Buy tickets')).toBe(false);
+  });
+
+  it('does not offer the queue while the event queue is closed', async () => {
+    const { host, hasControl, requested } = await renderCustomer({
+      startsAt: '2099-01-01 20:00:00',
+      queueStatus: 'CLOSED',
+    });
+
+    expect(host.textContent).toContain('The queue is available after publication.');
+    expect(hasControl('Join queue')).toBe(false);
+    expect(requested).not.toContain('/events/172/queue/me');
+  });
+
+  it('offers Join queue for a published event whose session has not been created yet', async () => {
+    const { hasControl, requested } = await renderCustomer({
+      startsAt: '2099-01-01 20:00:00',
+      queueStatus: 'UNCONFIGURED',
+    });
+
+    expect(hasControl('Join queue')).toBe(true);
+    expect(requested).not.toContain('/events/172/queue/me');
   });
 
   it('still lets customers buy while the event is upcoming, once admitted', async () => {
@@ -1131,7 +1201,7 @@ describe('EventDetail completed events for a customer', () => {
     expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('On sale');
   });
 
-  it('sends a ticket holder who wants more straight into the waiting room', async () => {
+  it('sends a ticket holder who wants more straight into the queue', async () => {
     const { host } = await renderCustomer({ startsAt: '2099-01-01 20:00:00', ownedTickets: 2 });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
@@ -1159,6 +1229,17 @@ describe('EventDetail completed events for a customer', () => {
 
     expect(navigate).not.toHaveBeenCalled();
     expect(hasControl('Buy tickets')).toBe(true);
+  });
+
+  it('explains the server refusing an order for too many tickets', () => {
+    const error = new HttpErrorResponse({
+      status: 400,
+      error: { error: 'too_many_tickets', maxQuantity: 50 },
+    });
+
+    expect(purchaseErrorMessage(error)).toBe(
+      'You can buy at most 50 tickets per order. For more, place another order.',
+    );
   });
 
   it('explains the server refusing an order for a completed event', () => {

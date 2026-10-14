@@ -91,7 +91,9 @@ describe('Events', () => {
     fixture.detectChanges();
 
     expect(host.querySelectorAll('.event-card')).toHaveLength(2);
-    expect(host.textContent).toContain('Join waiting room');
+    expect(host.textContent).toContain('View event');
+    expect(host.textContent).not.toContain('Join queue');
+    expect(host.textContent).not.toContain('Join waiting room');
     expect(host.textContent).toContain('View tickets');
     expect(host.textContent).not.toContain('New event');
     httpMock.verify();
@@ -286,10 +288,11 @@ describe('Events', () => {
         expect(card(title)?.querySelector('.status')?.textContent?.trim(), title).toBe('Completed');
         expect(card(title)?.querySelector('.customer-action a'), title).toBeNull();
       }
-      // An upcoming event is still bought from its card.
+      // An upcoming reserved event opens its details before offering a live queue action.
       expect(card('ASEAN Cup Final')?.querySelector('.customer-action a')?.textContent).toContain(
-        'Join waiting room',
+        'View event',
       );
+      expect(card('ASEAN Cup Final')?.textContent).not.toContain('Join queue');
       httpMock.verify();
     });
 
