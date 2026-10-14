@@ -195,7 +195,7 @@ describe('MyEvents tickets and orders', () => {
       orders: [paidOrderFixture(2, 'Last month', -30)],
     });
 
-    expect(host.querySelectorAll('.ticket-card').length).toBe(0);
+    expect(host.querySelectorAll('.ticket-card')).toHaveLength(0);
     expect(host.textContent).toContain('No upcoming tickets');
     expect(host.textContent).toContain('Tick “Include completed events” to see them.');
     expect(host.textContent).not.toContain('No tickets yet');
@@ -246,7 +246,7 @@ describe('MyEvents tickets and orders', () => {
       q: 'ballet',
     });
 
-    expect(host.querySelectorAll('.ticket-card').length).toBe(0);
+    expect(host.querySelectorAll('.ticket-card')).toHaveLength(0);
     expect(host.textContent).toContain('None of your tickets match “ballet”.');
     expect(host.textContent).not.toContain('No tickets yet');
   });

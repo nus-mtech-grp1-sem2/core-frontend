@@ -90,7 +90,7 @@ describe('Events', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(host.querySelectorAll('.event-card').length).toBe(2);
+    expect(host.querySelectorAll('.event-card')).toHaveLength(2);
     expect(host.textContent).toContain('Join waiting room');
     expect(host.textContent).toContain('View tickets');
     expect(host.textContent).not.toContain('New event');
@@ -105,7 +105,7 @@ describe('Events', () => {
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
 
-    expect(host.querySelectorAll('.event-card').length).toBe(2);
+    expect(host.querySelectorAll('.event-card')).toHaveLength(2);
     const toggle = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
       (button) => button.textContent?.trim() === 'New event',
     );
@@ -205,13 +205,13 @@ describe('Events', () => {
 
     const include = host.querySelector<HTMLInputElement>('.include-completed input')!;
     expect(include.checked).toBe(false);
-    expect(host.querySelectorAll('.event-card').length).toBe(2);
+    expect(host.querySelectorAll('.event-card')).toHaveLength(2);
     expect(host.textContent).not.toContain('Old Farewell Show');
 
     include.click();
     fixture.detectChanges();
 
-    expect(host.querySelectorAll('.event-card').length).toBe(3);
+    expect(host.querySelectorAll('.event-card')).toHaveLength(3);
     const card = Array.from(host.querySelectorAll('.event-card')).find((element) =>
       element.textContent?.includes('Old Farewell Show'),
     )!;
@@ -335,7 +335,7 @@ describe('Events', () => {
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
 
-    expect(host.querySelectorAll('.event-card').length).toBe(2);
+    expect(host.querySelectorAll('.event-card')).toHaveLength(2);
     expect(host.textContent).toContain('Neon Skyline Tour');
     expect(host.textContent).toContain('ASEAN Cup Final');
     httpMock.verify();
@@ -397,7 +397,7 @@ describe('Events', () => {
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
 
-    expect(host.querySelectorAll('.event-card').length).toBe(1);
+    expect(host.querySelectorAll('.event-card')).toHaveLength(1);
     expect(host.textContent).toContain('ASEAN Cup Final');
     expect(host.textContent).not.toContain('Neon Skyline Tour');
     httpMock.verify();

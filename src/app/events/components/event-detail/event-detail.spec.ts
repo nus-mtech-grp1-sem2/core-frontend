@@ -1364,7 +1364,7 @@ describe('EventDetail GA ticket tiers', () => {
     expect(zoneMap).not.toBeNull();
 
     const blocks = Array.from(host.querySelectorAll<HTMLElement>('.zone-block'));
-    expect(blocks.length).toBe(2);
+    expect(blocks).toHaveLength(2);
 
     const floorBlock = blocks.find((block) => block.textContent?.includes('Floor'));
     expect(floorBlock?.style.gridRow).toBe('1 / span 2');
@@ -1540,7 +1540,7 @@ describe('EventDetail stage pieces', () => {
     const zoneMap = host.querySelector('.zone-map');
 
     const stageCells = zoneMap?.querySelectorAll<HTMLElement>('.stage-cell');
-    expect(stageCells?.length).toBe(4);
+    expect(stageCells).toHaveLength(4);
     expect(stageCells?.[0]?.style.top).toBe('8.5rem');
     expect(stageCells?.[0]?.style.left).toBe('0rem');
     expect(stageCells?.[0]?.style.width).toBe('2.125rem');
@@ -1557,6 +1557,6 @@ describe('EventDetail stage pieces', () => {
     const zoneMap = host.querySelector('.zone-map');
 
     expect(zoneMap?.querySelector('.stage-indicator')).not.toBeNull();
-    expect(zoneMap?.querySelectorAll('.stage-cell').length).toBe(0);
+    expect(zoneMap?.querySelectorAll('.stage-cell')).toHaveLength(0);
   });
 });
