@@ -30,6 +30,11 @@
   font-size: 0.875rem;
   font-weight: 600;
 }
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
 .ticket-list {
   list-style: none;
   margin: 0;

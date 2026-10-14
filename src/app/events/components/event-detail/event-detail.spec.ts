@@ -13,6 +13,7 @@ import {
   buyerCapacity,
   defaultSeatGridColumns,
   EventDetail,
+  MAX_TICKETS_PER_ORDER,
   purchaseErrorMessage,
   seatsWithFallbackLayout,
 } from './event-detail';
@@ -401,6 +402,90 @@ describe('EventDetail purchase errors', () => {
 
     expect(purchaseErrorMessage(error)).toContain('unavailable or sold out');
   });
+
+  it('names the per-order ticket limit when the order service rejects the order', () => {
+    const error = new HttpErrorResponse({ status: 400, error: { error: 'invalid_order' } });
+
+    expect(purchaseErrorMessage(error)).toContain(`1 to ${MAX_TICKETS_PER_ORDER} tickets`);
+  });
+
+  it('stops an order above the per-order limit before sending it', async () => {
+    const get = vi.fn((_service: string, path: string): Observable<unknown> => {
+      if (path === '/events/172')
+        return of({
+          event: {
+            event_id: 172,
+            organiser_sub: 'owner',
+            title: 'Test event',
+            description: '',
+            venue: 'Test Hall',
+            starts_at: '2099-01-01 20:00:00',
+            total_seats: 200,
+            available_buyers: 20,
+            tier: 'TIER1_GA',
+            status: 'PUBLISHED',
+            price_cents: 2000,
+          },
+        });
+      if (path === '/helper/shifts') return of({ events: [] });
+      if (path === '/customers/me/orders') return of({ orders: [] });
+      if (path === '/customers/me/tickets') return of({ tickets: [] });
+      if (path === '/events/172/zones')
+        return of({
+          zones: [
+            {
+              inventoryItemId: 5,
+              name: 'General Admission',
+              priceCents: 2000,
+              color: '#000',
+              remaining: 200,
+            },
+          ],
+        });
+      return throwError(() => new Error(`Unexpected GET ${path}`));
+    });
+    const post = vi.fn(() => of({ order: { order_id: 42 } }));
+    await TestBed.configureTestingModule({
+      imports: [EventDetail],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { workspace: 'customer' } } } },
+        { provide: ApiService, useValue: { get, post, url: vi.fn(() => 'mock-image-url') } },
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => true,
+            user: signal({ sub: 'customer', email: 'test@example.com', name: 'Test', groups: [] }),
+          },
+        },
+        admittedQueue(),
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(EventDetail);
+    fixture.componentRef.setInput('id', '172');
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+
+    const quantity = host.querySelector<HTMLInputElement>('#quantity')!;
+    expect(quantity.max).toBe(String(MAX_TICKETS_PER_ORDER));
+    expect(host.querySelector('#quantity-hint')?.textContent).toContain(
+      `Up to ${MAX_TICKETS_PER_ORDER} tickets per order`,
+    );
+    quantity.value = String(MAX_TICKETS_PER_ORDER + 1);
+    quantity.dispatchEvent(new Event('input'));
+    Array.from(host.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Buy tickets')!
+      .click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(post).not.toHaveBeenCalled();
+    expect(host.querySelector('.error[role="alert"]')?.textContent).toContain(
+      `at most ${MAX_TICKETS_PER_ORDER} tickets per order`,
+    );
+  });
 });
 
 describe('EventDetail event-team purchases', () => {
@@ -742,9 +827,60 @@ describe('EventDetail completed events for an organiser', () => {
     expect(host.querySelector('.event-facts .status')?.textContent?.trim()).toBe('Draft');
     expect(host.querySelector<HTMLInputElement>('#title')?.disabled).toBe(false);
     expect(host.querySelector<HTMLInputElement>('#member-email')?.disabled).toBe(false);
-    for (const label of ['Save changes', 'Delete draft', 'Invite', 'Remove']) {
+    for (const label of ['Save changes', 'Publish event', 'Delete draft', 'Invite', 'Remove']) {
       expect(button(label)?.disabled, label).toBe(false);
     }
+  });
+
+  it('publishes a draft from the edit page once the organiser confirms', async () => {
+    const { fixture, button, post } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
+    const ask = vi.spyOn(TestBed.inject(ConfirmDialogService), 'ask').mockResolvedValue(true);
+
+    button('Publish event')!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ title: 'Publish this event?' }));
+    expect(post).toHaveBeenCalledWith('event', '/events/172/publish', {});
+    vi.restoreAllMocks();
+  });
+
+  it('asks for unsaved edits to be saved before publishing a draft', async () => {
+    const { fixture, host, button, post } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
+    const ask = vi.spyOn(TestBed.inject(ConfirmDialogService), 'ask').mockResolvedValue(true);
+    const title = host.querySelector<HTMLInputElement>('#title')!;
+    title.value = 'Renamed event';
+    title.dispatchEvent(new Event('input'));
+
+    button('Publish event')!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+      'Save your changes before publishing this event.',
+    );
+    vi.restoreAllMocks();
+  });
+
+  it('says inventory must be configured when publishing a draft with no zones', async () => {
+    const { fixture, host, button, post } = await renderOrganiser('2099-01-01 20:00:00', 'DRAFT');
+    vi.spyOn(TestBed.inject(ConfirmDialogService), 'ask').mockResolvedValue(true);
+    post.mockReturnValueOnce(
+      throwError(
+        () => new HttpErrorResponse({ status: 409, error: { error: 'inventory_not_configured' } }),
+      ),
+    );
+
+    button('Publish event')!.click();
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(host.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+      'Configure inventory before publishing: the event has no seats until you add at least one zone.',
+    );
+    vi.restoreAllMocks();
   });
 
   it('shows the UTC start time in local time and saves an edited time back in UTC', async () => {
@@ -1332,7 +1468,7 @@ describe('EventDetail GA ticket tiers', () => {
     expect(zoneMap).not.toBeNull();
 
     const blocks = Array.from(host.querySelectorAll<HTMLElement>('.zone-block'));
-    expect(blocks.length).toBe(2);
+    expect(blocks).toHaveLength(2);
 
     const floorBlock = blocks.find((block) => block.textContent?.includes('Floor'));
     expect(floorBlock?.style.gridRow).toBe('1 / span 2');
@@ -1508,7 +1644,7 @@ describe('EventDetail stage pieces', () => {
     const zoneMap = host.querySelector('.zone-map');
 
     const stageCells = zoneMap?.querySelectorAll<HTMLElement>('.stage-cell');
-    expect(stageCells?.length).toBe(4);
+    expect(stageCells).toHaveLength(4);
     expect(stageCells?.[0]?.style.top).toBe('8.5rem');
     expect(stageCells?.[0]?.style.left).toBe('0rem');
     expect(stageCells?.[0]?.style.width).toBe('2.125rem');
@@ -1525,6 +1661,6 @@ describe('EventDetail stage pieces', () => {
     const zoneMap = host.querySelector('.zone-map');
 
     expect(zoneMap?.querySelector('.stage-indicator')).not.toBeNull();
-    expect(zoneMap?.querySelectorAll('.stage-cell').length).toBe(0);
+    expect(zoneMap?.querySelectorAll('.stage-cell')).toHaveLength(0);
   });
 });

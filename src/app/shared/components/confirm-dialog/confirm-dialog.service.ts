@@ -6,10 +6,15 @@ export interface ConfirmOptions {
   readonly message: readonly string[];
   /** The action that goes ahead: red for a destructive action, green for a positive one. */
   readonly confirmLabel: string;
-  /** The way back out, focused first: green beside a destructive action, red beside a positive one. */
+  /** The way back out: green beside a destructive action, red beside a positive one. */
   readonly cancelLabel: string;
   /** Whether going ahead destroys something (the default) or is a positive step such as publishing. */
   readonly tone?: 'destructive' | 'positive';
+  /**
+   * Which button has focus, and so answers Enter, when the dialog opens. The way back
+   * out by default; 'confirm' suits a quick, routine yes such as checking a ticket in.
+   */
+  readonly defaultChoice?: 'confirm' | 'cancel';
 }
 
 interface PendingConfirm {

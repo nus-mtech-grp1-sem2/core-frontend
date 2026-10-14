@@ -12,6 +12,7 @@ function user(groups: readonly string[]): AuthenticatedUser {
 const stubRoutes: Routes = [
   { path: '', children: [] },
   { path: 'events', children: [] },
+  { path: 'my-events', children: [] },
   { path: 'organiser', children: [] },
   { path: 'helper', children: [] },
   { path: 'checkin', children: [] },
@@ -120,5 +121,33 @@ describe('Header navigation', () => {
     await fixture.whenStable();
 
     expect(router.url).toBe('/events?q=arena');
+  });
+
+  it('filters My events in place instead of sending the search to the catalogue', async () => {
+    const { host, router, fixture } = await navFor(user(['customer']));
+    await router.navigateByUrl('/my-events?orderId=42');
+    await fixture.whenStable();
+    const input = host.querySelector<HTMLInputElement>('#site-search')!;
+
+    expect(input.placeholder).toBe('Search your tickets');
+    expect(host.querySelector('label[for="site-search"]')?.textContent?.trim()).toBe(
+      'Search your tickets by event or venue',
+    );
+
+    input.value = ' Test Hall ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await fixture.whenStable();
+    expect(router.url).toBe('/my-events?orderId=42&q=Test%20Hall');
+
+    host
+      .querySelector<HTMLFormElement>('form.search')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    expect(router.url).toBe('/my-events?orderId=42&q=Test%20Hall');
+
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await fixture.whenStable();
+    expect(router.url).toBe('/my-events?orderId=42');
   });
 });

@@ -120,14 +120,17 @@
   max-width: 28rem;
   flex: 1 1 12rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: var(--text-inverse-muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
 }
 
+/* The input drops its own outline, so the light pill carries the focus ring
+   instead — brand-400 keeps 3:1 against the dark bar around it. */
 .search:focus-within {
-  border-color: var(--brand-400);
-  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--brand-500);
+  outline: 3px solid var(--brand-400);
+  outline-offset: 2px;
 }
 
 .search input {
@@ -135,13 +138,13 @@
   min-width: 0;
   background: transparent;
   border: 0;
-  color: var(--text-inverse);
+  color: var(--text);
   font: inherit;
   font-size: 0.875rem;
 }
 
 .search input::placeholder {
-  color: var(--text-inverse-muted);
+  color: var(--text-muted);
 }
 
 .search input:focus {

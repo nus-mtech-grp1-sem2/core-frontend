@@ -27,6 +27,26 @@ const WORKSPACE_TABS: readonly WorkspaceTab[] = [
 
 const ANONYMOUS_LINKS: readonly NavLink[] = [{ label: 'Events', path: '/events' }];
 
+interface SearchScope {
+  /** The page whose list the search filters. */
+  readonly path: string;
+  readonly label: string;
+  readonly placeholder: string;
+}
+
+const CATALOGUE_SEARCH: SearchScope = {
+  path: '/events',
+  label: 'Search events, venues or artists',
+  placeholder: 'Search events, venues, artists',
+};
+
+/** On My events the search filters the customer's own tickets rather than the catalogue. */
+const MY_TICKETS_SEARCH: SearchScope = {
+  path: '/my-events',
+  label: 'Search your tickets by event or venue',
+  placeholder: 'Search your tickets',
+};
+
 /**
  * Sticky top bar: brand, primary nav, search and account actions.
  *
@@ -74,6 +94,11 @@ export class Header {
   protected readonly showSearch = computed(
     () => !this.auth.isAuthenticated() || this.activeWorkspace() === 'customer',
   );
+  protected readonly searchScope = computed(() =>
+    this.currentUrl().split(/[?#]/)[0] === MY_TICKETS_SEARCH.path
+      ? MY_TICKETS_SEARCH
+      : CATALOGUE_SEARCH,
+  );
   protected readonly searchQuery = computed(() => {
     const query = this.currentUrl().split('?')[1] ?? '';
     return new URLSearchParams(query).get('q') ?? '';
@@ -84,17 +109,29 @@ export class Header {
   }
 
   protected search(input: HTMLInputElement): void {
-    const query = input.value.trim();
-    this.menuOpen.set(false);
-    void this.router.navigate(['/events'], { queryParams: query ? { q: query } : {} });
+    this.runSearch(input.value, false);
   }
 
   protected searchAsYouType(value: string): void {
+    this.runSearch(value, true);
+  }
+
+  private runSearch(value: string, replaceUrl: boolean): void {
     const query = value.trim();
     this.menuOpen.set(false);
-    void this.router.navigate(['/events'], {
+    if (this.searchScope() === MY_TICKETS_SEARCH) {
+      // Filter in place, keeping the page's own parameters (e.g. the orderId
+      // a purchase lands with) and not stacking a history entry per keystroke.
+      void this.router.navigate([MY_TICKETS_SEARCH.path], {
+        queryParams: { q: query || null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      return;
+    }
+    void this.router.navigate([CATALOGUE_SEARCH.path], {
       queryParams: query ? { q: query } : {},
-      replaceUrl: true,
+      replaceUrl,
     });
   }
 
