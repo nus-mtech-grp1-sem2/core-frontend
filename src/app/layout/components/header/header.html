@@ -57,7 +57,7 @@
       }
       @if (showSearch()) {
         <form class="search" role="search" (submit)="search(searchInput); $event.preventDefault()">
-          <label class="visually-hidden" for="site-search">Search events, venues or artists</label>
+          <label class="visually-hidden" for="site-search">{{ searchScope().label }}</label>
           <button type="submit" class="search-submit">
             <span class="visually-hidden">Search</span>
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
@@ -76,7 +76,7 @@
             type="search"
             [value]="searchQuery()"
             (input)="searchAsYouType($any($event.target).value)"
-            placeholder="Search events, venues, artists"
+            [placeholder]="searchScope().placeholder"
           />
         </form>
       }

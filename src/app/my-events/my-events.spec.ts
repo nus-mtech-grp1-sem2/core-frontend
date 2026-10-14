@@ -19,6 +19,8 @@ describe('MyEvents tickets and orders', () => {
       missingOrder?: boolean;
       tickets?: readonly object[];
       orders?: readonly object[];
+      q?: string;
+      includeCompleted?: boolean;
     } = {},
   ) {
     const get = vi.fn((_service: string, path: string): Observable<unknown> => {
@@ -95,10 +97,16 @@ describe('MyEvents tickets and orders', () => {
       ],
     }).compileComponents();
     const fixture = TestBed.createComponent(MyEvents);
+    if (options.q !== undefined) fixture.componentRef.setInput('q', options.q);
     fixture.detectChanges();
     await new Promise<void>((resolve) => setTimeout(resolve));
     fixture.detectChanges();
-    return fixture.nativeElement as HTMLElement;
+    const host = fixture.nativeElement as HTMLElement;
+    if (options.includeCompleted) {
+      host.querySelector<HTMLInputElement>('.include-completed input')!.click();
+      fixture.detectChanges();
+    }
+    return host;
   }
 
   it('shows the matching order payment date, not the event date or another booking date', async () => {
@@ -181,13 +189,66 @@ describe('MyEvents tickets and orders', () => {
     expect(titles(host, '.pending-list')).toEqual(['Tonight', 'Next week']);
   });
 
-  it('lists nothing when every ticket is for an earlier day', async () => {
+  it('lists nothing when every ticket is for an earlier day, and says how to see them', async () => {
     const host = await render({
       tickets: [ticketFixture(1, 'Last week', -10)],
       orders: [paidOrderFixture(2, 'Last month', -30)],
     });
 
     expect(host.querySelectorAll('.ticket-card').length).toBe(0);
+    expect(host.textContent).toContain('No upcoming tickets');
+    expect(host.textContent).toContain('Tick “Include completed events” to see them.');
+    expect(host.textContent).not.toContain('No tickets yet');
+  });
+
+  it('offers an "Include completed events" checkbox, unchecked by default', async () => {
+    const host = await render({ tickets: [], orders: [] });
+    const checkbox = host.querySelector<HTMLInputElement>('.include-completed input');
+
+    expect(checkbox?.type).toBe('checkbox');
+    expect(checkbox?.checked).toBe(false);
+    expect(host.querySelector('.include-completed')?.textContent).toContain(
+      'Include completed events',
+    );
+  });
+
+  it('brings back tickets and paid orders from earlier days once completed events are included', async () => {
+    const host = await render({
+      tickets: [ticketFixture(1, 'Last week', -10), ticketFixture(2, 'Next week', 7)],
+      orders: [paidOrderFixture(3, 'Last month', -30), paidOrderFixture(4, 'Tonight', 0)],
+      includeCompleted: true,
+    });
+
+    expect(host.querySelector<HTMLInputElement>('.include-completed input')?.checked).toBe(true);
+    expect(titles(host, '.ticket-list')).toEqual(['Last week', 'Next week']);
+    expect(titles(host, '.pending-list')).toEqual(['Last month', 'Tonight']);
+  });
+
+  it('narrows tickets and orders to the header search, by event title or venue', async () => {
+    const host = await render({
+      tickets: [
+        ticketFixture(1, 'Jazz Night', 7),
+        { ...ticketFixture(2, 'Late Set', 7), venue: 'Blue Jazz Club' },
+        ticketFixture(3, 'Rock Show', 7),
+      ],
+      orders: [paidOrderFixture(4, 'Jazz Brunch', 7), paidOrderFixture(5, 'Opera Gala', 7)],
+      q: '  JAZZ ',
+    });
+
+    expect(titles(host, '.ticket-list')).toEqual(['Jazz Night', 'Late Set']);
+    expect(titles(host, '.pending-list')).toEqual(['Jazz Brunch']);
+  });
+
+  it('says when nothing matches the search instead of claiming there are no tickets', async () => {
+    const host = await render({
+      tickets: [ticketFixture(1, 'Jazz Night', 7)],
+      orders: [],
+      q: 'ballet',
+    });
+
+    expect(host.querySelectorAll('.ticket-card').length).toBe(0);
+    expect(host.textContent).toContain('None of your tickets match “ballet”.');
+    expect(host.textContent).not.toContain('No tickets yet');
   });
 });
 

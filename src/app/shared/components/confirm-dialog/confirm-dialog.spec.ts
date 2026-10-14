@@ -73,6 +73,21 @@ describe('ConfirmDialog', () => {
     expect(document.activeElement).toBe(button('No'));
   });
 
+  it('focuses Yes instead when the question makes it the default', async () => {
+    const answer = service.ask({
+      ...options,
+      confirmLabel: 'Yes, check in',
+      cancelLabel: 'No',
+      tone: 'positive',
+      defaultChoice: 'confirm',
+    });
+    await settle();
+
+    expect(document.activeElement).toBe(button('Yes, check in'));
+    (document.activeElement as HTMLButtonElement).click();
+    expect(await answer).toBe(true);
+  });
+
   it('keeps the destructive colours by default', async () => {
     void service.ask(options);
     await settle();

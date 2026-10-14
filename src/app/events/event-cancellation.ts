@@ -11,6 +11,15 @@ export const DELETE_DRAFT_PROMPT: ConfirmOptions = {
   cancelLabel: 'No, keep draft',
 };
 
+/** The confirmation shown before publishing a draft event. */
+export const PUBLISH_EVENT_PROMPT: ConfirmOptions = {
+  title: 'Publish this event?',
+  message: ['Are you sure you want to publish this event?', 'It will go on sale to customers.'],
+  confirmLabel: 'Yes, publish',
+  cancelLabel: 'No',
+  tone: 'positive',
+};
+
 /** Who a cancellation would affect: customers with paid orders, and the tickets they bought. */
 export interface CancellationImpact {
   readonly customers: number;

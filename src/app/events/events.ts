@@ -5,10 +5,13 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
   computed,
   effect,
   inject,
+  linkedSignal,
   signal,
+  viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -16,7 +19,11 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom, map, timer } from 'rxjs';
 
 import { ApiService } from '../core/api';
-import { cancelEventWithConfirmation, DELETE_DRAFT_PROMPT } from './event-cancellation';
+import {
+  cancelEventWithConfirmation,
+  DELETE_DRAFT_PROMPT,
+  PUBLISH_EVENT_PROMPT,
+} from './event-cancellation';
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, readFileAsDataUrl } from './event-image';
 import { ConfirmDialogService } from '../shared/components/confirm-dialog/confirm-dialog.service';
 import { AuthService } from '../core/auth';
@@ -83,6 +90,20 @@ interface CustomerOrdersResponse {
   readonly orders: readonly CustomerOrder[];
 }
 
+/** How many events a customer can choose to see per page; the first is the default. */
+export const PAGE_SIZES = [10, 20, 50] as const;
+const PAGE_SIZE_KEY = 'onestage.eventsPageSize';
+
+/** The page size this browser chose last time, or the default. */
+function savedPageSize(): number {
+  try {
+    const saved = Number(localStorage.getItem(PAGE_SIZE_KEY));
+    return (PAGE_SIZES as readonly number[]).includes(saved) ? saved : PAGE_SIZES[0];
+  } catch {
+    return PAGE_SIZES[0];
+  }
+}
+
 @Component({
   selector: 'app-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -119,6 +140,37 @@ export class Events {
       ),
     );
   });
+  /** Customers browse a page at a time; organisers manage their whole list on one page. */
+  protected readonly pageSizes = PAGE_SIZES;
+  protected readonly pageSize = signal(savedPageSize());
+  /** Back to the first page whenever the filters, the search or the page size change. */
+  protected readonly page = linkedSignal({
+    source: () => [
+      this.searchTerm(),
+      this.includeCompleted(),
+      this.includeCancelled(),
+      this.pageSize(),
+    ],
+    computation: () => 1,
+  });
+  protected readonly pageCount = computed(() =>
+    this.organiserMode ? 1 : Math.max(1, Math.ceil(this.visibleEvents().length / this.pageSize())),
+  );
+  /** Clamped, so a list that shrinks under the current page shows its last page instead. */
+  protected readonly currentPage = computed(() => Math.min(this.page(), this.pageCount()));
+  protected readonly pagedEvents = computed(() => {
+    if (this.organiserMode) return this.visibleEvents();
+    const start = (this.currentPage() - 1) * this.pageSize();
+    return this.visibleEvents().slice(start, start + this.pageSize());
+  });
+  protected readonly pageNumbers = computed(() => pageWindow(this.currentPage(), this.pageCount()));
+  protected readonly countLabel = computed(() => {
+    const total = this.visibleEvents().length;
+    if (this.pageCount() <= 1) return `${total} events`;
+    const first = (this.currentPage() - 1) * this.pageSize() + 1;
+    return `Showing ${first}–${first + this.pagedEvents().length - 1} of ${total} events`;
+  });
+  private readonly count = viewChild<ElementRef<HTMLElement>>('eventCount');
   protected readonly loading = signal(true);
   protected readonly error = signal('');
   protected readonly submitting = signal(false);
@@ -313,14 +365,7 @@ export class Events {
   }
 
   protected async publishEvent(eventId: number): Promise<void> {
-    const confirmed = await this.confirmDialog.ask({
-      title: 'Publish this event?',
-      message: ['Are you sure you want to publish this event?', 'It will go on sale to customers.'],
-      confirmLabel: 'Yes, publish',
-      cancelLabel: 'No',
-      tone: 'positive',
-    });
-    if (!confirmed) return;
+    if (!(await this.confirmDialog.ask(PUBLISH_EVENT_PROMPT))) return;
     await this.performAction(`/events/${eventId}/publish`);
   }
   protected async cancelEvent(eventId: number): Promise<void> {
@@ -400,6 +445,22 @@ export class Events {
       this.error.set(describeEventError(error, 'update the invitation'));
     }
   }
+  protected goToPage(page: number): void {
+    this.page.set(Math.min(Math.max(1, page), this.pageCount()));
+    // Back to the top of the list, where the count says which events are showing.
+    this.count()?.nativeElement.focus();
+  }
+
+  protected setPageSize(size: number): void {
+    if (!(PAGE_SIZES as readonly number[]).includes(size)) return;
+    this.pageSize.set(size);
+    try {
+      localStorage.setItem(PAGE_SIZE_KEY, String(size));
+    } catch {
+      // Storage is optional: the choice still applies until the page is left.
+    }
+  }
+
   protected eventDetailLink(eventId: number): readonly (string | number)[] {
     return this.organiserMode ? ['/organiser/events', eventId] : ['/events', eventId];
   }
@@ -508,6 +569,20 @@ function toManagedEvent(event: EventApiRecord): ManagedEvent {
     price_cents: event.price_cents ?? null,
     remaining_qty: event.remaining_qty,
   };
+}
+
+/**
+ * The page numbers to offer: all of them when there are few, otherwise the first,
+ * the last and the current page's neighbours, with null marking each gap.
+ */
+export function pageWindow(current: number, count: number): readonly (number | null)[] {
+  if (count <= 7) return Array.from({ length: count }, (_, index) => index + 1);
+  const pages = [...new Set([1, current - 1, current, current + 1, count])]
+    .filter((page) => page >= 1 && page <= count)
+    .sort((a, b) => a - b);
+  return pages.flatMap((page, index) =>
+    index > 0 && page - pages[index - 1] > 1 ? [null, page] : [page],
+  );
 }
 
 export const INVENTORY_NOT_CONFIGURED =

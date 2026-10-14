@@ -7,7 +7,7 @@ import { vi } from 'vitest';
 
 import { AuthService } from '../core/auth';
 import { AuthenticatedUser, CognitoGateway } from '../core/cognito-gateway';
-import { Events } from './events';
+import { Events, pageWindow } from './events';
 
 function user(groups: readonly string[]): AuthenticatedUser {
   return { sub: 's', email: 'someone@example.com', name: 'Someone Example', groups };
@@ -401,5 +401,112 @@ describe('Events', () => {
     expect(host.textContent).toContain('ASEAN Cup Final');
     expect(host.textContent).not.toContain('Neon Skyline Tour');
     httpMock.verify();
+  });
+});
+
+describe('paging the customer list', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  const many = Array.from({ length: 23 }, (_, index) => ({
+    ...MOCK_EVENTS[0],
+    event_id: index + 1,
+    title: `Event ${index + 1}`,
+    starts_at: `2099-10-${String(index + 1).padStart(2, '0')} 20:00:00`,
+  }));
+
+  async function renderCustomer() {
+    const rendered = await renderFor(null);
+    const { fixture, httpMock, host } = rendered;
+    httpMock.expectOne('/api/event/events').flush({ events: many });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    for (const event of many) {
+      httpMock.expectOne(`/api/event/events/${event.event_id}`).flush({ event });
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    const titles = () =>
+      Array.from(host.querySelectorAll('.event-card h3')).map((title) => title.textContent?.trim());
+    const button = (name: string) =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>('.pager button')).find(
+        (candidate) =>
+          candidate.textContent?.trim() === name || candidate.getAttribute('aria-label') === name,
+      );
+    const count = () => host.querySelector('.count')?.textContent?.trim();
+    return { ...rendered, titles, button, count };
+  }
+
+  it('shows 10 events per page by default, starting on the first page', async () => {
+    const { titles, button, count, host } = await renderCustomer();
+
+    expect(titles()).toEqual(many.slice(0, 10).map((event) => event.title));
+    expect(count()).toBe('Showing 1–10 of 23 events');
+    expect(host.querySelector<HTMLSelectElement>('#page-size')?.value).toBe('10');
+    expect(button('Previous')?.disabled).toBe(true);
+    expect(button('Page 1')?.getAttribute('aria-current')).toBe('page');
+    expect(button('Page 3')).toBeTruthy();
+  });
+
+  it('moves between pages and returns focus to the top of the list', async () => {
+    const { fixture, titles, button, count, host } = await renderCustomer();
+
+    button('Next')!.click();
+    fixture.detectChanges();
+    expect(titles()).toEqual(many.slice(10, 20).map((event) => event.title));
+    expect(count()).toBe('Showing 11–20 of 23 events');
+    expect(document.activeElement).toBe(host.querySelector('.count'));
+
+    button('Page 3')!.click();
+    fixture.detectChanges();
+    expect(titles()).toEqual(['Event 21', 'Event 22', 'Event 23']);
+    expect(button('Next')?.disabled).toBe(true);
+    expect(button('Page 3')?.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('lets the customer pick how many to show, and remembers it', async () => {
+    const { fixture, titles, count, host } = await renderCustomer();
+    host.querySelector<HTMLButtonElement>('.pager button[aria-label="Page 2"]')!.click();
+    fixture.detectChanges();
+
+    const select = host.querySelector<HTMLSelectElement>('#page-size')!;
+    select.value = '20';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(titles()).toHaveLength(20);
+    expect(titles()[0]).toBe('Event 1');
+    expect(count()).toBe('Showing 1–20 of 23 events');
+    expect(localStorage.getItem('onestage.eventsPageSize')).toBe('20');
+
+    const again = await renderCustomer();
+    expect(again.titles()).toHaveLength(20);
+    expect(again.host.querySelector<HTMLSelectElement>('#page-size')?.value).toBe('20');
+  });
+
+  it('keeps an organiser’s whole list on one page, with no paging controls', async () => {
+    const { fixture, httpMock, host } = await renderFor(user(['organiser']));
+    httpMock.expectOne('/api/event/events/manage').flush({ events: many });
+    httpMock.expectOne('/api/event/team-invitations').flush({ invitations: [] });
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.event-card')).toHaveLength(23);
+    expect(host.querySelector('.pager')).toBeNull();
+    expect(host.querySelector('#page-size')).toBeNull();
+  });
+});
+
+describe('pageWindow', () => {
+  it('lists every page when there are only a few', () => {
+    expect(pageWindow(1, 1)).toEqual([1]);
+    expect(pageWindow(4, 7)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('keeps the first, last and neighbouring pages, marking gaps with null', () => {
+    expect(pageWindow(1, 20)).toEqual([1, 2, null, 20]);
+    expect(pageWindow(10, 20)).toEqual([1, null, 9, 10, 11, null, 20]);
+    expect(pageWindow(20, 20)).toEqual([1, null, 19, 20]);
+    expect(pageWindow(3, 20)).toEqual([1, 2, 3, 4, null, 20]);
   });
 });

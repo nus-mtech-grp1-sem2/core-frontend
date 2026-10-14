@@ -239,10 +239,14 @@
                 id="quantity"
                 type="number"
                 min="1"
-                [max]="event.total_seats"
+                [max]="maxQuantity()"
+                aria-describedby="quantity-hint"
                 [value]="quantity()"
                 (input)="quantity.set(+$any($event.target).value || 1)"
               />
+              <p id="quantity-hint" class="field-hint">
+                Up to {{ maxTicketsPerOrder }} tickets per order.
+              </p>
             </div>
             @if (event.tier === 'TIER2_SEATED') {
               @if (seats().length > 0) {
@@ -417,7 +421,15 @@
             @if (event.status === 'DRAFT') {
               <button
                 type="button"
-                class="btn btn-ghost delete status-action"
+                class="btn btn-primary status-action"
+                [disabled]="updatingStatus() || readOnly()"
+                (click)="changeStatus('PUBLISHED')"
+              >
+                {{ updatingStatus() ? 'Publishing...' : 'Publish event' }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost delete"
                 [disabled]="deleting() || readOnly()"
                 (click)="deleteEvent()"
               >
