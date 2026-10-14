@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
@@ -28,9 +27,8 @@ type QueueState =
   | 'unavailable'
   | 'error';
 
-/** Server refusals that mean the waiting room cannot be used, keyed by the API's error code. */
+/** Server refusals that mean the queue cannot be used, keyed by the API's error code. */
 const UNAVAILABLE_MESSAGES: Readonly<Record<string, string>> = {
-  queue_not_configured: 'The organiser has not configured a waiting room for this event.',
   event_not_on_sale: 'Tickets for this event are not currently on sale.',
   event_completed: 'This event has already taken place, so tickets are no longer on sale.',
 };
@@ -39,11 +37,11 @@ interface EventNameResponse {
   readonly event: { readonly title: string };
 }
 
-/** Per-event customer waiting room. MySQL status is refreshed every three seconds. */
+/** Per-event customer queue. MySQL status is refreshed every three seconds. */
 @Component({
   selector: 'app-event-queue',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, RouterLink, WorkspaceShell],
+  imports: [RouterLink, WorkspaceShell],
   templateUrl: './event-queue.html',
   styleUrl: './event-queue.css',
 })
@@ -105,16 +103,22 @@ export class EventQueue {
     void this.loadEventName(eventId);
 
     try {
-      const summary = await this.queue.summary(eventId);
-      this.summary.set(summary);
-      if (summary.status === 'CLOSED') {
-        this.state.set('closed');
-        return;
+      try {
+        const summary = await this.queue.summary(eventId);
+        this.summary.set(summary);
+        if (summary.status === 'CLOSED') {
+          this.state.set('closed');
+          return;
+        }
+        if (summary.status === 'DRAINED') {
+          this.state.set('sold-out');
+          return;
+        }
+      } catch (error) {
+        if (!isQueueNotConfigured(error)) throw error;
       }
-      if (summary.status === 'DRAINED') {
-        this.state.set('sold-out');
-        return;
-      }
+      // The first customer creates the queue session; there is no organiser
+      // "open" step anymore.
       await this.queue.join(eventId);
       this.apply(eventId, await this.queue.status(eventId));
     } catch (error) {
@@ -188,7 +192,15 @@ export class EventQueue {
       );
       this.eventTitle.set(response.event.title);
     } catch {
-      this.eventTitle.set('Event waiting room');
+      this.eventTitle.set('Event queue');
     }
   }
+}
+
+function isQueueNotConfigured(error: unknown): boolean {
+  return (
+    error instanceof HttpErrorResponse &&
+    error.status === 404 &&
+    (error.error as { error?: string } | null)?.error === 'queue_not_configured'
+  );
 }

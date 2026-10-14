@@ -27,7 +27,7 @@ export const routes: Routes = [
   },
   {
     path: 'events/:id/queue',
-    title: 'Waiting room — OneStage',
+    title: 'Event queue — OneStage',
     canActivate: [authGuard],
     data: { workspace: 'customer' },
     loadComponent: () =>

@@ -69,6 +69,7 @@
                     step="5"
                     [value]="gridRowCount()"
                     (input)="onGridRowCountInput($event)"
+                    (blur)="commitGridRowCountInput($event)"
                     aria-label="Number of rows"
                   />
                   <button
@@ -102,6 +103,7 @@
                     step="5"
                     [value]="gridColCount()"
                     (input)="onGridColCountInput($event)"
+                    (blur)="commitGridColCountInput($event)"
                     aria-label="Number of columns"
                   />
                   <button
@@ -578,6 +580,9 @@
                       <span class="zone-seat-total">{{ zoneSeatCount(zoneIndex) }} seats</span>
                     }
                   </div>
+                  @if (!isSeatedTier()) {
+                    <small>Enter the capacity available in this zone.</small>
+                  }
                 </div>
                 <div class="position-group" role="group" aria-label="Starting position">
                   <span class="position-group-label">Starts at</span>

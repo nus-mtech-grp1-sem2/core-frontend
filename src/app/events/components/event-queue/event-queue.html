@@ -1,7 +1,7 @@
 <app-workspace-shell workspace="customer">
   <main class="shell body queue" aria-labelledby="queue-heading">
-    <p class="eyebrow">Waiting room</p>
-    <h1 id="queue-heading">{{ eventTitle() || 'Event waiting room' }}</h1>
+    <p class="eyebrow">Queue</p>
+    <h1 id="queue-heading">{{ eventTitle() || 'Event queue' }}</h1>
 
     @switch (state()) {
       @case ('joining') {
@@ -28,10 +28,8 @@
         <button type="button" class="btn btn-primary" (click)="retry()">Rejoin queue</button>
       }
       @case ('closed') {
-        <h2>The waiting room is not open yet</h2>
-        @if (summary()?.opensAt; as opensAt) {
-          <p>It opens {{ opensAt | date: 'EEE d MMM y, h:mm a' }}.</p>
-        }
+        <h2>The queue is not available yet</h2>
+        <p>This event must be published before customers can join.</p>
         <button type="button" class="btn btn-primary" (click)="retry()">Check again</button>
       }
       @case ('sold-out') {
@@ -39,7 +37,7 @@
         <p>There is no ticket inventory available for another admission batch.</p>
       }
       @case ('unavailable') {
-        <h2>The waiting room is unavailable</h2>
+        <h2>The queue is unavailable</h2>
         <p>{{ message() }}</p>
         <a class="btn btn-primary" [routerLink]="['/events', eventId()]">View event</a>
       }

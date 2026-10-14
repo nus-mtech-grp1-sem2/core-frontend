@@ -1576,16 +1576,35 @@ export class EventInventory {
 
   protected onGridRowCountInput(event: Event): void {
     const input = event.target as HTMLInputElement;
-    if (!Number.isFinite(input.valueAsNumber)) return;
+    if (
+      !Number.isFinite(input.valueAsNumber) ||
+      input.valueAsNumber < this.minRowsRequired() ||
+      input.valueAsNumber > this.maxGridDim
+    )
+      return;
     this.setGridRowCount(input.valueAsNumber);
-    // Writing the same signal value is a no-op, so normalize the DOM as well.
-    // This keeps repeated attempts such as 21, then 200, visibly clamped to 20.
-    input.value = String(this.gridRowCount());
   }
 
   protected onGridColCountInput(event: Event): void {
     const input = event.target as HTMLInputElement;
-    if (!Number.isFinite(input.valueAsNumber)) return;
+    if (
+      !Number.isFinite(input.valueAsNumber) ||
+      input.valueAsNumber < this.minColsRequired() ||
+      input.valueAsNumber > this.maxGridDim
+    )
+      return;
+    this.setGridColCount(input.valueAsNumber);
+  }
+
+  /** Allow transient partial values while typing, then normalize on blur. */
+  protected commitGridRowCountInput(event: FocusEvent): void {
+    const input = event.target as HTMLInputElement;
+    this.setGridRowCount(input.valueAsNumber);
+    input.value = String(this.gridRowCount());
+  }
+
+  protected commitGridColCountInput(event: FocusEvent): void {
+    const input = event.target as HTMLInputElement;
     this.setGridColCount(input.valueAsNumber);
     input.value = String(this.gridColCount());
   }
@@ -1629,7 +1648,6 @@ export class EventInventory {
       this.showReservedSeatLimitError();
       return;
     }
-
     this.saving.set(true);
     this.saved.set(false);
     this.error.set('');
@@ -1735,6 +1753,8 @@ function zonesProblem(zones: readonly ZoneGroup[]): string {
   if (zones.some((zone) => zone.controls.name.invalid)) return ZONE_NAME_REQUIRED;
   if (zones.some((zone) => zone.controls.price.invalid))
     return 'Please enter a price of 0 or more for every zone.';
+  if (zones.some((zone) => zone.controls.quantity.invalid))
+    return 'Each general-admission zone must contain at least 1 seat.';
   return 'Please pick a colour for every zone.';
 }
 
