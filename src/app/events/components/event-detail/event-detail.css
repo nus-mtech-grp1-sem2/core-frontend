@@ -218,6 +218,10 @@
   gap: 0.5rem;
 }
 
+.queue-status {
+  display: block;
+}
+
 .admission-window {
   display: grid;
   gap: 0.5rem;

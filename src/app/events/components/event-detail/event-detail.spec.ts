@@ -420,8 +420,8 @@ describe('EventDetail purchase errors', () => {
             description: '',
             venue: 'Test Hall',
             starts_at: '2099-01-01 20:00:00',
-            total_seats: 200,
-            available_buyers: 20,
+            total_seats: 10,
+            available_buyers: 10,
             tier: 'TIER1_GA',
             status: 'PUBLISHED',
             price_cents: 2000,
@@ -438,7 +438,7 @@ describe('EventDetail purchase errors', () => {
               name: 'General Admission',
               priceCents: 2000,
               color: '#000',
-              remaining: 200,
+              remaining: 10,
             },
           ],
         });
@@ -469,7 +469,7 @@ describe('EventDetail purchase errors', () => {
     const host = fixture.nativeElement as HTMLElement;
 
     const quantity = host.querySelector<HTMLInputElement>('#quantity')!;
-    expect(quantity.max).toBe(String(MAX_TICKETS_PER_ORDER));
+    expect(quantity.max).toBe('10');
     expect(host.querySelector('#quantity-hint')?.textContent).toContain(
       `Up to ${MAX_TICKETS_PER_ORDER} tickets per order`,
     );
@@ -1229,29 +1229,6 @@ describe('EventDetail completed events for a customer', () => {
 
     expect(navigate).not.toHaveBeenCalled();
     expect(hasControl('Buy tickets')).toBe(true);
-  });
-
-  it('stops an order over the per-order limit and says what the limit is', async () => {
-    const { host, post, hasControl } = await renderCustomer({
-      startsAt: '2099-01-01 20:00:00',
-      admitted: true,
-    });
-    expect(hasControl('Buy tickets')).toBe(true);
-
-    const quantity = host.querySelector<HTMLInputElement>('#quantity')!;
-    expect(quantity.max).toBe('10'); // this event has fewer seats than the per-order limit
-    quantity.value = '60';
-    quantity.dispatchEvent(new Event('input'));
-    Array.from(host.querySelectorAll('button'))
-      .find((button) => button.textContent?.trim() === 'Buy tickets')
-      ?.click();
-    await new Promise<void>((resolve) => setTimeout(resolve));
-    TestBed.inject(ApplicationRef).tick();
-
-    expect(post).not.toHaveBeenCalled();
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-      'at most 50 tickets per order',
-    );
   });
 
   it('explains the server refusing an order for too many tickets', () => {

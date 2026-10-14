@@ -8,6 +8,23 @@ import { AuthService } from '../../../core/auth';
 import { QueueService, QueueStatus } from '../../../core/queue';
 import { EventQueue } from './event-queue';
 
+async function createQueueFixture(queue: object) {
+  TestBed.resetTestingModule();
+  await TestBed.configureTestingModule({
+    imports: [EventQueue],
+    providers: [
+      provideRouter([]),
+      { provide: QueueService, useValue: queue },
+      { provide: ApiService, useValue: { get: () => of({ event: { title: 'Test Event' } }) } },
+      { provide: AuthService, useValue: { isAuthenticated: () => true } },
+    ],
+  }).compileComponents();
+
+  const fixture = TestBed.createComponent(EventQueue);
+  fixture.detectChanges();
+  return fixture;
+}
+
 describe('EventQueue', () => {
   it('waits for the live queue position instead of flashing the original position', async () => {
     let resolveStatus!: (status: QueueStatus) => void;
@@ -28,18 +45,7 @@ describe('EventQueue', () => {
       leave: vi.fn(),
     };
 
-    await TestBed.configureTestingModule({
-      imports: [EventQueue],
-      providers: [
-        provideRouter([]),
-        { provide: QueueService, useValue: queue },
-        { provide: ApiService, useValue: { get: () => of({ event: { title: 'Test Event' } }) } },
-        { provide: AuthService, useValue: { isAuthenticated: () => true } },
-      ],
-    }).compileComponents();
-
-    const fixture = TestBed.createComponent(EventQueue);
-    fixture.detectChanges();
+    const fixture = await createQueueFixture(queue);
     expect(queue.join).not.toHaveBeenCalled();
 
     fixture.componentRef.setInput('id', '7');
@@ -65,25 +71,17 @@ describe('EventQueue', () => {
 
   it('joins directly when the published event does not have a queue session yet', async () => {
     const queue = {
-      summary: vi.fn().mockRejectedValue(
-        new HttpErrorResponse({ status: 404, error: { error: 'queue_not_configured' } }),
-      ),
+      summary: vi
+        .fn()
+        .mockRejectedValue(
+          new HttpErrorResponse({ status: 404, error: { error: 'queue_not_configured' } }),
+        ),
       join: vi.fn().mockResolvedValue({ queueEntryId: 71, status: 'WAITING', position: 1 }),
       status: vi.fn().mockResolvedValue({ queueEntryId: 71, status: 'WAITING', position: 1 }),
       leave: vi.fn(),
     };
 
-    await TestBed.configureTestingModule({
-      imports: [EventQueue],
-      providers: [
-        provideRouter([]),
-        { provide: QueueService, useValue: queue },
-        { provide: ApiService, useValue: { get: () => of({ event: { title: 'Test Event' } }) } },
-        { provide: AuthService, useValue: { isAuthenticated: () => true } },
-      ],
-    }).compileComponents();
-
-    const fixture = TestBed.createComponent(EventQueue);
+    const fixture = await createQueueFixture(queue);
     fixture.componentRef.setInput('id', '7');
     fixture.detectChanges();
     await vi.waitFor(() => expect(queue.status).toHaveBeenCalledWith(7));
@@ -110,18 +108,7 @@ describe('EventQueue', () => {
         leave: vi.fn(),
       };
 
-      TestBed.resetTestingModule();
-      await TestBed.configureTestingModule({
-        imports: [EventQueue],
-        providers: [
-          provideRouter([]),
-          { provide: QueueService, useValue: queue },
-          { provide: ApiService, useValue: { get: () => of({ event: { title: 'Test Event' } }) } },
-          { provide: AuthService, useValue: { isAuthenticated: () => true } },
-        ],
-      }).compileComponents();
-
-      const fixture = TestBed.createComponent(EventQueue);
+      const fixture = await createQueueFixture(queue);
       fixture.componentRef.setInput('id', '7');
       fixture.detectChanges();
       await vi.waitFor(() => expect(queue.join).toHaveBeenCalledWith(7));

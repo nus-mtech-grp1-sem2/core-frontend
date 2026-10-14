@@ -132,10 +132,12 @@
                 <a class="btn btn-primary" routerLink="/my-events">View pending payment</a>
               }
               @case ('closed') {
-                <p role="status"><strong>The queue is available after publication.</strong></p>
+                <output class="queue-status"
+                  ><strong>The queue is available after publication.</strong></output
+                >
               }
               @case ('drained') {
-                <p role="status">The queue has closed for this event.</p>
+                <output class="queue-status">The queue has closed for this event.</output>
               }
               @case ('unavailable') {
                 <p role="alert">The queue cannot be reached right now. Please try again shortly.</p>

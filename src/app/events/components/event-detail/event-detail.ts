@@ -1280,22 +1280,24 @@ const EVENT_ERROR_MESSAGES: Readonly<Record<string, string>> = {
 };
 
 function describeError(error: unknown, action: string): string {
-  if (error instanceof HttpErrorResponse) {
-    if (action === 'complete your purchase') {
-      const purchaseMessage = purchaseErrorMessage(error);
-      if (purchaseMessage) return purchaseMessage;
-    }
-    const code = (error.error as { error?: string } | null)?.error;
-    if (code && Object.hasOwn(EVENT_ERROR_MESSAGES, code)) return EVENT_ERROR_MESSAGES[code];
-    if (error.status === 401) return 'Please sign in again before managing this event.';
-    if (error.status === 403) return 'You do not have permission to manage this event.';
-    if (error.status === 404) {
-      return action === 'complete your purchase'
-        ? 'Ticket purchasing is unavailable right now. Please try again later.'
-        : 'This event was not found.';
-    }
+  const fallback = `Unable to ${action}. Please try again.`;
+  if (!(error instanceof HttpErrorResponse)) return fallback;
+
+  const purchasing = action === 'complete your purchase';
+  if (purchasing) {
+    const purchaseMessage = purchaseErrorMessage(error);
+    if (purchaseMessage) return purchaseMessage;
   }
-  return `Unable to ${action}. Please try again.`;
+  const code = (error.error as { error?: string } | null)?.error;
+  if (code && Object.hasOwn(EVENT_ERROR_MESSAGES, code)) return EVENT_ERROR_MESSAGES[code];
+  if (error.status === 401) return 'Please sign in again before managing this event.';
+  if (error.status === 403) return 'You do not have permission to manage this event.';
+  if (error.status === 404) {
+    return purchasing
+      ? 'Ticket purchasing is unavailable right now. Please try again later.'
+      : 'This event was not found.';
+  }
+  return fallback;
 }
 
 export function purchaseErrorMessage(error: HttpErrorResponse): string | null {
