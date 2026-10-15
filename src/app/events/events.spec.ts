@@ -374,10 +374,16 @@ describe('Events', () => {
     fixture.detectChanges();
 
     const reservations = host.querySelector('.active-reservations');
+    await new Promise<void>((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
     expect(reservations?.textContent).toContain('Neon Skyline Tour');
     expect(reservations?.textContent).toContain('Continue to payment');
     expect(reservations?.textContent).toContain('Cancel reservation');
     expect(reservations?.querySelector('a')?.getAttribute('href')).toBe('/checkout/42');
+    expect(host.querySelector('.event-card .customer-action a')?.getAttribute('href')).toBe(
+      '/checkout/42',
+    );
+    expect(host.querySelector('.event-card h3 a')?.getAttribute('href')).toBe('/checkout/42');
 
     reservations?.querySelector<HTMLButtonElement>('button')?.click();
     const cancel = httpMock.expectOne('/api/order/orders/42/cancel');
@@ -388,6 +394,9 @@ describe('Events', () => {
     fixture.detectChanges();
 
     expect(host.querySelector('.active-reservations')).toBeNull();
+    expect(host.querySelector('.event-card .customer-action a')?.getAttribute('href')).toBe(
+      '/events/1/queue',
+    );
     httpMock.verify();
   });
 

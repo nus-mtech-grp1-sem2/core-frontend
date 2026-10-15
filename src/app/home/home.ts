@@ -16,11 +16,13 @@ import { ApiService } from '../core/api';
 import { AuthService } from '../core/auth';
 import { EventCategory, FeaturedSlide, Venue } from '../core/catalog';
 import { hasSubmittedPayment } from '../core/payment-processing';
+import { pendingPaymentLink } from '../core/pending-payment-link';
 import { QueueService } from '../core/queue';
 import { startsTodayOrLater } from '../core/event-dates';
 import { formatEventDate, formatEventTime } from '../core/event-time';
 import { EventStatus } from '../events/event.models';
 import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
+import { ActiveQueuePlaces } from '../layout/components/active-queue-places/active-queue-places';
 import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
 import { Carousel } from './components/carousel/carousel';
 
@@ -102,7 +104,15 @@ const VENUE_IMAGES = [
 @Component({
   selector: 'app-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReservationCard, Carousel, DatePipe, NgOptimizedImage, RouterLink, WorkspaceShell],
+  imports: [
+    ReservationCard,
+    Carousel,
+    DatePipe,
+    NgOptimizedImage,
+    RouterLink,
+    WorkspaceShell,
+    ActiveQueuePlaces,
+  ],
   templateUrl: './home.html',
   styleUrl: './home.css',
 })
@@ -165,7 +175,15 @@ export class Home {
 
   protected readonly venues = signal<readonly Venue[]>([]);
   protected readonly featuredVenues = computed(() => this.venues().slice(0, 6));
-  protected readonly featuredSlides = signal<readonly FeaturedSlide[]>([]);
+  private readonly featuredEvents = signal<readonly FeaturedSlide[]>([]);
+  protected readonly featuredSlides = computed(() =>
+    this.featuredEvents().map((slide) => ({
+      ...slide,
+      purchaseLink: (this.auth.isAuthenticated()
+        ? pendingPaymentLink(slide.id, this.orders(), this.now())
+        : null) ?? ['/events', slide.id, 'queue'],
+    })),
+  );
 
   protected venueImage(index: number): string {
     return VENUE_IMAGES[index % VENUE_IMAGES.length];
@@ -173,8 +191,8 @@ export class Home {
 
   constructor() {
     this.api.get<EventResponse>('event', '/events').subscribe({
-      next: (result) => this.featuredSlides.set(featuredSlidesFrom(result.events, Date.now())),
-      error: () => this.featuredSlides.set([]),
+      next: (result) => this.featuredEvents.set(featuredSlidesFrom(result.events, Date.now())),
+      error: () => this.featuredEvents.set([]),
     });
     this.api.get<VenueResponse>('event', '/venues').subscribe({
       next: (result) => this.venues.set(result.venues),

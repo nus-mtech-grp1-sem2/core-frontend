@@ -31,7 +31,7 @@ function stubBrowsing(api: MockApi) {
 const storedKeys = (page: Page, storage: 'sessionStorage' | 'localStorage') =>
   page.evaluate((name) => Object.keys(window[name as 'sessionStorage']), storage);
 
-// The footer offers "Sign in" whoever is looking, so only the header says who is signed in.
+// Sign-in state is shown in the header; the footer only contains contact details.
 const signInLink = (page: Page) => page.getByRole('banner').getByRole('link', { name: 'Login' });
 
 test.describe('going to Cognito', () => {
@@ -284,9 +284,28 @@ test.describe('signing out', () => {
     api,
   }) => {
     stubBrowsing(api);
+    api
+      .on('GET', 'event/events/7', { json: { event: managedEvent() } })
+      .on('GET', 'queue/events/7/queue', { json: { queue: { status: 'OPEN' } } })
+      .on('POST', 'queue/events/7/queue/join', {
+        json: { queueEntryId: 71, status: 'WAITING', position: 1 },
+      })
+      .on('GET', 'queue/events/7/queue/me', {
+        json: { queueEntryId: 71, status: 'WAITING', position: 1 },
+      });
     const cognito = await stubCognito(page, { user: customer });
     await signInThroughHostedUi(page);
     expect((await storedKeys(page, 'sessionStorage')).length).toBeGreaterThan(0);
+    await page.goto('/events/7/queue');
+    await expect(page.getByRole('button', { name: 'Leave queue', exact: true })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (sub) => sessionStorage.getItem(`onestage:queue-places:${sub}`),
+          customer.sub,
+        ),
+      )
+      .toBe('[7]');
 
     await page.getByRole('button', { name: 'Sign out' }).click();
 

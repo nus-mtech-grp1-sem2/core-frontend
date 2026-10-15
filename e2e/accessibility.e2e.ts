@@ -56,14 +56,23 @@ function stubSeated(api: MockApi) {
 }
 
 function stubCustomer(api: MockApi, queue?: Record<string, unknown> | 'none') {
+  const status =
+    queue && queue !== 'none'
+      ? queue
+      : {
+          queueEntryId: 71,
+          status: 'ADMITTED',
+          admissionToken: 'test-admission',
+          tokenExpiresAt: soon(),
+        };
   api
     .on('GET', 'ticket/customers/me/tickets', { json: { tickets: [] } })
-    .on('GET', 'order/customers/me/orders', { json: { orders: [] } });
-  if (queue === 'none') {
-    api.on('GET', 'queue/events/7/queue/me', { status: 404, json: { error: 'not_in_queue' } });
-  } else if (queue) {
-    api.on('GET', 'queue/events/7/queue/me', { json: queue });
-  }
+    .on('GET', 'order/customers/me/orders', { json: { orders: [] } })
+    .on('GET', 'queue/events/7/queue', {
+      json: { queue: { status: queue === 'none' ? 'CLOSED' : 'OPEN' } },
+    })
+    .on('POST', 'queue/events/7/queue/join', { json: status })
+    .on('GET', 'queue/events/7/queue/me', { json: status });
 }
 
 const soon = () => new Date(Date.now() + 8 * 60_000).toISOString();
@@ -97,24 +106,28 @@ test.describe('event page, as a customer', () => {
   test('general admission: quantity and buy', async ({ page, api }) => {
     stubPublicEvent(api);
     stubCustomer(api);
-    await page.goto('/events/7');
+    await page.goto('/events/7/tickets');
+    await expect(page.getByRole('button', { name: 'Buy tickets', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'E2E Summer Concert' })).toBeVisible();
     await expectAccessible(page);
   });
 
-  test('reserved seating: before joining the waiting room', async ({ page, api }) => {
+  test('reserved seating: the queue is not open yet', async ({ page, api }) => {
     stubSeated(api);
     stubCustomer(api, 'none');
-    await page.goto('/events/7');
-    await expect(page.getByRole('button', { name: 'Join waiting room' })).toBeVisible();
+    await page.goto('/events/7/queue');
+    await expect(
+      page.getByRole('heading', { name: 'The queue is not available yet' }),
+    ).toBeVisible();
     await expectAccessible(page);
   });
 
   test('reserved seating: waiting in the queue', async ({ page, api }) => {
     stubSeated(api);
     stubCustomer(api, { status: 'WAITING', position: 4 });
-    await page.goto('/events/7');
-    await expect(page.getByRole('button', { name: /waiting room|queue/i }).first()).toBeVisible();
+    await page.goto('/events/7/queue');
+    await expect(page.getByRole('button', { name: 'Leave queue', exact: true })).toBeVisible();
+    await expect(page.locator('.position strong')).toHaveText('4');
     await expectAccessible(page);
   });
 
@@ -126,7 +139,7 @@ test.describe('event page, as a customer', () => {
       admissionToken: 'admission-token-for-the-test',
       tokenExpiresAt: soon(),
     });
-    await page.goto('/events/7');
+    await page.goto('/events/7/tickets');
     await expect(page.getByText('It is your turn.')).toBeVisible();
     await expectAccessible(page);
 
@@ -137,8 +150,8 @@ test.describe('event page, as a customer', () => {
   test('reserved seating: admission expired', async ({ page, api }) => {
     stubSeated(api);
     stubCustomer(api, { status: 'EXPIRED' });
-    await page.goto('/events/7');
-    await expect(page.getByRole('button', { name: 'Rejoin the queue' })).toBeVisible();
+    await page.goto('/events/7/queue');
+    await expect(page.getByRole('button', { name: 'Rejoin queue', exact: true })).toBeVisible();
     await expectAccessible(page);
   });
 
@@ -166,6 +179,7 @@ test.describe('event page, as a customer', () => {
 
   test('a customer who already holds tickets', async ({ page, api }) => {
     stubPublicEvent(api);
+    stubCustomer(api);
     api
       .on('GET', 'ticket/customers/me/tickets', {
         json: { tickets: [{ event_id: 7, order_id: 301, status: 'ISSUED' }] },
@@ -173,7 +187,7 @@ test.describe('event page, as a customer', () => {
       .on('GET', 'order/customers/me/orders', {
         json: { orders: [{ order_id: 301, event_id: 7, status: 'PAID' }] },
       });
-    await page.goto('/events/7');
+    await page.goto('/events/7/tickets');
     await expect(page.getByRole('link', { name: 'View my tickets' })).toBeVisible();
     await expectAccessible(page);
   });
@@ -181,8 +195,15 @@ test.describe('event page, as a customer', () => {
   test('an event that has finished', async ({ page, api }) => {
     stubPublicEvent(api, { starts_at: new Date(Date.now() - 3600_000).toISOString() });
     stubCustomer(api);
-    await page.goto('/events/7');
-    await expect(page.getByRole('heading', { name: 'E2E Summer Concert' })).toBeVisible();
+    api.on('POST', 'queue/events/7/queue/join', {
+      status: 409,
+      json: { error: 'event_completed' },
+    });
+    await page.goto('/events/7/queue');
+    await expect(page.getByRole('heading', { name: 'The queue is unavailable' })).toBeVisible();
+    await expect(
+      page.getByText('This event has already taken place, so tickets are no longer on sale.'),
+    ).toBeVisible();
     await expectAccessible(page);
   });
 });
@@ -381,7 +402,7 @@ test.describe('organiser pages', () => {
     await expectAccessible(page);
   });
 
-  test('a reserved-seating event, with its waiting room', async ({ page, api }) => {
+  test('a reserved-seating event, with its concurrent buyer limit', async ({ page, api }) => {
     stubOrganiser(api);
     api
       .on('GET', 'event/events/7', {
@@ -399,7 +420,7 @@ test.describe('organiser pages', () => {
         },
       });
     await page.goto('/organiser/events/7');
-    await expect(page.getByRole('heading', { name: 'Waiting room' })).toBeVisible();
+    await expect(page.getByLabel('Available buyers')).toBeEnabled();
     await expectAccessible(page);
   });
 
@@ -447,7 +468,7 @@ test.describe('keyboard use', () => {
       admissionToken: 'admission-token-for-the-test',
       tokenExpiresAt: soon(),
     });
-    await page.goto('/events/7');
+    await page.goto('/events/7/tickets');
     await expect(page.getByText('It is your turn.')).toBeVisible();
     const seat = page.getByRole('button', { name: /^A1 —/ });
 
@@ -489,80 +510,88 @@ test.describe('keyboard use', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Sound muted' })).toBeVisible();
   });
 
-  test('the upload control shows where the keyboard focus is', async ({ page, api }) => {
-    await signInAs(page, helper);
-    stubDoorApi(api);
-    await page.goto(`/checkin/${EVENT_ID}`);
-    await expect(page.getByRole('status').filter({ hasText: '3 of 10 checked in' })).toBeVisible();
+  for (const activationKey of ['Enter', 'Space']) {
+    test(`the upload control shows keyboard focus and opens with ${activationKey}`, async ({
+      page,
+      api,
+    }) => {
+      await signInAs(page, helper);
+      stubDoorApi(api);
+      await page.goto(`/checkin/${EVENT_ID}`);
+      await expect(
+        page.getByRole('status').filter({ hasText: '3 of 10 checked in' }),
+      ).toBeVisible();
 
-    const label = page.locator('label.upload');
-    const input = label.locator('input');
-    let uploadFocused = false;
-    for (let stop = 0; stop < 30 && !uploadFocused; stop += 1) {
-      await page.keyboard.press('Tab');
-      uploadFocused = await input.evaluate((element) => element === document.activeElement);
-    }
-    expect(uploadFocused).toBe(true);
-    await expect(input).toBeFocused();
-
-    const focusStyle = (element: import('@playwright/test').Locator) =>
-      element.evaluate((node) => {
-        const computed = getComputedStyle(node);
-        return {
-          outline: computed.outlineStyle,
-          width: computed.outlineWidth,
-          color: computed.outlineColor,
-          offset: computed.outlineOffset,
-        };
-      });
-    const uploadFocus = await focusStyle(label);
-    expect(uploadFocus).toEqual({
-      outline: 'solid',
-      width: '3px',
-      color: 'rgb(79, 70, 229)',
-      offset: '2px',
-    });
-
-    const bounds = await label.boundingBox();
-    const viewport = page.viewportSize();
-    expect(bounds).not.toBeNull();
-    expect(viewport).not.toBeNull();
-    expect(bounds!.x - 5).toBeGreaterThanOrEqual(0);
-    expect(bounds!.y - 5).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x + bounds!.width + 5).toBeLessThanOrEqual(viewport!.width);
-    expect(bounds!.y + bounds!.height + 5).toBeLessThanOrEqual(viewport!.height);
-    const ancestorsAllowOutline = await label.evaluate((element) => {
-      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
-        const { overflowX, overflowY } = getComputedStyle(parent);
-        if (
-          [overflowX, overflowY].some((overflow) =>
-            ['auto', 'clip', 'hidden', 'scroll'].includes(overflow),
-          )
-        ) {
-          return false;
-        }
+      const label = page.locator('label.upload');
+      const input = label.locator('input');
+      let uploadFocused = false;
+      for (let stop = 0; stop < 30 && !uploadFocused; stop += 1) {
+        await page.keyboard.press('Tab');
+        uploadFocused = await input.evaluate((element) => element === document.activeElement);
       }
-      return true;
+      expect(uploadFocused).toBe(true);
+      await expect(input).toBeFocused();
+
+      const focusStyle = (element: import('@playwright/test').Locator) =>
+        element.evaluate((node) => {
+          const computed = getComputedStyle(node);
+          return {
+            outline: computed.outlineStyle,
+            width: computed.outlineWidth,
+            color: computed.outlineColor,
+            offset: computed.outlineOffset,
+          };
+        });
+      const uploadFocus = await focusStyle(label);
+      expect(uploadFocus).toEqual({
+        outline: 'solid',
+        width: '3px',
+        color: 'rgb(79, 70, 229)',
+        offset: '2px',
+      });
+
+      const bounds = await label.boundingBox();
+      const viewport = page.viewportSize();
+      expect(bounds).not.toBeNull();
+      expect(viewport).not.toBeNull();
+      expect(bounds!.x - 5).toBeGreaterThanOrEqual(0);
+      expect(bounds!.y - 5).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width + 5).toBeLessThanOrEqual(viewport!.width);
+      expect(bounds!.y + bounds!.height + 5).toBeLessThanOrEqual(viewport!.height);
+      const ancestorsAllowOutline = await label.evaluate((element) => {
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+          const { overflowX, overflowY } = getComputedStyle(parent);
+          if (
+            [overflowX, overflowY].some((overflow) =>
+              ['auto', 'clip', 'hidden', 'scroll'].includes(overflow),
+            )
+          ) {
+            return false;
+          }
+        }
+        return true;
+      });
+      expect(ancestorsAllowOutline).toBe(true);
+
+      await page.keyboard.press('Tab');
+      const cameraButton = page.getByRole('button', { name: 'Open camera' });
+      await expect(cameraButton).toBeFocused();
+      expect(uploadFocus).toEqual(await focusStyle(cameraButton));
+      await expect(label).toHaveCSS('outline-style', 'none');
+
+      await page.keyboard.press('Shift+Tab');
+      await expect(input).toBeFocused();
+      await expect(label).toHaveCSS('outline-style', 'solid');
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.keyboard.press(activationKey),
+      ]);
+      await fileChooser.setFiles({ name: 'blank.png', mimeType: 'image/png', buffer: BLANK_PNG });
+      await expect(page.getByRole('alert')).toContainText(
+        'No readable QR code was found. Upload the original image or a crop with a clear white border around the whole QR code.',
+      );
     });
-    expect(ancestorsAllowOutline).toBe(true);
-
-    await page.keyboard.press('Tab');
-    const cameraButton = page.getByRole('button', { name: 'Open camera' });
-    await expect(cameraButton).toBeFocused();
-    expect(uploadFocus).toEqual(await focusStyle(cameraButton));
-    await expect(label).toHaveCSS('outline-style', 'none');
-
-    await page.keyboard.press('Shift+Tab');
-    await expect(input).toBeFocused();
-    await expect(label).toHaveCSS('outline-style', 'solid');
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press('Enter');
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles({ name: 'blank.png', mimeType: 'image/png', buffer: BLANK_PNG });
-    await expect(page.getByRole('alert')).toContainText(
-      'No readable QR code was found. Upload the original image or a crop with a clear white border around the whole QR code.',
-    );
-  });
+  }
 
   test('a chosen seat is announced as chosen, not only coloured', async ({ page, api }) => {
     await signInAs(page, customer);
@@ -573,7 +602,7 @@ test.describe('keyboard use', () => {
       admissionToken: 'admission-token-for-the-test',
       tokenExpiresAt: soon(),
     });
-    await page.goto('/events/7');
+    await page.goto('/events/7/tickets');
     await expect(page.getByText('It is your turn.')).toBeVisible();
 
     await page.getByRole('button', { name: /^A1 —/ }).click();

@@ -190,14 +190,10 @@ test.describe('the event photo', () => {
       mimeType: 'image/png',
       buffer: PNG,
     });
-    await expect(
-      page.getByRole('img', { name: 'Preview of the selected event cover' }),
-    ).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Selected event photo preview' })).toBeVisible();
     await page.getByRole('button', { name: 'Save changes' }).click();
 
-    await expect(
-      page.getByRole('img', { name: 'Preview of the selected event cover' }),
-    ).toHaveCount(0);
+    await expect(page.getByRole('img', { name: 'Selected event photo preview' })).toHaveCount(0);
     const [upload] = api.requests('PUT', `event/events/${EVENT_ID}/image`);
     const body = upload.postDataJSON() as { imageBase64: string; mimeType: string };
     expect(body.mimeType).toBe('image/png');
@@ -297,7 +293,8 @@ test.describe('an event moving through its life', () => {
 
     await expect(page.getByText('This event has already been published')).toBeVisible();
     await expect(page.getByLabel('Title')).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Save available buyers' })).toBeEnabled();
+    await expect(page.getByLabel('Available buyers')).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Delete draft' })).toHaveCount(0);
     await expect(page.getByText('1 zone · 4 seats, 2 sold')).toBeVisible();
     await expect(page.getByText('1 of 2 checked in')).toBeVisible();

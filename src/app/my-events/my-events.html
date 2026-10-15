@@ -8,6 +8,31 @@
   </section>
 
   <section class="shell body">
+    <app-active-queue-places
+      [reservationCount]="shownUnpaidOrders().length + shownProcessingOrders().length"
+      [reservationError]="reservationError()"
+    >
+      @if (shownUnpaidOrders().length) {
+        <div class="reminder-payments" aria-label="Orders awaiting payment">
+          @for (order of shownUnpaidOrders(); track order.order_id) {
+            <app-reservation-card
+              class="reminder"
+              [order]="order"
+              [timeRemaining]="reservationTimeLabel(order)"
+              [cancelling]="isCancelling(order.order_id)"
+              (cancelRequested)="cancelReservation(order)"
+            />
+          }
+        </div>
+      }
+      @if (shownProcessingOrders().length) {
+        <div class="reminder-payments" aria-label="Orders processing payment">
+          @for (order of shownProcessingOrders(); track order.order_id) {
+            <app-reservation-card class="reminder" [order]="order" [processing]="true" />
+          }
+        </div>
+      }
+    </app-active-queue-places>
     @if (waitingForTicket()) {
       <div class="issuance" role="status">
         <strong>Payment successful.</strong> Your purchase is shown below. The QR ticket will appear
@@ -35,62 +60,6 @@
             Include completed events</label
           >
         </div>
-        @if (shownUnpaidOrders().length > 0) {
-          <section class="pending-list" aria-label="Orders awaiting payment">
-            @for (order of shownUnpaidOrders(); track order.order_id) {
-              <article class="ticket-card pending-card">
-                <div class="details">
-                  <h2>{{ order.event_title }}</h2>
-                  <p>
-                    Order #{{ order.order_id }} · {{ order.ticket_count }} ticket(s) ·
-                    {{ money(order.total_amount_cents, order.currency) }}
-                  </p>
-                  <p>
-                    Payment pending. Reservation expires in
-                    <strong>{{ reservationTimeLabel(order) }}</strong
-                    >.
-                  </p>
-                  <div class="reservation-actions">
-                    <a class="btn btn-primary" [routerLink]="['/checkout', order.order_id]"
-                      >Continue to payment</a
-                    >
-                    <button
-                      type="button"
-                      class="btn btn-ghost cancel-button"
-                      [disabled]="isCancelling(order.order_id)"
-                      (click)="cancelReservation(order)"
-                    >
-                      {{ isCancelling(order.order_id) ? 'Cancellingâ€¦' : 'Cancel reservation' }}
-                    </button>
-                  </div>
-                </div>
-              </article>
-            }
-          </section>
-        }
-        @if (reservationError()) {
-          <p class="status-message error" role="alert">{{ reservationError() }}</p>
-        }
-        @if (shownProcessingOrders().length > 0) {
-          <section class="pending-list" aria-label="Orders processing payment">
-            @for (order of shownProcessingOrders(); track order.order_id) {
-              <article class="ticket-card pending-card">
-                <div class="ticket-placeholder" aria-hidden="true">â€¦</div>
-                <div class="details">
-                  <h2>{{ order.event_title }}</h2>
-                  <p>
-                    Order #{{ order.order_id }} Â· {{ order.ticket_count }} ticket(s) Â·
-                    {{ money(order.total_amount_cents, order.currency) }}
-                  </p>
-                  <p>
-                    Payment is processing. This order can no longer be cancelled. Your ticket will
-                    appear here after payment completes.
-                  </p>
-                </div>
-              </article>
-            }
-          </section>
-        }
         @if (shownPendingOrders().length > 0) {
           <section class="pending-list" aria-label="Paid orders awaiting tickets">
             @for (order of shownPendingOrders(); track order.order_id) {

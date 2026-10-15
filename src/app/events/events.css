@@ -204,21 +204,6 @@
   color: var(--danger, #b42318);
 }
 
-.active-reservations {
-  display: grid;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-sunken);
-}
-
-.active-reservations h2 {
-  margin: 0;
-  font-size: 1rem;
-}
-
 .invitations,
 .team {
   border: 1px solid var(--border);

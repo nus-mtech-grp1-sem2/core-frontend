@@ -205,17 +205,20 @@ test.describe('sections of a large map', () => {
     page,
     api,
   }) => {
-    // 100 x 100 is 4 x 4 fixed sections of 30; "Stalls" already sits in the top-left one.
-    stubEditor(api, { gridRows: 100, gridCols: 100, zones: [zone()] });
+    // The full first section already holds Stalls. The three partial edge sections
+    // add only 61 seats, keeping the combined reserved inventory below 400.
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    stubEditor(api, { gridRows: 31, gridCols: 31, zones: [zone()] });
     await page.goto(`/organiser/events/${EVENT_ID}/inventory`);
     await expect(zoneCards(page)).toHaveCount(1);
 
     const map = page.locator('.overview-map');
+    await map.scrollIntoViewIfNeeded();
     const box = (await map.boundingBox())!;
-    const section = box.width / (100 / 30);
+    const section = box.width / (31 / 30);
     await page.mouse.move(box.x + section * 0.5, box.y + section * 0.5);
     await page.mouse.down();
-    await page.mouse.move(box.x + section * 1.5, box.y + section * 1.5, { steps: 5 });
+    await page.mouse.move(box.x + box.width - 3, box.y + box.height - 3, { steps: 5 });
     await page.mouse.up();
 
     // Every section becomes a zone; the seat map shows the first of them.
@@ -225,13 +228,36 @@ test.describe('sections of a large map', () => {
       await expect(page.getByLabel('Zone name').nth(index)).toHaveValue(name);
     }
     await expect(page.getByText('1 section already has a zone or stage piece')).toBeVisible();
-    // Each fills its whole 30 x 30 section.
-    await expect(page.getByLabel('Row span for zone 4')).toHaveValue('30');
-    await expect(page.getByLabel('Column span for zone 4')).toHaveValue('30');
+    // The last section is the single-cell lower-right edge of the map.
+    await expect(page.getByLabel('Row span for zone 4')).toHaveValue('1');
+    await expect(page.getByLabel('Column span for zone 4')).toHaveValue('1');
 
     // Each new zone is customised like any other.
     await page.getByLabel('Zone name').nth(1).fill('Upper Circle');
     await expect(page.getByLabel('Zone name').nth(1)).toHaveValue('Upper Circle');
+  });
+
+  test('dragging oversized reserved sections respects the 400-seat limit', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    stubEditor(api, { gridRows: 100, gridCols: 100, zones: [zone()] });
+    await page.goto(`/organiser/events/${EVENT_ID}/inventory`);
+    await expect(zoneCards(page)).toHaveCount(1);
+    const map = page.locator('.overview-map');
+    await map.scrollIntoViewIfNeeded();
+    const box = (await map.boundingBox())!;
+    const section = box.width / (100 / 30);
+    await page.mouse.move(box.x + section * 0.5, box.y + section * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(box.x + section * 1.5, box.y + section * 1.5, { steps: 5 });
+    await page.mouse.up();
+    await expect(
+      page.getByText('Reserved seating is limited to 400 seats.', { exact: true }),
+    ).toBeVisible();
+    await expect(zoneCards(page)).toHaveCount(1);
+    await expect(page.getByLabel('Zone name')).toHaveValue('Stalls');
   });
 
   test('a button for each zone jumps the editor to that zone', async ({ page, api }) => {

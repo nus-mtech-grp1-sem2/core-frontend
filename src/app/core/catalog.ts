@@ -20,6 +20,7 @@ export interface FeaturedSlide {
   readonly date: string;
   readonly image: string;
   readonly alt: string;
+  readonly purchaseLink?: readonly (string | number)[];
 }
 
 /**

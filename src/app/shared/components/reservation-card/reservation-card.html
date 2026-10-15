@@ -5,7 +5,7 @@
       <p>Payment is processing. This reservation can no longer be cancelled.</p>
     } @else {
       <p>
-        {{ order().ticket_count }} ticket(s) reserved · expires in
+        Payment pending · {{ order().ticket_count }} ticket(s) reserved. Reservation expires in
         <strong>{{ timeRemaining() }}</strong>
       </p>
     }
@@ -17,7 +17,7 @@
       </a>
       <button
         type="button"
-        class="btn btn-ghost btn-sm reservation-cancel"
+        class="btn btn-ghost btn-sm reservation-cancel cancel-button"
         [disabled]="cancelling()"
         (click)="cancelRequested.emit()"
       >

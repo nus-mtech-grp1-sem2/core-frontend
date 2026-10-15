@@ -1,0 +1,55 @@
+@if (places().length || reservationCount() || reservationError()) {
+  <section class="queue-places active-reservations" aria-label="Your active bookings">
+    <div class="stack-heading">
+      <h2>Your active bookings</h2>
+      <span>{{ places().length + reservationCount() }} active</span>
+    </div>
+    <ul class="place-list">
+      @for (place of places(); track place.eventId) {
+        <li class="place-card">
+          <div class="place-details">
+            <h3>{{ place.title }}</h3>
+            <p>
+              @if (place.admitted) {
+                <strong>It is your turn.</strong> Complete checkout within
+                <span class="countdown">{{ place.countdown }}</span
+                >.
+              } @else {
+                You are in the queue.
+                @if (place.position !== undefined) {
+                  <span class="position">Position {{ place.position }}</span>
+                }
+              }
+            </p>
+          </div>
+          <div class="place-actions">
+            <a
+              class="return-link"
+              [routerLink]="place.link"
+              [attr.aria-label]="
+                (place.admitted ? 'Return to tickets for ' : 'Return to queue for ') + place.title
+              "
+              >{{ place.admitted ? 'Return to tickets' : 'Return to queue' }}</a
+            >
+            <button
+              type="button"
+              class="release-button"
+              [disabled]="releasing().has(place.eventId)"
+              [attr.aria-label]="'Release my place for ' + place.title"
+              (click)="release(place.eventId)"
+            >
+              {{ releasing().has(place.eventId) ? 'Releasing…' : 'Release my place' }}
+            </button>
+          </div>
+          @if (errors().get(place.eventId); as error) {
+            <p class="place-error" role="alert">{{ error }}</p>
+          }
+        </li>
+      }
+    </ul>
+    <ng-content />
+    @if (reservationError()) {
+      <p class="place-error" role="alert">{{ reservationError() }}</p>
+    }
+  </section>
+}

@@ -22,7 +22,11 @@
           </ul>
 
           <div class="actions">
-            <a class="btn btn-primary" [routerLink]="['/events', slide.id, 'queue']">Buy ticket</a>
+            <a
+              class="btn btn-primary"
+              [routerLink]="slide.purchaseLink ?? ['/events', slide.id, 'queue']"
+              >Buy ticket</a
+            >
             <a class="btn btn-ghost" routerLink="/events">Browse events</a>
           </div>
         </div>

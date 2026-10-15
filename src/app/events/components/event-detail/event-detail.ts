@@ -783,6 +783,7 @@ export class EventDetail {
           customerName: this.auth.user()?.name ?? '',
         }),
       );
+      this.queue.markInCheckout(event.event_id);
       await this.router.navigate(['/checkout', created.order.order_id]);
     } catch (error) {
       if (queueAdmissionRequired(error)) {
