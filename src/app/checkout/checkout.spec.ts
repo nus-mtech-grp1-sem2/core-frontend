@@ -348,7 +348,7 @@ describe('Checkout', () => {
       await settle();
       expect(host.textContent).toContain('reservation has expired');
       expect(host.querySelector('form')).toBeNull();
-      expect(host.querySelector('a[href="/events/172"]')).not.toBeNull();
+      expect(host.querySelector('a[href="/events/172/queue"]')).not.toBeNull();
       expect(navigate).not.toHaveBeenCalled();
     },
   );

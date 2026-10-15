@@ -172,7 +172,7 @@
                   These fields stay in your browser and are not saved or sent to our server.
                 </p>
               } @else {
-                <a class="btn btn-primary" [routerLink]="['/events', order.event_id]"
+                <a class="btn btn-primary" [routerLink]="['/events', order.event_id, 'queue']"
                   >Select tickets again</a
                 >
               }

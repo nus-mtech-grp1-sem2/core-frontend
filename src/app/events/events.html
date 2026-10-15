@@ -10,6 +10,9 @@
   </section>
   <section class="shell listing" aria-labelledby="listing-heading">
     <h2 class="visually-hidden" id="listing-heading">Event listings</h2>
+    @if (!isAdmin() && soldOutNotice()) {
+      <p role="status">This event is sold out. Please choose another event.</p>
+    }
     <div class="toolbar">
       <p #eventCount class="count" aria-live="polite" tabindex="-1">{{ countLabel() }}</p>
       @if (isAdmin()) {
@@ -31,6 +34,14 @@
         Include completed events</label
       >
       @if (!isAdmin()) {
+        <label class="include-sold-out"
+          ><input
+            type="checkbox"
+            [checked]="includeSoldOut()"
+            (change)="includeSoldOut.set($any($event.target).checked)"
+          />
+          Include sold out events</label
+        >
         <div class="page-size">
           <label for="page-size">Events per page</label>
           <select id="page-size" (change)="setPageSize(+$any($event.target).value)">

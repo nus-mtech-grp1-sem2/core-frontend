@@ -1,4 +1,4 @@
-<a class="thumb" [routerLink]="detailLink()"
+<a class="thumb" [routerLink]="cardLink()"
   ><img
     [src]="imageUrl()"
     width="640"
@@ -11,7 +11,7 @@
 <div class="body">
   <p class="when">{{ event().starts_at | date: 'EEE d MMM y, h:mm a' : '+0800' }}</p>
   <h3>
-    <a [routerLink]="detailLink()">{{ event().title }}</a>
+    <a [routerLink]="cardLink()">{{ event().title }}</a>
   </h3>
   @if (isAdmin()) {
     <p class="where">{{ statusLabel() }}</p>
@@ -71,11 +71,11 @@
     </div>
   } @else if (event().status === 'PUBLISHED') {
     <div class="customer-action">
-      @if (event().tier === 'TIER2_SEATED') {
-        <a class="btn btn-primary btn-sm" [routerLink]="detailLink()">View event</a>
+      @if (soldOut()) {
+        <span class="pill status sold-out">Sold out</span>
       } @else {
-        <a class="btn btn-primary btn-sm" [routerLink]="['/events', event().event_id]"
-          >View tickets</a
+        <a class="btn btn-primary btn-sm" [routerLink]="['/events', event().event_id, 'queue']"
+          >Buy ticket</a
         >
       }
     </div>

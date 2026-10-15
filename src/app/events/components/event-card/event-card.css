@@ -90,3 +90,9 @@ h3 a:hover {
 .customer-action .btn {
   width: 100%;
 }
+
+.status.sold-out {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}

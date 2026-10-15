@@ -38,17 +38,14 @@ describe('EventCard', () => {
     expect(text).toContain('6 Oct 2026, 8:00 PM');
   });
 
-  it('routes reserved-seating customers through event details without showing a stale Join action', () => {
-    const host = renderEvent({
-      title: 'Reserved Event',
-      total_seats: 400,
-      tier: 'TIER2_SEATED',
-      price_cents: 2500,
-    });
+  it.each([
+    ['general-admission', 'TIER1_GA'],
+    ['reserved-seating', 'TIER2_SEATED'],
+  ] as const)('sends %s customers directly to the queue', (_label, tier) => {
+    const host = renderEvent({ tier });
 
     const action = host.querySelector<HTMLAnchorElement>('.customer-action a');
-    expect(action?.textContent?.trim()).toBe('View event');
-    expect(action?.getAttribute('href')).toBe('/events/1');
-    expect(host.textContent).not.toContain('Join queue');
+    expect(action?.textContent?.trim()).toBe('Buy ticket');
+    expect(action?.getAttribute('href')).toBe('/events/1/queue');
   });
 });

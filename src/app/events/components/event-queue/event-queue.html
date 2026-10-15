@@ -32,14 +32,10 @@
         <p>This event must be published before customers can join.</p>
         <button type="button" class="btn btn-primary" (click)="retry()">Check again</button>
       }
-      @case ('sold-out') {
-        <h2>This queue has closed</h2>
-        <p>There is no ticket inventory available for another admission batch.</p>
-      }
       @case ('unavailable') {
         <h2>The queue is unavailable</h2>
         <p>{{ message() }}</p>
-        <a class="btn btn-primary" [routerLink]="['/events', eventId()]">View event</a>
+        <a class="btn btn-primary" routerLink="/events">Browse events</a>
       }
       @case ('error') {
         <h2>We couldn’t update your queue place</h2>
@@ -48,6 +44,6 @@
       }
     }
 
-    <a class="back" [routerLink]="['/events', eventId()]">Back to event details</a>
+    <a class="back" routerLink="/events">Back to all events</a>
   </main>
 </app-workspace-shell>
