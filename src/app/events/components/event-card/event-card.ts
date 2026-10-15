@@ -25,6 +25,17 @@ export class EventCard {
   readonly delete = output<number>();
   readonly cancelRequested = output<number>();
 
+  protected readonly soldOut = computed(
+    () => (this.event().remaining_qty ?? this.event().total_seats) <= 0,
+  );
+
+  protected readonly cardLink = computed(() => {
+    if (this.isAdmin()) return this.detailLink();
+    return !this.completed() && !this.soldOut() && this.event().status === 'PUBLISHED'
+      ? ['/events', this.event().event_id, 'queue']
+      : null;
+  });
+
   protected useFallbackImage(target: EventTarget | null): void {
     if (target instanceof HTMLImageElement) target.src = 'images/hero-concert.jpg';
   }

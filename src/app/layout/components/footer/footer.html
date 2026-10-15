@@ -18,33 +18,9 @@
         ✉️ <a href="mailto:onestagecontacts@gmail.com">onestagecontacts@gmail.com</a>
       </p>
     </div>
-
-    <nav class="columns" aria-label="Footer">
-      @for (column of columns; track column.title) {
-        <div>
-          <h2>{{ column.title }}</h2>
-          <ul>
-            @for (item of column.items; track item.label) {
-              <li>
-                @if (item.path) {
-                  <a [routerLink]="item.path">{{ item.label }}</a>
-                } @else {
-                  <a href="#">{{ item.label }}</a>
-                }
-              </li>
-            }
-          </ul>
-        </div>
-      }
-    </nav>
   </div>
 
   <div class="shell bottom">
     <p>© 2026 OneStage. Sample content for demonstration.</p>
-    <ul class="legal">
-      <li><a href="#">Privacy</a></li>
-      <li><a href="#">Terms</a></li>
-      <li><a href="#">Accessibility</a></li>
-    </ul>
   </div>
 </footer>

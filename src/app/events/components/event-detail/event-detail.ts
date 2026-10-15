@@ -318,6 +318,7 @@ export class EventDetail {
   private selectedImageBase64: string | null = null;
   private selectedImageMimeType: string | null = null;
   protected readonly customerMode = !this.organiserMode;
+  protected readonly purchaseOnly = this.route.snapshot.data['purchaseOnly'] === true;
   protected readonly shellWorkspace = () =>
     this.organiserMode ? ('organiser' as const) : ('customer' as const);
   protected readonly backLink = this.organiserMode ? '/organiser/events' : '/events';
@@ -373,6 +374,21 @@ export class EventDetail {
   });
 
   constructor() {
+    effect(() => {
+      if (!this.purchaseOnly || this.leavingQueue()) return;
+      const event = this.event();
+      if (!event) return;
+      const access = this.queueAccess();
+      if (this.completed() || event.status !== 'PUBLISHED') {
+        void this.router.navigate(['/events'], { replaceUrl: true });
+      } else if (access === 'checkout') {
+        void this.router.navigate(['/my-events'], { replaceUrl: true });
+      } else if (access === 'waiting' || access === 'not-joined') {
+        void this.router.navigate(['/events', event.event_id, 'queue'], { replaceUrl: true });
+      } else if (!['checking', 'admitted'].includes(access)) {
+        void this.router.navigate(['/events'], { replaceUrl: true });
+      }
+    });
     effect(() => {
       const eventId = Number(this.id());
       if (Number.isSafeInteger(eventId) && eventId > 0) void this.load(eventId);
@@ -714,6 +730,7 @@ export class EventDetail {
       this.clearAdmissionWindow();
       this.selectedSeatIds.set([]);
       this.queueAccess.set('not-joined');
+      await this.router.navigate(['/events']);
     } catch {
       this.purchaseError.set('Unable to leave the queue. Please try again.');
     } finally {

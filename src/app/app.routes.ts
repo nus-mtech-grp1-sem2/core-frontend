@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 
 import { authGuard } from './core/auth-guard';
+import { queueAdmissionGuard } from './core/queue-admission-guard';
 
 export const routes: Routes = [
   {
@@ -16,10 +17,8 @@ export const routes: Routes = [
   },
   {
     path: 'events/:id',
-    title: 'Event — OneStage',
-    data: { workspace: 'customer' },
-    loadComponent: () =>
-      import('./events/components/event-detail/event-detail').then((m) => m.EventDetail),
+    pathMatch: 'full',
+    redirectTo: 'events/:id/queue',
   },
   {
     path: 'tickets',
@@ -32,6 +31,14 @@ export const routes: Routes = [
     data: { workspace: 'customer' },
     loadComponent: () =>
       import('./events/components/event-queue/event-queue').then((m) => m.EventQueue),
+  },
+  {
+    path: 'events/:id/tickets',
+    title: 'Select tickets — OneStage',
+    canActivate: [authGuard, queueAdmissionGuard],
+    data: { workspace: 'customer', purchaseOnly: true },
+    loadComponent: () =>
+      import('./events/components/event-detail/event-detail').then((m) => m.EventDetail),
   },
   {
     path: 'checkout/:orderId',

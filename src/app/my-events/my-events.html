@@ -98,7 +98,7 @@
                 <div class="ticket-placeholder" aria-hidden="true">✓</div>
                 <div class="details">
                   <h2>
-                    <a [routerLink]="['/events', order.event_id]">{{ order.event_title }}</a>
+                    <span>{{ order.event_title }}</span>
                   </h2>
                   <p>Venue: {{ order.venue }}</p>
                   <p>Start time: {{ order.starts_at | date: 'EEE d MMM y, h:mm a' : '+0800' }}</p>
@@ -140,7 +140,7 @@
                 />
                 <div class="details">
                   <h2>
-                    <a [routerLink]="['/events', ticket.event_id]">{{ ticket.event_title }}</a>
+                    <span>{{ ticket.event_title }}</span>
                   </h2>
                   <p>Venue: {{ ticket.venue }}</p>
                   <p>

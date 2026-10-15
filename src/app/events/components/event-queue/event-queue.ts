@@ -17,15 +17,7 @@ import { QueueService, QueueStatus, QueueSummary } from '../../../core/queue';
 import { WorkspaceShell } from '../../../layout/components/workspace-shell/workspace-shell';
 
 type QueueState =
-  | 'joining'
-  | 'waiting'
-  | 'admitted'
-  | 'leaving'
-  | 'left'
-  | 'closed'
-  | 'sold-out'
-  | 'unavailable'
-  | 'error';
+  'joining' | 'waiting' | 'admitted' | 'leaving' | 'left' | 'closed' | 'unavailable' | 'error';
 
 /** Server refusals that mean the queue cannot be used, keyed by the API's error code. */
 const UNAVAILABLE_MESSAGES: Readonly<Record<string, string>> = {
@@ -90,6 +82,7 @@ export class EventQueue {
       await this.queue.leave(this.activeEventId);
       this.position.set(null);
       this.state.set('left');
+      await this.router.navigate(['/events']);
     } catch (error) {
       this.fail(error);
     }
@@ -111,7 +104,7 @@ export class EventQueue {
           return;
         }
         if (summary.status === 'DRAINED') {
-          this.state.set('sold-out');
+          this.returnToEventsSoldOut();
           return;
         }
       } catch (error) {
@@ -144,12 +137,12 @@ export class EventQueue {
     if (status.status === 'ADMITTED') {
       this.polling?.unsubscribe();
       this.state.set('admitted');
-      void this.router.navigate(['/events', eventId]);
+      void this.router.navigate(['/events', eventId, 'tickets']);
       return;
     }
     if (status.status === 'IN_CHECKOUT') {
       this.polling?.unsubscribe();
-      void this.router.navigate(['/events', eventId]);
+      void this.router.navigate(['/my-events']);
       return;
     }
     if (status.status === 'EXPIRED' || status.status === 'LEFT') {
@@ -172,7 +165,7 @@ export class EventQueue {
       return;
     }
     if (code === 'queue_drained') {
-      this.state.set('sold-out');
+      this.returnToEventsSoldOut();
       return;
     }
     const unavailable = code ? UNAVAILABLE_MESSAGES[code] : undefined;
@@ -194,6 +187,14 @@ export class EventQueue {
     } catch {
       this.eventTitle.set('Event queue');
     }
+  }
+
+  private returnToEventsSoldOut(): void {
+    this.polling?.unsubscribe();
+    void this.router.navigate(['/events'], {
+      queryParams: { availability: 'sold-out' },
+      replaceUrl: true,
+    });
   }
 }
 

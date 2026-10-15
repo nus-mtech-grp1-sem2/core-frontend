@@ -38,7 +38,7 @@ describe('site navigation', () => {
     });
   }
 
-  it('has no dead links on the home page CTA or footer account column', async () => {
+  it('keeps the home account CTA and footer contact link working', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     await router.navigateByUrl('/');
@@ -50,9 +50,8 @@ describe('site navigation', () => {
     );
     expect(cta?.getAttribute('href')).toBe('/register');
 
-    const signIn = Array.from(host.querySelectorAll<HTMLAnchorElement>('app-footer a')).find(
-      (anchor) => anchor.textContent?.trim() === 'Sign in',
+    expect(host.querySelector('app-footer a')?.getAttribute('href')).toBe(
+      'mailto:onestagecontacts@gmail.com',
     );
-    expect(signIn?.getAttribute('href')).toBe('/login');
   });
 });

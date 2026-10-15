@@ -1,5 +1,5 @@
 <app-workspace-shell [workspace]="shellWorkspace()">
-  @if (loading()) {
+  @if (loading() || (purchaseOnly && event() && queueAccess() !== 'admitted')) {
     <section class="shell body"><p class="empty">Loading event...</p></section>
   } @else if (event(); as event) {
     <section class="page-head">

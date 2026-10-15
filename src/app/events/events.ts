@@ -91,7 +91,7 @@ interface CustomerOrdersResponse {
 }
 
 /** How many events a customer can choose to see per page; the first is the default. */
-export const PAGE_SIZES = [10, 20, 50] as const;
+export const PAGE_SIZES = [9, 18, 36] as const;
 const PAGE_SIZE_KEY = 'onestage.eventsPageSize';
 
 /** The page size this browser chose last time, or the default. */
@@ -125,13 +125,32 @@ export class Events {
     this.route.queryParamMap.pipe(map((params) => params.get('q')?.trim().toLowerCase() ?? '')),
     { initialValue: this.route.snapshot.queryParamMap.get('q')?.trim().toLowerCase() ?? '' },
   );
+  protected readonly soldOutNotice = toSignal(
+    this.route.queryParamMap.pipe(map((params) => params.get('availability') === 'sold-out')),
+    { initialValue: this.route.snapshot.queryParamMap.get('availability') === 'sold-out' },
+  );
   protected readonly allEvents = signal<readonly ManagedEvent[]>([]);
   protected readonly visibleEvents = computed(() => {
     const query = this.searchTerm();
     let events = this.allEvents();
+    if (!this.organiserMode && !this.includeSoldOut()) {
+      events = events.filter(
+        (event) =>
+          (event.remaining_qty ?? event.total_seats) > 0 ||
+          (this.includeCompleted() && isCompleted(event.starts_at)),
+      );
+    }
     if (!this.includeCancelled()) events = events.filter((event) => event.status !== 'CANCELLED');
     if (!this.includeCompleted()) {
       events = events.filter((event) => !isCompleted(event.starts_at));
+    }
+    if (!this.organiserMode && (this.includeCompleted() || this.includeSoldOut())) {
+      const priority = (event: ManagedEvent): number => {
+        if (this.includeCompleted() && isCompleted(event.starts_at)) return 0;
+        if (this.includeSoldOut() && (event.remaining_qty ?? event.total_seats) <= 0) return 1;
+        return 2;
+      };
+      events = [...events].sort((left, right) => priority(left) - priority(right));
     }
     if (!query) return events;
     return events.filter((event) =>
@@ -148,6 +167,7 @@ export class Events {
     source: () => [
       this.searchTerm(),
       this.includeCompleted(),
+      this.includeSoldOut(),
       this.includeCancelled(),
       this.pageSize(),
     ],
@@ -180,6 +200,7 @@ export class Events {
   protected readonly isAdmin = computed(() => this.organiserMode);
   protected readonly includeCancelled = signal(false);
   protected readonly includeCompleted = signal(false);
+  protected readonly includeSoldOut = signal(false);
   protected readonly canViewEventDetails = this.auth.isAuthenticated;
   protected readonly showEventForm = signal(false);
   protected readonly teamEventId = signal<number | null>(null);
@@ -462,7 +483,7 @@ export class Events {
   }
 
   protected eventDetailLink(eventId: number): readonly (string | number)[] {
-    return this.organiserMode ? ['/organiser/events', eventId] : ['/events', eventId];
+    return this.organiserMode ? ['/organiser/events', eventId] : ['/events', eventId, 'queue'];
   }
 
   /** Built from the `event` service's own image endpoint (not a static asset), so

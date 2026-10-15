@@ -7,9 +7,9 @@ import { AuthService } from './auth';
  * Blocks a route until the visitor is signed in, remembering where they were
  * headed so sign-in can send them back there.
  *
- * This is the only gate any route needs: every signed-in account has access
+ * Every signed-in account has access
  * to the storefront, the organiser workspace and the event-helper workspace
- * alike, so there is nothing further to check once someone is signed in.
+ * alike. Ticket selection additionally requires a live queue admission.
  */
 export const authGuard: CanActivateFn = async (_route, state) => {
   const auth = inject(AuthService);

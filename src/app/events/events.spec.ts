@@ -91,10 +91,11 @@ describe('Events', () => {
     fixture.detectChanges();
 
     expect(host.querySelectorAll('.event-card')).toHaveLength(2);
-    expect(host.textContent).toContain('View event');
-    expect(host.textContent).not.toContain('Join queue');
-    expect(host.textContent).not.toContain('Join waiting room');
-    expect(host.textContent).toContain('View tickets');
+    expect(host.querySelectorAll('.customer-action a')).toHaveLength(2);
+    for (const action of host.querySelectorAll<HTMLAnchorElement>('.customer-action a')) {
+      expect(action.textContent?.trim()).toBe('Buy ticket');
+      expect(action.getAttribute('href')).toMatch(/^\/events\/\d+\/queue$/);
+    }
     expect(host.textContent).not.toContain('New event');
     httpMock.verify();
   });
@@ -288,11 +289,13 @@ describe('Events', () => {
         expect(card(title)?.querySelector('.status')?.textContent?.trim(), title).toBe('Completed');
         expect(card(title)?.querySelector('.customer-action a'), title).toBeNull();
       }
-      // An upcoming reserved event opens its details before offering a live queue action.
+      // An upcoming reserved event goes directly into its live queue.
       expect(card('ASEAN Cup Final')?.querySelector('.customer-action a')?.textContent).toContain(
-        'View event',
+        'Buy ticket',
       );
-      expect(card('ASEAN Cup Final')?.textContent).not.toContain('Join queue');
+      expect(
+        card('ASEAN Cup Final')?.querySelector('.customer-action a')?.getAttribute('href'),
+      ).toBe('/events/2/queue');
       httpMock.verify();
     });
 
@@ -440,12 +443,12 @@ describe('paging the customer list', () => {
     return { ...rendered, titles, button, count };
   }
 
-  it('shows 10 events per page by default, starting on the first page', async () => {
+  it('shows 9 events per page by default, starting on the first page', async () => {
     const { titles, button, count, host } = await renderCustomer();
 
-    expect(titles()).toEqual(many.slice(0, 10).map((event) => event.title));
-    expect(count()).toBe('Showing 1–10 of 23 events');
-    expect(host.querySelector<HTMLSelectElement>('#page-size')?.value).toBe('10');
+    expect(titles()).toEqual(many.slice(0, 9).map((event) => event.title));
+    expect(count()).toBe('Showing 1–9 of 23 events');
+    expect(host.querySelector<HTMLSelectElement>('#page-size')?.value).toBe('9');
     expect(button('Previous')?.disabled).toBe(true);
     expect(button('Page 1')?.getAttribute('aria-current')).toBe('page');
     expect(button('Page 3')).toBeTruthy();
@@ -456,13 +459,13 @@ describe('paging the customer list', () => {
 
     button('Next')!.click();
     fixture.detectChanges();
-    expect(titles()).toEqual(many.slice(10, 20).map((event) => event.title));
-    expect(count()).toBe('Showing 11–20 of 23 events');
+    expect(titles()).toEqual(many.slice(9, 18).map((event) => event.title));
+    expect(count()).toBe('Showing 10–18 of 23 events');
     expect(document.activeElement).toBe(host.querySelector('.count'));
 
     button('Page 3')!.click();
     fixture.detectChanges();
-    expect(titles()).toEqual(['Event 21', 'Event 22', 'Event 23']);
+    expect(titles()).toEqual(many.slice(18).map((event) => event.title));
     expect(button('Next')?.disabled).toBe(true);
     expect(button('Page 3')?.getAttribute('aria-current')).toBe('page');
   });
@@ -473,18 +476,18 @@ describe('paging the customer list', () => {
     fixture.detectChanges();
 
     const select = host.querySelector<HTMLSelectElement>('#page-size')!;
-    select.value = '20';
+    select.value = '18';
     select.dispatchEvent(new Event('change'));
     fixture.detectChanges();
 
-    expect(titles()).toHaveLength(20);
+    expect(titles()).toHaveLength(18);
     expect(titles()[0]).toBe('Event 1');
-    expect(count()).toBe('Showing 1–20 of 23 events');
-    expect(localStorage.getItem('onestage.eventsPageSize')).toBe('20');
+    expect(count()).toBe('Showing 1–18 of 23 events');
+    expect(localStorage.getItem('onestage.eventsPageSize')).toBe('18');
 
     const again = await renderCustomer();
-    expect(again.titles()).toHaveLength(20);
-    expect(again.host.querySelector<HTMLSelectElement>('#page-size')?.value).toBe('20');
+    expect(again.titles()).toHaveLength(18);
+    expect(again.host.querySelector<HTMLSelectElement>('#page-size')?.value).toBe('18');
   });
 
   it('keeps an organiser’s whole list on one page, with no paging controls', async () => {
