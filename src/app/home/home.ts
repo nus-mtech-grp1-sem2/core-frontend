@@ -18,6 +18,8 @@ import { EventCategory, FeaturedSlide, Venue } from '../core/catalog';
 import { hasSubmittedPayment } from '../core/payment-processing';
 import { QueueService } from '../core/queue';
 import { startsTodayOrLater } from '../core/event-dates';
+import { formatEventDate, formatEventTime } from '../core/event-time';
+import { EventStatus } from '../events/event.models';
 import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
 import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
 import { Carousel } from './components/carousel/carousel';
@@ -80,6 +82,7 @@ interface EventApiRecord {
   readonly event_start_datetime?: string;
   readonly tier?: 'TIER1_GA' | 'TIER2_SEATED';
   readonly event_type?: 'TIER1_GA' | 'TIER2_SEATED';
+  readonly status?: EventStatus;
 }
 
 interface EventResponse {
@@ -170,21 +173,7 @@ export class Home {
 
   constructor() {
     this.api.get<EventResponse>('event', '/events').subscribe({
-      next: (result) =>
-        this.featuredSlides.set(
-          result.events.slice(0, 3).map((event) => {
-            const title = event.title ?? event.event_name ?? '';
-            const startsAt = event.starts_at ?? event.event_start_datetime ?? '';
-            return {
-              id: event.event_id,
-              category: categoryFor(event, title),
-              title,
-              date: formatEventDate(startsAt),
-              image: 'images/hero-concert.jpg',
-              alt: `${title} artwork`,
-            };
-          }),
-        ),
+      next: (result) => this.featuredSlides.set(featuredSlidesFrom(result.events, Date.now())),
       error: () => this.featuredSlides.set([]),
     });
     this.api.get<VenueResponse>('event', '/venues').subscribe({
@@ -293,15 +282,34 @@ export class Home {
   ] as const;
 }
 
+/**
+ * The next three events that have not started yet, soonest first. `/events` lists past
+ * events too, oldest first, so taking its first rows would feature events already over.
+ * An event with no readable start time is left out: a hero slide needs a date to show.
+ */
+function featuredSlidesFrom(events: readonly EventApiRecord[], now: number): FeaturedSlide[] {
+  return events
+    .map((event) => ({ event, startsAt: event.starts_at ?? event.event_start_datetime ?? '' }))
+    .filter(({ event, startsAt }) => event.status !== 'CANCELLED' && Date.parse(startsAt) >= now)
+    .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))
+    .slice(0, 3)
+    .map(({ event, startsAt }) => {
+      const title = event.title ?? event.event_name ?? '';
+      return {
+        id: event.event_id,
+        category: categoryFor(event, title),
+        title,
+        date: `${formatEventDate(startsAt)} · ${formatEventTime(startsAt)}`,
+        image: 'images/hero-concert.jpg',
+        alt: `${title} artwork`,
+      };
+    });
+}
+
 function categoryFor(event: EventApiRecord, title: string): EventCategory {
   const text = `${title} ${event.venue}`.toLowerCase();
   const tier = event.tier ?? event.event_type;
   if (/cup|derby|stadium|match|football/.test(text)) return 'Sports';
   if (tier === 'TIER2_SEATED' || /theatre|comedy|improv/.test(text)) return 'Theatre';
   return 'Concerts';
-}
-
-function formatEventDate(value: string): string {
-  const date = new Date(value);
-  return `${date.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })} · ${date.toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' })}`;
 }

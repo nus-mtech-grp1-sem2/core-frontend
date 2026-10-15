@@ -77,6 +77,72 @@ describe('Home', () => {
     httpMock.verify();
   });
 
+  it('features only the next three events that have not started, soonest first', async () => {
+    const event = (event_id: number, event_name: string, days: number, status = 'PUBLISHED') => ({
+      event_id,
+      event_name,
+      event_type: 'TIER1_GA',
+      event_start_datetime: startsInDays(days),
+      status,
+    });
+    const httpMock = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(Home);
+    // The service lists past events too, oldest first.
+    httpMock.expectOne('/api/event/events').flush({
+      events: [
+        event(1, 'Last month', -30),
+        event(2, 'Earlier today', -0.1),
+        event(3, 'Next month', 30),
+        event(4, 'Cancelled tomorrow', 1, 'CANCELLED'),
+        event(5, 'Next week', 7),
+        event(6, 'Tomorrow', 1),
+        event(7, 'Next year', 365),
+      ],
+    });
+    httpMock.expectOne('/api/event/venues').flush({ venues: [] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const titles = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.slide h1'),
+      (heading) => heading.textContent?.trim(),
+    );
+    expect(titles).toEqual(['Tomorrow', 'Next week', 'Next month']);
+    httpMock.verify();
+  });
+
+  it("dates a featured event in Singapore time, regardless of the viewer's own timezone", async () => {
+    const httpMock = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(Home);
+    // 4:30pm UTC on 1 Mar is already 12:30am on 2 Mar in Singapore.
+    httpMock.expectOne('/api/event/events').flush({
+      events: [
+        { event_id: 1, event_name: 'Late show', event_start_datetime: '2099-03-01T16:30:00Z' },
+      ],
+    });
+    httpMock.expectOne('/api/event/venues').flush({ venues: [] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const date = (fixture.nativeElement as HTMLElement).querySelector('.slide .meta li');
+    expect(date?.textContent?.trim()).toBe('2 Mar 2099 · 12:30 am');
+    httpMock.verify();
+  });
+
+  it('shows no featured carousel when every event has already started', async () => {
+    const httpMock = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(Home);
+    httpMock.expectOne('/api/event/events').flush({
+      events: [{ event_id: 1, event_name: 'Last week', event_start_datetime: startsInDays(-7) }],
+    });
+    httpMock.expectOne('/api/event/venues').flush({ venues: [] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('.hero')).toBeNull();
+    httpMock.verify();
+  });
+
   async function renderSignedIn(tickets: readonly object[], orders: readonly object[] = []) {
     authenticated.set(true);
     authUser.set({ sub: 'customer-1', email: 'customer@example.com', name: '', groups: [] });
