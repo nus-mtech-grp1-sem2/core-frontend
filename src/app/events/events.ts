@@ -29,8 +29,10 @@ import { ConfirmDialogService } from '../shared/components/confirm-dialog/confir
 import { AuthService } from '../core/auth';
 import { fromDateTimeLocal, isCompleted } from '../core/event-time';
 import { hasSubmittedPayment } from '../core/payment-processing';
+import { pendingPaymentLink } from '../core/pending-payment-link';
 import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
+import { ActiveQueuePlaces } from '../layout/components/active-queue-places/active-queue-places';
 import { EventCard } from './components/event-card/event-card';
 import { EventStatus, EventTier, ManagedEvent } from './event.models';
 import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
@@ -107,7 +109,14 @@ function savedPageSize(): number {
 @Component({
   selector: 'app-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EventCard, ReservationCard, LowerCasePipe, ReactiveFormsModule, WorkspaceShell],
+  imports: [
+    EventCard,
+    ReservationCard,
+    LowerCasePipe,
+    ReactiveFormsModule,
+    WorkspaceShell,
+    ActiveQueuePlaces,
+  ],
   templateUrl: './events.html',
   styleUrl: './events.css',
 })
@@ -484,6 +493,12 @@ export class Events {
 
   protected eventDetailLink(eventId: number): readonly (string | number)[] {
     return this.organiserMode ? ['/organiser/events', eventId] : ['/events', eventId, 'queue'];
+  }
+
+  protected eventPurchaseLink(eventId: number): readonly (string | number)[] | null {
+    return this.auth.isAuthenticated()
+      ? pendingPaymentLink(eventId, this.customerOrders(), this.now())
+      : null;
   }
 
   /** Built from the `event` service's own image endpoint (not a static asset), so

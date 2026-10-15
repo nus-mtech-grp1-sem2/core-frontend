@@ -57,11 +57,12 @@ function stubEvents(api: MockApi, overrides: Record<string, unknown> = {}) {
     });
 }
 
-function stubCustomer(api: MockApi, queue?: Record<string, unknown>) {
+function stubCustomer(api: MockApi, queue: Record<string, unknown> = admitted()) {
   api
     .on('GET', 'ticket/customers/me/tickets', { json: { tickets: [] } })
-    .on('GET', 'order/customers/me/orders', { json: { orders: [] } });
-  if (queue) api.on('GET', 'queue/events/7/queue/me', { json: queue });
+    .on('GET', 'order/customers/me/orders', { json: { orders: [] } })
+    .on('GET', 'queue/events/7/queue', { json: { queue: { status: 'OPEN' } } })
+    .on('GET', 'queue/events/7/queue/me', { json: { queueEntryId: 71, ...queue } });
 }
 
 function stubOrganiser(api: MockApi) {
@@ -113,7 +114,7 @@ const screens: Screen[] = [
   },
   {
     name: 'a general-admission event',
-    path: '/events/7',
+    path: '/events/7/tickets',
     user: customer,
     ready: (page) => page.getByRole('heading', { name: 'E2E Summer Concert' }),
     stub: (api) => {
@@ -123,7 +124,7 @@ const screens: Screen[] = [
   },
   {
     name: 'choosing seats',
-    path: '/events/7',
+    path: '/events/7/tickets',
     user: customer,
     ready: (page) => page.getByText('It is your turn.'),
     stub: (api) => {
@@ -316,7 +317,7 @@ test.describe('using it with a finger', () => {
     stubEvents(api, { tier: 'TIER2_SEATED' });
     stubCustomer(api, admitted());
     api.on('GET', 'inventory/events/7/seats', { json: { gridRows: 1, gridCols: 6, seats } });
-    await page.goto('/events/7');
+    await page.goto('/events/7/tickets');
     await expect(page.getByText('It is your turn.')).toBeVisible();
     const seat = (label: string) => page.getByRole('button', { name: new RegExp(`^${label} —`) });
 
@@ -345,9 +346,14 @@ test.describe('using it with a finger', () => {
     api
       .on('POST', 'order/orders', { json: { order: { order_id: 301 } } })
       .on('GET', 'order/orders/301', {
-        json: { order: order({ status: 'PENDING_PAYMENT' }) },
+        json: {
+          order: order({
+            status: 'PENDING',
+            reservation_expires_at: new Date(Date.now() + 180_000).toISOString(),
+          }),
+        },
       });
-    await page.goto('/events/7');
+    await page.goto('/events/7/tickets');
     await page.getByLabel('Quantity').fill('2');
 
     await page.getByRole('button', { name: /Buy tickets/ }).tap();

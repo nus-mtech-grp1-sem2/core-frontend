@@ -17,6 +17,7 @@ export class EventCard {
   readonly isAdmin = input(false);
   readonly completed = input(false);
   readonly detailLink = input.required<string | readonly (string | number)[]>();
+  readonly purchaseLink = input<readonly (string | number)[] | null>(null);
   /** The organiser's uploaded photo, from the `event` service's image endpoint.
    * Not a static asset, so it's a plain `<img [src]>` with an `(error)` fallback
    * rather than `NgOptimizedImage` (which this repo reserves for bundled images). */
@@ -32,7 +33,7 @@ export class EventCard {
   protected readonly cardLink = computed(() => {
     if (this.isAdmin()) return this.detailLink();
     return !this.completed() && !this.soldOut() && this.event().status === 'PUBLISHED'
-      ? ['/events', this.event().event_id, 'queue']
+      ? (this.purchaseLink() ?? ['/events', this.event().event_id, 'queue'])
       : null;
   });
 

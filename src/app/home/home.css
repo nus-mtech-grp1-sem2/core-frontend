@@ -2,13 +2,8 @@
   display: block;
 }
 
-.active-reservations {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.active-reservations .section-head {
-  margin-bottom: 0.25rem;
+app-active-queue-places {
+  margin-top: 1.5rem;
 }
 
 /* Upcoming tickets for a signed-in customer */

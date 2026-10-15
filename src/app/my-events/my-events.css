@@ -1,6 +1,11 @@
 .body {
   padding-block: clamp(2rem, 5vw, 3rem);
 }
+
+.reminder-payments {
+  display: grid;
+  gap: 0.625rem;
+}
 .issuance {
   margin-bottom: 1rem;
   padding: 0.875rem 1rem;

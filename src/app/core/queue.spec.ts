@@ -73,4 +73,47 @@ describe('QueueService', () => {
     expect(queue.statusFor(7)).toBeNull();
     expect(queue.admissionTokenFor(7)).toBeNull();
   });
+
+  it('retains multiple active places and removes only the one entering checkout', async () => {
+    for (const eventId of [7, 8]) {
+      const joined = queue.join(eventId);
+      http.expectOne(`/api/queue/events/${eventId}/queue/join`).flush({
+        queueEntryId: eventId,
+        status: 'ADMITTED',
+        admissionToken: `token-${eventId}`,
+      });
+      await joined;
+    }
+    expect(queue.activePlaces().map((place) => place.eventId)).toEqual([7, 8]);
+    queue.markInCheckout(7);
+    expect(queue.activePlaces().map((place) => place.eventId)).toEqual([8]);
+    expect(queue.statusFor(7)?.status).toBe('IN_CHECKOUT');
+    expect(queue.admissionTokenFor(7)).toBeNull();
+    expect(queue.admissionTokenFor(8)).toBe('token-8');
+  });
+
+  it.each(['release', 'checkout', 'account-change'] as const)(
+    'does not restore an admission from a late poll after %s',
+    async (action) => {
+      const joined = queue.join(7);
+      const admitted = { queueEntryId: 7, status: 'ADMITTED', admissionToken: 'private-token' };
+      http.expectOne('/api/queue/events/7/queue/join').flush(admitted);
+      await joined;
+      const polling = queue.status(7);
+      const pending = http.expectOne('/api/queue/events/7/queue/me');
+      if (action === 'release') {
+        const leaving = queue.leave(7);
+        http.expectOne('/api/queue/events/7/queue/me').flush(null);
+        await leaving;
+      } else if (action === 'checkout') {
+        queue.markInCheckout(7);
+      } else {
+        queue.clearAll();
+      }
+      pending.flush(admitted);
+      await polling;
+      expect(queue.activePlaces()).toEqual([]);
+      expect(queue.admissionTokenFor(7)).toBeNull();
+    },
+  );
 });

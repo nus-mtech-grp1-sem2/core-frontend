@@ -18,6 +18,8 @@ import { ApiService } from '../core/api';
 import { startsTodayOrLater } from '../core/event-dates';
 import { QueueService } from '../core/queue';
 import { WorkspaceShell } from '../layout/components/workspace-shell/workspace-shell';
+import { ReservationCard } from '../shared/components/reservation-card/reservation-card';
+import { ActiveQueuePlaces } from '../layout/components/active-queue-places/active-queue-places';
 
 /** How often, and how many times, to ask whether the confirmation emails have gone out. */
 const CONFIRMATION_POLL_MS = 2_000;
@@ -124,7 +126,7 @@ type LoadStatus = 'loading' | 'ready' | 'error';
 @Component({
   selector: 'app-my-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, RouterLink, WorkspaceShell],
+  imports: [DatePipe, RouterLink, WorkspaceShell, ActiveQueuePlaces, ReservationCard],
   templateUrl: './my-events.html',
   styleUrl: './my-events.css',
 })

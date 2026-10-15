@@ -4,6 +4,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/ro
 import { filter, map } from 'rxjs';
 
 import { AuthService } from '../../../core/auth';
+import { QueuePlacesService } from '../../../core/queue-places';
 
 interface NavLink {
   readonly label: string;
@@ -64,6 +65,7 @@ const MY_TICKETS_SEARCH: SearchScope = {
 })
 export class Header {
   protected readonly auth = inject(AuthService);
+  private readonly queuePlaces = inject(QueuePlacesService);
   private readonly router = inject(Router);
 
   protected readonly menuOpen = signal(false);
@@ -136,6 +138,7 @@ export class Header {
   }
 
   protected async signOut(): Promise<void> {
+    this.queuePlaces.forgetLocalPlaces();
     await this.auth.signOut();
     await this.router.navigateByUrl('/');
   }

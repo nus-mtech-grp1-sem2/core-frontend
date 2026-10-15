@@ -74,9 +74,7 @@
       @if (soldOut()) {
         <span class="pill status sold-out">Sold out</span>
       } @else {
-        <a class="btn btn-primary btn-sm" [routerLink]="['/events', event().event_id, 'queue']"
-          >Buy ticket</a
-        >
+        <a class="btn btn-primary btn-sm" [routerLink]="cardLink()">Buy ticket</a>
       }
     </div>
   }

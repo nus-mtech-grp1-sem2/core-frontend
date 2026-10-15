@@ -2,31 +2,24 @@
   <app-carousel [slides]="featuredSlides()" />
 
   @if (auth.isAuthenticated()) {
-    @if (unpaidOrders().length > 0 || processingOrders().length > 0) {
-      <section class="shell section active-reservations" aria-labelledby="reservations-heading">
-        <header class="section-head">
-          <div>
-            <p class="eyebrow">Checkout</p>
-            <h2 id="reservations-heading">Active reservations</h2>
-          </div>
-        </header>
-        @for (order of unpaidOrders(); track order.order_id) {
-          <app-reservation-card
-            class="responsive"
-            [order]="order"
-            [timeRemaining]="reservationTimeLabel(order)"
-            [cancelling]="isCancelling(order.order_id)"
-            (cancelRequested)="cancelReservation(order)"
-          />
-        }
-        @for (order of processingOrders(); track order.order_id) {
-          <app-reservation-card class="responsive" [order]="order" [processing]="true" />
-        }
-        @if (reservationError()) {
-          <p class="purchase-message error" role="alert">{{ reservationError() }}</p>
-        }
-      </section>
-    }
+    <app-active-queue-places
+      class="shell"
+      [reservationCount]="unpaidOrders().length + processingOrders().length"
+      [reservationError]="reservationError()"
+    >
+      @for (order of unpaidOrders(); track order.order_id) {
+        <app-reservation-card
+          class="reminder"
+          [order]="order"
+          [timeRemaining]="reservationTimeLabel(order)"
+          [cancelling]="isCancelling(order.order_id)"
+          (cancelRequested)="cancelReservation(order)"
+        />
+      }
+      @for (order of processingOrders(); track order.order_id) {
+        <app-reservation-card class="reminder" [order]="order" [processing]="true" />
+      }
+    </app-active-queue-places>
     <section class="shell section" aria-labelledby="orders-heading">
       <header class="section-head">
         <div>

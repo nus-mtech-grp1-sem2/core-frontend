@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 
+import { QueuePlacesService } from './core/queue-places';
 import { Footer } from './layout/components/footer/footer';
 import { Header } from './layout/components/header/header';
 import { ConfirmDialog } from './shared/components/confirm-dialog/confirm-dialog';
@@ -12,4 +13,8 @@ import { ConfirmDialog } from './shared/components/confirm-dialog/confirm-dialog
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
-export class App {}
+export class App {
+  constructor() {
+    inject(QueuePlacesService).start();
+  }
+}

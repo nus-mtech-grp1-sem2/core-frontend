@@ -30,6 +30,7 @@ const admittedQueue = () => ({
     }),
     admissionTokenFor: () => 'test-admission',
     clear: vi.fn(),
+    markInCheckout: vi.fn(),
   },
 });
 
@@ -92,6 +93,7 @@ describe('EventDetail checkout navigation', () => {
       });
       const post = vi.fn(() => of({ order: { order_id: 42 } }));
       const clear = vi.fn();
+      const markInCheckout = vi.fn();
       await TestBed.configureTestingModule({
         imports: [EventDetail],
         providers: [
@@ -121,6 +123,7 @@ describe('EventDetail checkout navigation', () => {
               }),
               admissionTokenFor: () => 'test-admission',
               clear,
+              markInCheckout,
             },
           },
         ],
@@ -161,6 +164,7 @@ describe('EventDetail checkout navigation', () => {
       });
       expect(navigate).toHaveBeenCalledWith(['/checkout', 42]);
       expect(clear).not.toHaveBeenCalled();
+      expect(markInCheckout).toHaveBeenCalledExactlyOnceWith(172);
     },
   );
 });

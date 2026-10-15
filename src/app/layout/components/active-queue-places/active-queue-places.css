@@ -1,0 +1,151 @@
+:host {
+  display: block;
+}
+
+.queue-places {
+  display: grid;
+  gap: 0.625rem;
+  margin-block: 0 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.stack-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.125rem;
+}
+
+.stack-heading h2 {
+  font-size: 0.9375rem;
+}
+
+.stack-heading span {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-sunken);
+}
+
+.place-list {
+  display: grid;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.place-list:empty {
+  display: none;
+}
+
+.place-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #cfe7d9;
+  border-radius: var(--radius);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.place-details h3 {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  line-height: 1.4;
+  margin-bottom: 0.25rem;
+}
+
+.place-details p {
+  font-size: 0.875rem;
+}
+
+.countdown,
+.position {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.place-actions {
+  display: grid;
+  grid-template-columns: 10rem 10rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.return-link,
+.release-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--success-fg);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.return-link {
+  background: #fff;
+  color: var(--success-fg);
+  text-decoration: none;
+}
+
+.release-button {
+  background: transparent;
+  color: var(--success-fg);
+  border-color: transparent;
+}
+
+.return-link:hover,
+.release-button:hover:not(:disabled) {
+  box-shadow: 0 0 0 2px #bddfcd;
+}
+
+.release-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.place-error {
+  grid-column: 1 / -1;
+  color: #991b1b;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 800px) {
+  .place-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .place-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 400px) {
+  .place-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .place-actions > * {
+    min-height: 3.25rem;
+    padding-inline: 0.5rem;
+    white-space: normal;
+    line-height: 1.3;
+  }
+}
