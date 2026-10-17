@@ -9,11 +9,12 @@ import {
   setAvailableBuyers,
   signedInPage,
 } from './support/events';
+import { admitNext, queueSummary } from './support/queue';
 import { assertLocalStack, sql } from './support/stack';
 import { startsAt } from './support/events';
 import type { Role } from './support/users';
 
-// One reserved-seating event, two customers, run in order: the waiting room, a real seat race and
+// One reserved-seating event, two customers, run in order: the queue, a real seat race and
 // checkout. The title carries a run id because the local database keeps events between runs.
 const runId = Date.now().toString(36);
 const TITLE = `E2E Reserved Seating ${runId}`;
@@ -25,12 +26,12 @@ test.describe.configure({ mode: 'serial' });
 test.beforeAll(() => assertLocalStack());
 
 const position = (page: Page) => page.locator('.position strong');
+const queueSessions = () =>
+  sql(`SELECT COUNT(*) FROM queue.queue_sessions WHERE event_id = ${Number(eventId)}`);
 
-test('organiser publishes a reserved-seating event and opens the waiting room', async ({
-  browser,
-}) => {
+test('organiser publishes a reserved-seating event', async ({ browser }) => {
   const page = await signedInPage(browser, 'organiser');
-  // Two available buyers means one "Admit next customer" admits up to two people together.
+  // Two available buyers means one admission lets up to two people in together.
   eventId = await createEvent(page, {
     title: TITLE,
     tier: 'TIER2_SEATED',
@@ -48,29 +49,29 @@ test('organiser publishes a reserved-seating event and opens the waiting room', 
   const { seats } = (await inventory.json()) as { seats: { seatLabel: string }[] };
   seatLabels = seats.map((seat) => seat.seatLabel);
   expect(seatLabels).toHaveLength(4);
-
-  await page.goto(`/organiser/events/${eventId}`);
-  await page.getByRole('button', { name: 'Open waiting room', exact: true }).click();
-  await expect(page.getByText('Open · 0 waiting · up to 2 active buyers')).toBeVisible();
+  // There is no step to open the queue: the first customer to join creates it.
+  expect(queueSessions()).toBe('0');
   await page.context().close();
 });
 
 test('customers queue in order, rejoining keeps one place, and the organiser admits them', async ({
   browser,
+  request,
 }) => {
   const first = await signedInPage(browser, 'customer');
   const second = await signedInPage(browser, 'customer2');
-  const organiser = await signedInPage(browser, 'organiser');
 
+  // The event page sends customers to its queue, which joins them straight away.
   for (const [page, expected] of [
     [first, '1'],
     [second, '2'],
   ] as const) {
     await page.goto(`/events/${eventId}`);
-    await page.getByRole('button', { name: 'Join waiting room' }).click();
+    await page.waitForURL(new RegExp(`/events/${eventId}/queue$`));
     await expect(page.getByRole('heading', { name: TITLE })).toBeVisible();
     await expect(position(page)).toHaveText(expected);
   }
+  expect(queueSessions()).toBe('1');
 
   // Idempotency: reloading (which joins again) must not add a second entry or move the customer.
   await first.reload();
@@ -82,17 +83,16 @@ test('customers queue in order, rejoining keeps one place, and the organiser adm
   );
   expect(entries).toBe('1');
 
-  await organiser.goto(`/organiser/events/${eventId}`);
-  await expect(organiser.getByText('Open · 2 waiting · up to 2 active buyers')).toBeVisible();
-  await organiser.getByRole('button', { name: 'Admit next customer' }).click();
-  await expect(organiser.getByText('Open · 0 waiting')).toBeVisible();
+  // The organiser app has no queue controls; the API still lets an organiser admit the next batch.
+  expect((await queueSummary(request, eventId)).waitingCount).toBe(2);
+  expect(await admitNext(request, eventId)).toMatchObject({ admitted: 2, remaining: 0 });
 
   // The queue pages poll every few seconds and then send each customer to seat selection.
   for (const page of [first, second]) {
-    await page.waitForURL(new RegExp(`/events/${eventId}$`), { timeout: 30_000 });
+    await page.waitForURL(new RegExp(`/events/${eventId}/tickets$`), { timeout: 30_000 });
     await expect(page.getByText('It is your turn.')).toBeVisible();
   }
-  for (const page of [first, second, organiser]) await page.context().close();
+  for (const page of [first, second]) await page.context().close();
 });
 
 test('two admitted customers race for one seat: exactly one gets it, the other picks another', async ({
@@ -104,7 +104,7 @@ test('two admitted customers race for one seat: exactly one gets it, the other p
     page.getByRole('button', { name: new RegExp(`^${label} —`) });
 
   for (const page of [first, second]) {
-    await page.goto(`/events/${eventId}`);
+    await page.goto(`/events/${eventId}/tickets`);
     await expect(page.getByText('It is your turn.')).toBeVisible();
     await seat(page, seatLabels[0]).click();
   }
@@ -310,7 +310,6 @@ test.describe('admission token and order input safety (API level)', () => {
   test('malformed orders are rejected and create nothing', async ({ request }) => {
     const invalid: Record<string, unknown> = {
       'quantity 0': { ...orderBody(seatIds[3], tokens.customer2), quantity: 0 },
-      'a quantity above the limit': { ...orderBody(seatIds[3], tokens.customer2), quantity: 1000 },
       'a missing event id': { ...orderBody(seatIds[3], tokens.customer2), eventId: undefined },
       'malformed seat ids': { ...orderBody(seatIds[3], tokens.customer2), seatIds: ['x', -1] },
     };
@@ -319,6 +318,13 @@ test.describe('admission token and order input safety (API level)', () => {
       expect(response.status(), name).toBe(400);
       expect(((await response.json()) as { error: string }).error, name).toBe('invalid_order');
     }
+    // An order above the per-order limit is refused with its own code, so the app can say why.
+    const tooMany = await call(request, 'customer2', 'post', '/api/order/orders', {
+      ...orderBody(seatIds[3], tokens.customer2),
+      quantity: 1000,
+    });
+    expect(tooMany.status()).toBe(400);
+    expect(await tooMany.json()).toMatchObject({ error: 'too_many_tickets', maxQuantity: 50 });
 
     // A well-formed order still needs a waiting-room admission on a reserved-seating event.
     const noToken = await call(

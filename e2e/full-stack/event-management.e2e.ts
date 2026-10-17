@@ -148,7 +148,7 @@ test.describe('the seat map', () => {
     browser,
   }) => {
     const page = await signedInPage(browser, 'organiser');
-    // Selling a seat takes the waiting room and a checkout (covered by reserved-seating); here the
+    // Selling a seat takes the queue and a checkout (covered by reserved-seating); here the
     // seat is marked sold in the disposable local database so the editor's rules can be tested.
     const stalls = (await inventoryOf(page, eventId)).zones[0];
     sql(
