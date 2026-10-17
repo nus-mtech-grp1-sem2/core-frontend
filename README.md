@@ -128,19 +128,20 @@ drag-to-draw canvas.
 
 What it covers (`e2e/full-stack/`):
 
-> **Out of date since 15 Oct 2026 (#86).** Every purchase now goes through the queue: `/events/:id`
-> opens the queue page, which joins automatically; ticket selection (`/events/:id/tickets`) opens only
-> once the customer is admitted; and the organiser's "Open waiting room" and "Admit next customer"
-> buttons are gone (the queue opens when the event is published). The ticketing journey, reserved
-> seating and automatic admission specs still follow the old flow and need updating.
+Every purchase goes through the event's queue, as in production: `/events/:id` opens the queue
+page, which joins automatically; ticket selection (`/events/:id/tickets`) opens only once the
+customer is admitted; and every order carries an admission token. The organiser app has no queue
+controls, so the specs admit customers through the queue API's `admit-next` as the organiser
+(`support/queue.ts`). One queue place buys one order, so specs that buy twice use two customers.
 
-- **Ticketing journey:** organiser creates and publishes an event through the UI; a customer buys
-  tickets; the door scans a QR image (valid, already used, unreadable, and a valid ticket for a
+- **Ticketing journey:** organiser creates and publishes an event through the UI; a customer queues,
+  is admitted and buys tickets; the door scans a QR image (valid, already used, unreadable, and a valid ticket for a
   _different_ event is refused as the wrong event); manual lookup by name, email and order id, scoped
   to the event; the organiser's sales, attendees, team roster and check-in progress; only an event's
   organisers can manage it (customers and helpers get 403, no token gets 401).
-- **Reserved seating:** queue positions, rejoining keeps one place, customers are admitted, a genuine race for one seat (exactly one wins, the other picks another), checkout, and
-  no seat is issued twice.
+- **Reserved seating:** no queue exists until the first customer joins; queue positions, rejoining
+  keeps one place, customers are admitted together, a genuine race for one seat (exactly one wins,
+  the other picks another), checkout, and no seat is issued twice.
 - **Sign-in, sign-up and sign-out:** these are Cognito's hosted pages, so the mocked tier
   (`auth.e2e.ts`, with a stand-in for the hosted UI and token endpoint in `support/cognito.ts`) tests
   what the app sends and does: the redirect (client, scopes, PKCE S256, state), the sign-up variant,
@@ -160,11 +161,12 @@ What it covers (`e2e/full-stack/`):
 - **Known bugs are marked `test.fail`:** a test that asserts the correct behaviour of something
   currently broken, with the issue number. It passes while the bug exists and starts failing when
   it is fixed, which is the cue to delete the marker.
-- **Automatic admission:** the queue service is recreated with the scheduler on and short timings
-  (admission lasts 8 s, interval 15 s, one buyer at a time). The first customer is admitted with
-  nobody pressing "Admit next customer" and their page moves on to seat selection; the second waits
-  while the first admission is live; when it expires the slot frees but the second still waits out
-  the interval; then they are admitted at least an interval after the first.
+- **Automatic admission:** the queue service is recreated with the scheduler on and an 8 s
+  admission, one buyer at a time. Nothing configures the queue: the first customer's join creates it
+  with the default 60 s interval, the scheduler admits them and their page moves on to seat
+  selection; the second waits while the first admission is live; the first closes their page, their
+  admission expires and the slot frees, but the second still waits out the interval; then they are
+  admitted at least an interval after the first.
 - **Team invitations:** the organiser invites a helper by email and sees "Helper · pending" with a
   name; a pending invitation grants no scanner access and nobody but the invitee can answer it;
   accepting puts the helper on the roster and lets them open the door; rejecting grants nothing and
@@ -172,15 +174,17 @@ What it covers (`e2e/full-stack/`):
   nobody; an unavailable Cognito fails the invitation cleanly, the roster still loads, and it
   recovers.
 - **Backend rules, checked at the API:** an admission token buys once and an expired one is refused;
-  malformed orders create nothing; the last ticket cannot be sold twice; paying twice at once charges
+  malformed orders create nothing; more than 50 tickets is refused with `too_many_tickets`; the last ticket cannot be sold twice; paying twice at once charges
   and issues once; a payment made while the ticket service is down is recovered by paying again;
   the same ticket scanned at the same moment is accepted once.
 
 Choices worth knowing about:
 
 - `backend-env.sh` turns **automatic queue admission off** so the tests decide when customers
-  are admitted. With it on, a scheduler admits a customer about a second after they join, so the
-  organiser's "Admit next customer" and the queue position could not be tested reliably. Only
+  are admitted (through `admit-next`, retried while the 60 s interval has not passed). With it on, a
+  scheduler admits a customer about a second after they join, so the queue position could not be
+  tested reliably. The ticketing journey admits customers to one event at different times, so it shortens the interval
+  to a second through `PUT /queue/config` (`shortenAdmissionInterval`). Only
   `admission-scheduler.e2e.ts` turns it on, by recreating the `queue-service` container with
   `docker compose` (using the project, files and env file compose recorded on the container, so it
   works wherever the stack was started) and recreating it again afterwards, even if the test fails.
