@@ -135,10 +135,11 @@ controls, so the specs admit customers through the queue API's `admit-next` as t
 (`support/queue.ts`). One queue place buys one order, so specs that buy twice use two customers.
 
 - **Ticketing journey:** organiser creates and publishes an event through the UI; a customer queues,
-  is admitted and buys tickets; the door scans a QR image (valid, already used, unreadable, and a valid ticket for a
-  _different_ event is refused as the wrong event); manual lookup by name, email and order id, scoped
-  to the event; the organiser's sales, attendees, team roster and check-in progress; only an event's
-  organisers can manage it (customers and helpers get 403, no token gets 401).
+  is admitted and buys tickets; the door scans a QR image (valid, already used, unreadable, and a
+  valid ticket for a _different_ event is refused as the wrong event); manual lookup by name, email
+  and order id, scoped to the event; the organiser's sales, attendees, team roster and check-in
+  progress; only an event's organisers can manage it (customers and helpers get 403, no token gets
+  401).
 - **Reserved seating:** no queue exists until the first customer joins; queue positions, rejoining
   keeps one place, customers are admitted together, a genuine race for one seat (exactly one wins,
   the other picks another), checkout, and no seat is issued twice.
@@ -174,9 +175,10 @@ controls, so the specs admit customers through the queue API's `admit-next` as t
   nobody; an unavailable Cognito fails the invitation cleanly, the roster still loads, and it
   recovers.
 - **Backend rules, checked at the API:** an admission token buys once and an expired one is refused;
-  malformed orders create nothing; more than 50 tickets is refused with `too_many_tickets`; the last ticket cannot be sold twice; paying twice at once charges
-  and issues once; a payment made while the ticket service is down is recovered by paying again;
-  the same ticket scanned at the same moment is accepted once.
+  malformed orders create nothing; more than 50 tickets is refused with `too_many_tickets`; the last
+  ticket cannot be sold twice; paying twice at once charges and issues once; a payment made while
+  the ticket service is down is recovered by paying again; the same ticket scanned at the same
+  moment is accepted once.
 
 Choices worth knowing about:
 
