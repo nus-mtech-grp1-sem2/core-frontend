@@ -183,8 +183,8 @@ Choices worth knowing about:
 - `backend-env.sh` turns **automatic queue admission off** so the tests decide when customers
   are admitted (through `admit-next`, retried while the 60 s interval has not passed). With it on, a
   scheduler admits a customer about a second after they join, so the queue position could not be
-  tested reliably. The ticketing journey admits customers to one event at different times, so it shortens the interval
-  to a second through `PUT /queue/config` (`shortenAdmissionInterval`). Only
+  tested reliably. The ticketing journey admits customers to one event at different times, so it
+  shortens the interval to a second through `PUT /queue/config` (`shortenAdmissionInterval`). Only
   `admission-scheduler.e2e.ts` turns it on, by recreating the `queue-service` container with
   `docker compose` (using the project, files and env file compose recorded on the container, so it
   works wherever the stack was started) and recreating it again afterwards, even if the test fails.
