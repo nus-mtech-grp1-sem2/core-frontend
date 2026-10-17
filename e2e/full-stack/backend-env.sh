@@ -6,9 +6,9 @@
 # Everything is generated or non-secret: random service secrets, the public Cognito pool ids, the
 # local MySQL container, empty queue URLs (payment and ticket issuance then run in-process) and an
 # empty AWS config directory, so no AWS credentials ever reach the containers. SMTP uses dummy
-# values so nothing touches the real Gmail sender. Automatic waiting-room admission is switched
-# off so the tests decide when customers are admitted (through the organiser's "Admit next
-# customer"); with it on, a scheduler would admit them about a second after they join.
+# values so nothing touches the real Gmail sender. Automatic queue admission is switched off so
+# the tests decide when customers are admitted (as the organiser, through the queue API's
+# admit-next); with it on, a scheduler would admit them about a second after they join.
 # An existing .env is never overwritten.
 set -euo pipefail
 

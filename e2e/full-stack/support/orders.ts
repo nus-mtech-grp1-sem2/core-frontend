@@ -2,6 +2,7 @@ import { expect, type APIRequestContext } from '@playwright/test';
 
 import { accessToken } from './auth';
 import { configureInventory, setAvailableBuyers, startsAt } from './events';
+import { admit } from './queue';
 import type { Role } from './users';
 
 /** A call to the API as `role`, with that account's real access token. */
@@ -49,18 +50,22 @@ export interface Purchase {
 }
 
 /**
- * Buys one general-admission ticket through the API (create the order, pay, wait for issuance).
- * The order carries `name` and `email`, which is what the door's manual lookup searches.
+ * Buys one general-admission ticket through the API (get through the queue, create the order, pay,
+ * wait for issuance). The order carries `name` and `email`, which is what the door's manual lookup
+ * searches. Pass `admissionToken` when `role` has already been admitted.
  */
 export async function buyGaTicket(
   request: APIRequestContext,
   role: Role,
   eventId: number,
   person: { readonly name: string; readonly email: string },
+  admissionToken?: string,
 ): Promise<Purchase> {
+  const token = admissionToken ?? (await admit(request, eventId, [role]))[role];
   const created = await callAs(request, role, 'post', '/api/order/orders', {
     eventId,
     quantity: 1,
+    admissionToken: token,
     customerEmail: person.email,
     customerName: person.name,
   });

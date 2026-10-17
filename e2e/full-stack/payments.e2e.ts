@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { callAs, createPublishedGaEvent } from './support/orders';
+import { admit } from './support/queue';
 import { assertLocalStack, sql, withServiceDown } from './support/stack';
 
 const runId = Date.now().toString(36);
@@ -13,9 +14,11 @@ async function createOrder(
   eventId: number,
   quantity: number,
 ) {
+  const { customer: admissionToken } = await admit(request, eventId, ['customer']);
   const created = await callAs(request, 'customer', 'post', '/api/order/orders', {
     eventId,
     quantity,
+    admissionToken,
     customerEmail: 'payer@example.com',
     customerName: 'E2E Payer',
   });

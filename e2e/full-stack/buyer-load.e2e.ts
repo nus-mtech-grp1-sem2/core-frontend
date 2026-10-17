@@ -4,6 +4,7 @@ import { expect, test, type Browser } from '@playwright/test';
 
 import { useSession } from './support/auth';
 import { createPublishedGaEvent } from './support/orders';
+import { admitNext, queueSummary } from './support/queue';
 import { assertLocalStack } from './support/stack';
 import type { Role } from './support/users';
 
@@ -23,8 +24,12 @@ async function buyThroughBrowser(browser: Browser, role: Role): Promise<BrowserT
   const page = await context.newPage();
   const startedAt = performance.now();
   try {
-    await page.goto('/events');
+    // The catalogue is paged and the local database keeps earlier events, so search for this one.
+    await page.goto(`/events?q=${encodeURIComponent(title)}`);
     await page.getByRole('link', { name: title }).first().click();
+    // The event sends everyone through its queue; the test admits all three together.
+    await page.waitForURL(/\/events\/\d+\/queue$/);
+    await page.waitForURL(/\/events\/\d+\/tickets$/, { timeout: 60_000 });
     await expect(page.getByRole('heading', { name: title })).toBeVisible();
     await page.getByLabel('Quantity').fill('1');
     await page.getByRole('button', { name: /Buy tickets/ }).click();
@@ -56,9 +61,19 @@ test('three retained users complete the buyer UI journey concurrently', async ({
   request,
 }) => {
   assertLocalStack();
-  await createPublishedGaEvent(request, title, 20);
+  const eventId = await createPublishedGaEvent(request, title, 20);
 
-  const timings = await Promise.all(roles.map((role) => buyThroughBrowser(browser, role)));
+  const journeys = Promise.all(roles.map((role) => buyThroughBrowser(browser, role)));
+  // Automatic admission is off in this tier: once all three are waiting, admit them as one batch.
+  // A journey that fails before joining still rejects `journeys`, which is awaited below.
+  journeys.catch(() => undefined);
+  await expect
+    .poll(async () => (await queueSummary(request, eventId).catch(() => null))?.waitingCount, {
+      timeout: 60_000,
+    })
+    .toBe(roles.length);
+  expect(await admitNext(request, eventId)).toMatchObject({ admitted: roles.length });
+  const timings = await journeys;
   expect(timings).toHaveLength(roles.length);
   expect(timings.every((timing) => timing.totalMs > 0)).toBe(true);
 
@@ -77,6 +92,7 @@ test('three retained users complete the buyer UI journey concurrently', async ({
     constraints: {
       target: 'local disposable full stack',
       payment: 'simulated',
+      queue: 'all three admitted together by the organiser once they had joined',
       cognitoUsers: 'retained existing accounts only',
       traces: 'disabled',
     },
