@@ -8,7 +8,7 @@ Please validate the Event Helper and ticketing flows against the latest `main` b
 
 Use separate accounts for each role:
 
-- **Organiser:** creates and publishes events, opens the queue, and admits customers.
+- **Organiser:** creates and publishes events and sets how many buyers are admitted at once. Publishing opens the event's queue; customers are admitted automatically.
 - **Customer:** buys tickets and views QR codes.
 - **Event helper:** scans tickets at the door.
 
@@ -68,16 +68,18 @@ Record:
 1. Sign out as organiser.
 2. Sign in as the customer.
 3. Open **Events**.
-4. Open the test event.
-5. Select quantity `1`.
-6. Click **Buy tickets**.
-7. Open **My events**.
+4. Open the test event. You land on its queue page, which joins the queue for you.
+5. Wait to be admitted (usually about a second when nobody else is queuing; up to a minute if another buyer was admitted just before you). You are taken to ticket selection, with a countdown.
+6. Select quantity `1`.
+7. Click **Buy tickets** and complete the simulated payment.
+8. Open **My events**.
 
 Expected result:
 
+- General-admission events go through the queue, the same as reserved-seating events.
 - Simulated payment succeeds.
 - The order appears in the **Orders** section.
-- A ticket appears with a QR code.
+- A ticket appears with a QR code and a section seat number (for example `A1`).
 - Ticket status is **Ready to scan**.
 - Event inventory decreases by one.
 
@@ -157,26 +159,23 @@ Record:
 - Email search: PASS / FAIL
 - Order ID search: PASS / FAIL
 
-## Test 6: Reserved Seating and Waiting Room
+## Test 6: Reserved Seating and the Queue
 
-1. As organiser, create a reserved-seating event with at least 4 seats.
-2. Publish the event.
-3. Open the event management page.
-4. Click **Open waiting room**.
-5. Sign in as customer and open the reserved event.
-6. Click **Join waiting room**.
-7. Confirm a queue position is displayed.
-8. As organiser, click **Admit next customer**.
-9. Return to the customer page and wait for admission.
-10. Select an available seat.
-11. Complete simulated payment.
-12. Open **My events**.
+1. As organiser, create a reserved-seating event with at least 4 seats and set **Available buyers** to `1`.
+2. Publish the event. There is no separate step to open the queue.
+3. Sign in as customer A and open the reserved event. The queue page joins automatically.
+4. Sign in as customer B in another browser and open the same event.
+5. Confirm A is admitted and taken to seat selection, while B sees a queue position.
+6. As B, go to **Events** or **My events** and confirm **Your active bookings** shows the place with **Return to queue** and **Release my place**.
+7. As A, select an available seat and complete simulated payment.
+8. Confirm B is admitted shortly after A pays (the freed place is refilled at once).
+9. Open **My events** as A.
 
 Expected result:
 
-- Customer can join the queue.
-- Queue position is displayed.
-- Organiser can admit the next customer.
+- Customers join the queue just by opening the event.
+- Only as many customers as **Available buyers** can choose tickets at once; the others see their position.
+- Opening `/events/<id>/tickets` directly without being admitted sends you back to the queue.
 - Seat selection becomes available after admission.
 - Selected seat is held during checkout and becomes sold after payment.
 - A ticket and QR code are issued.
@@ -193,7 +192,7 @@ Record:
 ## Test 7: Conflict and Token Safety
 
 1. Use two customer accounts.
-2. Admit both customers if the test setup allows it.
+2. Set **Available buyers** to at least `2` so both customers are admitted together.
 3. Have both customers attempt to select the same seat.
 4. Confirm only one order succeeds.
 5. Attempt to reuse an admission token for another order.
@@ -270,7 +269,7 @@ Expected result:
 ### Seat conflict
 
 1. Create a reserved event with at least two customer accounts.
-2. Open the queue and admit both customers, or use two admitted test sessions.
+2. Set **Available buyers** to at least `2` and have both customers open the event so both are admitted.
 3. Have both customers select the same seat as close together as possible.
 4. Submit both orders.
 
@@ -294,7 +293,7 @@ Expected result:
 
 ### Admission token safety
 
-1. Have the organiser admit a customer.
+1. Have a customer join the queue and be admitted.
 2. Complete one reserved-seat checkout.
 3. Attempt a second checkout using the same admission session/token.
 4. Repeat after the token expiry time, if the test environment allows it.
@@ -421,6 +420,7 @@ Screenshots/log request IDs:
 ## Known Limitations
 
 - Payment is simulated; no real payment provider is connected.
+- Every event, general admission or reserved, sells through the queue. A customer who joins just after another was admitted can wait up to 60 seconds even when places are free.
 - A separate customer account is required to test purchasing an organiser's event.
 - A separate helper account is required to test helper-only membership behavior.
 - Do not use production AWS data for destructive or load testing.

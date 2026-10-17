@@ -6,6 +6,12 @@ event turns each cell in a zone into an individually-tracked seat; a `TIER1_GA` 
 rectangle's area as a capacity number. Zones can't overlap; a zone with sold/held seats
 (`committedZoneIds`) can't be resized, moved, or removed.
 
+> **Update (Oct 2026).** Since this log was written: general-admission zones take an explicit
+> quantity (the rectangle's area is only the fallback) and their grid can be much larger; seated maps
+> stay capped at 400 seats (20 × 20); the stage is drawn as up to five pieces (`PUT /stage`); and
+> every purchase, on both tiers, goes through the queue before ticket selection. The purchase notes
+> below ("blocked on both tiers") describe the stub services of that time and are kept as history.
+
 ## Current state (as of this entry)
 
 ### Shipped this cycle

@@ -128,13 +128,18 @@ drag-to-draw canvas.
 
 What it covers (`e2e/full-stack/`):
 
+> **Out of date since 15 Oct 2026 (#86).** Every purchase now goes through the queue: `/events/:id`
+> opens the queue page, which joins automatically; ticket selection (`/events/:id/tickets`) opens only
+> once the customer is admitted; and the organiser's "Open waiting room" and "Admit next customer"
+> buttons are gone (the queue opens when the event is published). The ticketing journey, reserved
+> seating and automatic admission specs still follow the old flow and need updating.
+
 - **Ticketing journey:** organiser creates and publishes an event through the UI; a customer buys
   tickets; the door scans a QR image (valid, already used, unreadable, and a valid ticket for a
   _different_ event is refused as the wrong event); manual lookup by name, email and order id, scoped
   to the event; the organiser's sales, attendees, team roster and check-in progress; only an event's
   organisers can manage it (customers and helpers get 403, no token gets 401).
-- **Reserved seating:** waiting room positions, rejoining keeps one place, the organiser admits
-  customers, a genuine race for one seat (exactly one wins, the other picks another), checkout, and
+- **Reserved seating:** queue positions, rejoining keeps one place, customers are admitted, a genuine race for one seat (exactly one wins, the other picks another), checkout, and
   no seat is issued twice.
 - **Sign-in, sign-up and sign-out:** these are Cognito's hosted pages, so the mocked tier
   (`auth.e2e.ts`, with a stand-in for the hosted UI and token endpoint in `support/cognito.ts`) tests
@@ -173,7 +178,7 @@ What it covers (`e2e/full-stack/`):
 
 Choices worth knowing about:
 
-- `backend-env.sh` turns **automatic waiting-room admission off** so the tests decide when customers
+- `backend-env.sh` turns **automatic queue admission off** so the tests decide when customers
   are admitted. With it on, a scheduler admits a customer about a second after they join, so the
   organiser's "Admit next customer" and the queue position could not be tested reliably. Only
   `admission-scheduler.e2e.ts` turns it on, by recreating the `queue-service` container with
