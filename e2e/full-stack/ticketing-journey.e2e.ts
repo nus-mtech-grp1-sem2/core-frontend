@@ -10,6 +10,7 @@ import {
   signedInPage,
 } from './support/events';
 import { buyGaTicket, callAs, createPublishedGaEvent } from './support/orders';
+import { admitNext, shortenAdmissionInterval } from './support/queue';
 import { assertLocalStack, sql } from './support/stack';
 import { credentials } from './support/users';
 
@@ -59,17 +60,31 @@ test('organiser creates a general-admission event, sets inventory and publishes 
   });
   await setAvailableBuyers(page.request, eventId, 10);
   await publishEvent(page, TITLE);
+  // Customers are admitted to this event at different times below; don't make each wait 60 s.
+  await shortenAdmissionInterval(page.request, eventId);
   await page.context().close();
 });
 
-test('customer buys two tickets and sees each with a QR code', async ({ browser }) => {
+test('customer queues, is admitted, buys two tickets and sees each with a QR code', async ({
+  browser,
+  request,
+}) => {
   const context = await browser.newContext();
   await useSession(context, 'customer');
   const page = await context.newPage();
 
-  await page.goto('/events');
+  // Every event sells through its queue, which the customer joins on opening the event.
+  // The catalogue is paged and the local database keeps earlier events, so search for this one.
+  await page.goto(`/events?q=${encodeURIComponent(TITLE)}`);
   await page.getByRole('link', { name: TITLE }).first().click();
+  await page.waitForURL(new RegExp(`/events/${eventId}/queue$`));
+  await expect(page.locator('.position strong')).toHaveText('1');
+
+  // Automatic admission is off in this tier, so the organiser admits the customer.
+  expect(await admitNext(request, eventId)).toMatchObject({ admitted: 1 });
+  await page.waitForURL(new RegExp(`/events/${eventId}/tickets$`), { timeout: 30_000 });
   await expect(page.getByRole('heading', { name: TITLE })).toBeVisible();
+  await expect(page.getByText('It is your turn.')).toBeVisible();
   await page.getByLabel('Quantity').fill('2');
   await page.getByRole('button', { name: /Buy tickets/ }).click();
 
